@@ -401,3 +401,29 @@ def test_the_standby_banner_says_why_it_is_idle(app):
     assert "STANDBY" in banner.text() and "NO PERSON" in banner.text()
     assert "MISSING" not in banner.text()
     paint(banner, 360, 64)
+
+
+def test_changing_a_class_confidence_reaches_the_detector_live(app, station):
+    """The spinbox is not cosmetic: the edit is pushed into the running model."""
+    window, pipe = station
+    assert pump(app, lambda: pipe.cycles > 0)
+
+    window.panel.rows["helmet"].conf.setValue(0.75)
+
+    assert window.cfg.ppe.classes[0].conf == 0.75
+    assert pipe.detector.floors["helmet"] == 0.75
+    assert pipe.detector.floors["vest"] is None  # untouched classes keep the default
+
+
+def test_each_class_carries_its_own_confidence(app, tmp_path):
+    from ppe.config import Config
+
+    cfg = config()
+    cfg.path = tmp_path / "config.yaml"
+    panel = PPEPanel(cfg, ["helmet", "vest", "mask"])
+    panel.rows["helmet"].conf.setValue(0.70)
+    panel.rows["mask"].conf.setValue(0.20)
+    panel._save()
+
+    saved = {c.name: c.conf for c in Config.load(cfg.path).ppe.classes}
+    assert saved == {"helmet": 0.70, "vest": None, "mask": 0.20}

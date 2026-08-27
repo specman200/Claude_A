@@ -58,7 +58,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
 | `ppe.subject` | Class the checks are applied to; empty checks every detection |
 | `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
-| `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf` |
+| `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf`; also editable live in the UI |
 | `ppe.hold_ms` | How long a class stays "present" after its last sighting |
 | `ppe.confirm_frames` | Agreeing cycles before the lamp changes |
 | `tower.*` | Transport, address, and the coil behind each lamp |
@@ -149,9 +149,16 @@ class that can never be detected must never read as compliant.
 | `DEGRADED` | amber | No usable video, or a required class the model lacks |
 
 Detections are unioned across cameras: an item seen by either camera counts as
-present, which is what you want when two cameras view one cell. Each camera
-selects its own subject first, so the union is over what both views saw *on the
-person they are each looking at*.
+present. That is what you want for two views of one cell — a front camera sees
+the mask and safety glasses, a side camera sees the gloves and sleeves, and
+between them they see the whole worker. Each camera selects its own subject
+first, so the union is over what both views saw *on the person each is looking
+at*.
+
+With one worker in the cell both cameras lock onto the same person and this is
+exactly right. With two people in view the cameras can pick different subjects
+and the union would blend them — resolving that needs cross-camera identity,
+which this does not attempt.
 
 Standby leaves the tower dark. Amber stays reserved for `DEGRADED`, which is a
 fault and needs to look like one; an unlit tower cannot be mistaken for a
@@ -229,14 +236,14 @@ ppe/
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 docs/layout.svg      architecture diagram
-tests/               193 tests
+tests/               195 tests
 ```
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 193 tests
+pytest                       # 195 tests
 ruff check ppe main.py tests
 ```
 

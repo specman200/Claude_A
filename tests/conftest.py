@@ -34,6 +34,7 @@ class StubDetector:
         self.dets = [Detection("helmet", 0.9, (10.0, 10.0, 100.0, 100.0))]
         self.calls = 0
         self.batch_sizes = []
+        self.floors: dict[str, float | None] = {}
 
     def detect(self, images):
         self.calls += 1
@@ -45,4 +46,7 @@ class StubDetector:
         )
 
     def set_classes(self, ppe):
+        # Record what the detector was reconfigured with, so tests can prove
+        # a UI edit actually reached it.
+        self.floors = {c.name: c.conf for c in ppe.classes}
         return list(self.missing)
