@@ -27,9 +27,9 @@ PPE each class is or is not wearing.
 pip install -r requirements.txt
 ```
 
-`yolo11s.pt` downloads itself on first run. Swap in your own PPE-trained
-weights via `model.weights` in `config.yaml` — the stock COCO model does not
-know what a hard hat is (see [Choosing a model](#choosing-a-model)).
+The station ships with `models/ppe-yolo11s.pt`, a YOLOv11s fine-tuned on PPE
+(150 epochs at 640, `rect=False` — the same square letterbox this code uses at
+inference). Point `model.weights` elsewhere to swap it.
 
 ## Run
 
@@ -55,6 +55,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `cameras[].source` | Camera index, RTSP/HTTP URL, or a video file |
 | `cameras[].width/height` | Requested capture size (see below) |
 | `ppe.classes[].required` | Only required classes drive the tower light |
+| `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
 | `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf` |
 | `ppe.hold_ms` | How long a class stays "present" after its last sighting |
 | `ppe.confirm_frames` | Agreeing cycles before the lamp changes |
@@ -81,21 +82,47 @@ downscale. What actually costs accuracy is **effective object size in pixels**:
 and 1.5x yields the same detections in the same places, to within 3% of the
 frame.
 
-### Choosing a model
+### The shipped model
 
-The stock `yolo11s.pt` is trained on COCO, whose 80 classes include `person`
-but no PPE. For real use, point `model.weights` at a model trained on your PPE
-classes and list those class names in `ppe.classes`. Any name the model does not
-have is flagged amber in the UI and forces the tower to `DEGRADED` rather than
-silently passing — a class that can never be detected must never read as
-compliant.
+`models/ppe-yolo11s.pt` detects seven classes, and they are not all the same
+kind of thing:
+
+| Class | Configured as | Why |
+| --- | --- | --- |
+| `headnet` | required | worn PPE |
+| `Safetyglasses` | required | worn PPE |
+| `Mask` | required | worn PPE |
+| `Gloves` | required | worn PPE |
+| `sleeves` | required | the correct sleeve type |
+| `Wrong Sleeve` | required, `expect: absent` | **a violation class** — see below |
+| `person` | not required | context, not equipment |
+
+**`Wrong Sleeve` is inverted.** Detecting it is the fault, not the pass. Listed
+as ordinary required PPE it would turn the tower **green** on exactly the
+condition it exists to catch, so it is configured `expect: absent`: the class
+gates the light, but compliance means *not* seeing it. The UI marks such rows
+with `⊘`, and green keeps its usual meaning — "as the site rules want it" —
+so an inverted row reads green while absent and red the moment it appears.
+
+**`person` is informational.** It is listed so you can see it, but it does not
+gate the light. Note the consequence: an empty cell has no PPE in it, so the
+station reads `VIOLATION` with nobody there. If you want the checks to apply
+only when someone is present, that is a deliberate change — and a fail-open
+one, since a missed `person` detection would then suppress the alarm entirely.
+
+### Choosing a different model
+
+Point `model.weights` at any YOLOv11 `.pt`, `.onnx` or `.engine` and list its
+class names in `ppe.classes`. Any name the model does not have is flagged amber
+in the UI and forces the tower to `DEGRADED` rather than silently passing — a
+class that can never be detected must never read as compliant.
 
 ## The tower light
 
 | Status | Lamp | Meaning |
 | --- | --- | --- |
 | `OK` | green | Every required class is present |
-| `VIOLATION` | red | At least one required class is missing |
+| `VIOLATION` | red | A required class is missing, or a forbidden one appeared |
 | `DEGRADED` | amber | No usable video, or a required class the model lacks |
 
 Detections are unioned across cameras: an item seen by either camera counts as
@@ -170,14 +197,16 @@ ppe/
   pipeline.py        the loop tying it together
   latency.py         per-stage timing, CSV, thread-aware profiler
   ui.py              Qt: video panes, editable checklist, latency HUD
-tests/               134 tests
+models/              the fine-tuned PPE weights
+docs/layout.svg      architecture diagram
+tests/               150 tests
 ```
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 134 tests
+pytest                       # 150 tests
 ruff check ppe main.py tests
 ```
 

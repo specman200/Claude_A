@@ -173,8 +173,14 @@ class ClassRow(QWidget):
         self.required.setToolTip("Required — drives the tower light")
         self.required.toggled.connect(self._on_required)
 
-        self.label = QLabel(cfg.label)
-        self.label.setToolTip(f"model class: {cfg.name}")
+        # The circled slash marks a class whose presence is itself the fault,
+        # so an inverted row can never be mistaken for a normal one.
+        self.label = QLabel(("\u2298 " if cfg.forbidden else "") + cfg.label)
+        self.label.setToolTip(
+            f"model class: {cfg.name}\n"
+            + ("must NOT appear — detecting it is a violation" if cfg.forbidden
+               else "must be worn")
+        )
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         self.conf = QDoubleSpinBox()
@@ -201,7 +207,7 @@ class ClassRow(QWidget):
             row.addWidget(widget)
 
         # Start in the "not seen yet" look rather than an inherited default.
-        self.apply(ClassState(cfg.name, cfg.label, cfg.required))
+        self.apply(ClassState(cfg.name, cfg.label, cfg.required, cfg.expect))
 
     def _paint_dot(self, color: str) -> None:
         self.dot.setStyleSheet(f"background:{color}; border-radius:6px;")
@@ -222,12 +228,13 @@ class ClassRow(QWidget):
             self.label.setToolTip(f"'{self.cfg.name}' is not a class in the loaded model")
             self.score.setText("n/a")
             return
-        if state.present:
-            color, text = PRESENT, f"{state.conf:.2f}"
-        elif state.required:
-            color, text = ABSENT, "--"
+        text = f"{state.conf:.2f}" if state.present else "--"
+        if not state.required:
+            color = PRESENT if state.present else IDLE
         else:
-            color, text = IDLE, "--"
+            # Green always means "as the site rules want it", so a forbidden
+            # class reads green while it is absent and red once it appears.
+            color = PRESENT if state.compliant else ABSENT
         self._paint_dot(color)
         self.label.setStyleSheet(f"color:{color}; font-weight:{600 if state.present else 400};")
         self.score.setText(text)
@@ -342,10 +349,16 @@ class StatusBanner(QLabel):
         missing: list[str],
         tower_ok: bool,
         unavailable: list[str] | None = None,
+        banned: list[str] | None = None,
     ) -> None:
         text, color = BANNER[status]
-        if status is Status.VIOLATION and missing:
-            text = f"{text}: {', '.join(missing)}"
+        if status is Status.VIOLATION:
+            parts = []
+            if missing:
+                parts.append(f"PPE MISSING: {', '.join(missing)}")
+            if banned:
+                parts.append(f"NOT ALLOWED: {', '.join(banned)}")
+            text = "   ".join(parts) or text
         elif status is Status.DEGRADED:
             # Two very different faults share this lamp — name the right one.
             text = (
@@ -481,7 +494,7 @@ class MainWindow(QMainWindow):
             pane.show_detections(dets, colors)
         self.panel.apply(result.classes)
         self.banner.apply(
-            result.status, result.missing, result.tower_ok, result.unavailable
+            result.status, result.missing, result.tower_ok, result.unavailable, result.banned
         )
 
     def _draw_stats(self) -> None:

@@ -4,8 +4,8 @@
 # ---------------------------------------------------------------------------
 
 model:
-  weights: yolo11s.pt   # any YOLOv11 .pt / .engine / .onnx
-  imgsz: 640            # inference size; must be a multiple of 32
+  weights: models/ppe-yolo11s.pt   # fine-tuned yolo11s; see README for the classes
+  imgsz: 640            # matches the size the model was trained at
   device: auto          # auto | cpu | cuda:0 | mps
   half: true            # fp16 — ignored on CPU
   conf: 0.35            # global confidence floor
@@ -28,15 +28,18 @@ cameras:
     api: any
 
 ppe:
-  # The UI lists these in order. `required: true` classes drive the tower light.
-  # `name` must match the model's class name; `label` is what humans see.
+  # The UI lists these in order. `name` must match the model's class name.
+  #   required: true   -> this class gates the tower light
+  #   expect: present  -> the item must be worn (the default)
+  #   expect: absent   -> detecting it IS the violation
   classes:
-    - {name: helmet,      label: Hard Hat,       required: true}
-    - {name: vest,        label: Hi-Vis Vest,    required: true}
-    - {name: gloves,      label: Gloves,         required: true}
-    - {name: goggles,     label: Safety Glasses, required: true}
-    - {name: mask,        label: Face Mask,      required: false}
-    - {name: boots,       label: Safety Boots,   required: false}
+    - {name: headnet,       label: Head Net,       required: true}
+    - {name: Safetyglasses, label: Safety Glasses, required: true}
+    - {name: Mask,          label: Face Mask,      required: true}
+    - {name: Gloves,        label: Gloves,         required: true}
+    - {name: sleeves,       label: Sleeves,        required: true}
+    - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, expect: absent}
+    - {name: person,        label: Person in Cell, required: false}
   hold_ms: 1500         # a class stays lit this long after its last sighting
   confirm_frames: 3     # consecutive agreeing evaluations before the light flips
 

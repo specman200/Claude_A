@@ -261,7 +261,10 @@ def test_live_frames_and_detections_reach_the_screen(app, station):
     assert pump(app, lambda: all(p.seq > 0 for p in window.panes)), "no frames drawn"
     assert pump(app, lambda: any(p._dets for p in window.panes)), "no boxes drawn"
     assert pump(app, lambda: PRESENT in window.panel.rows["helmet"].dot.styleSheet())
-    assert "PPE MISSING" in window.banner.text()  # the stub never reports a vest
+    # Rows track detections immediately, but the banner follows the debounced
+    # status, so it can lag the rows by a few cycles — wait for it rather than
+    # assuming they update together.
+    assert pump(app, lambda: "PPE MISSING" in window.banner.text()), window.banner.text()
     paint(window, 1200, 800)
 
 
@@ -284,3 +287,67 @@ def test_editing_the_checklist_takes_effect_live(app, station):
     assert pump(app, lambda: window.banner.text().startswith("PPE MISSING"))
     window.panel._remove("vest")  # the user drops the vest requirement
     assert pump(app, lambda: "ALL PPE PRESENT" in window.banner.text())
+
+
+# -- forbidden classes in the UI -------------------------------------------
+
+
+def forbidden_config():
+    from ppe.config import ClassCfg, Config, ModelCfg, PPECfg
+
+    return Config(
+        model=ModelCfg(conf=0.3),
+        ppe=PPECfg(
+            classes=[
+                ClassCfg("sleeves", "Sleeves"),
+                ClassCfg("Wrong Sleeve", "Wrong Sleeve", expect="absent"),
+            ]
+        ),
+    )
+
+
+def test_a_forbidden_row_is_marked_so_it_cannot_be_misread(app):
+    panel = PPEPanel(forbidden_config(), ["sleeves", "Wrong Sleeve"])
+    assert "⊘" in panel.rows["Wrong Sleeve"].label.text()
+    assert "⊘" not in panel.rows["sleeves"].label.text()
+    assert "must NOT appear" in panel.rows["Wrong Sleeve"].label.toolTip()
+
+
+def test_green_means_compliant_even_when_that_means_absent(app):
+    """A forbidden class reads green while missing and red once detected."""
+    panel = PPEPanel(forbidden_config(), ["sleeves", "Wrong Sleeve"])
+    row = panel.rows["Wrong Sleeve"]
+
+    panel.apply([ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", present=False)])
+    assert PRESENT in row.dot.styleSheet()
+
+    panel.apply(
+        [ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", present=True, conf=0.71)]
+    )
+    assert ABSENT in row.dot.styleSheet()
+    assert row.score.text() == "0.71"
+
+
+def test_a_normal_row_is_unaffected_by_the_inverted_rule(app):
+    panel = PPEPanel(forbidden_config(), ["sleeves", "Wrong Sleeve"])
+    row = panel.rows["sleeves"]
+    panel.apply([ClassState("sleeves", "Sleeves", True, "present", present=True, conf=0.9)])
+    assert PRESENT in row.dot.styleSheet()
+    panel.apply([ClassState("sleeves", "Sleeves", True, "present", present=False)])
+    assert ABSENT in row.dot.styleSheet()
+
+
+def test_the_banner_names_each_kind_of_fault_in_its_own_terms(app):
+    banner = StatusBanner()
+
+    banner.apply(Status.VIOLATION, ["Gloves"], tower_ok=True, banned=["Wrong Sleeve"])
+    assert "MISSING: Gloves" in banner.text()
+    assert "NOT ALLOWED: Wrong Sleeve" in banner.text()
+
+    banner.apply(Status.VIOLATION, [], tower_ok=True, banned=["Wrong Sleeve"])
+    assert "MISSING" not in banner.text()
+    assert "NOT ALLOWED: Wrong Sleeve" in banner.text()
+
+    banner.apply(Status.VIOLATION, ["Gloves"], tower_ok=True)
+    assert "MISSING: Gloves" in banner.text()
+    assert "NOT ALLOWED" not in banner.text()

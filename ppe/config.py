@@ -37,16 +37,28 @@ class CameraCfg:
     api: str = "any"
 
 
+# What a class's presence means for compliance.
+EXPECT_PRESENT = "present"  # the item must be worn
+EXPECT_ABSENT = "absent"    # the item must NOT appear (a violation class)
+EXPECTATIONS = (EXPECT_PRESENT, EXPECT_ABSENT)
+
+
 @dataclass
 class ClassCfg:
     name: str                      # must match the model's class name
     label: str = ""                # shown in the UI
-    required: bool = True
+    required: bool = True          # does this class gate the tower light?
+    expect: str = EXPECT_PRESENT   # "present" to require it, "absent" to forbid it
     conf: float | None = None      # per-class confidence override
 
     def __post_init__(self) -> None:
         if not self.label:
             self.label = self.name.replace("_", " ").title()
+
+    @property
+    def forbidden(self) -> bool:
+        """True when detecting this class is itself the violation."""
+        return self.expect == EXPECT_ABSENT
 
 
 @dataclass
@@ -132,6 +144,12 @@ class Config:
         names = [c.name for c in self.ppe.classes]
         if len(names) != len(set(names)):
             raise ValueError("config: duplicate class names in ppe.classes")
+        for klass in self.ppe.classes:
+            if klass.expect not in EXPECTATIONS:
+                raise ValueError(
+                    f"config: {klass.name}.expect must be one of {list(EXPECTATIONS)}, "
+                    f"got {klass.expect!r}"
+                )
         missing = set(self.tower.coils) - {"green", "amber", "red", "buzzer"}
         if missing:
             raise ValueError(f"config: unknown tower coils {sorted(missing)}")

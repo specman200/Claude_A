@@ -4,6 +4,8 @@ These need `ultralytics` plus the weights named by WEIGHTS; they skip if either
 is unavailable, so the rest of the suite still runs on a bare checkout.
 """
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
@@ -159,3 +161,41 @@ def test_classes_absent_from_the_model_are_reported(detector):
 def test_a_blank_frame_yields_no_detections(detector):
     blank = np.full((720, 1280, 3), 114, np.uint8)
     assert detector.detect([blank])[0][0] == []
+
+
+# -- the shipped fine-tuned model ------------------------------------------
+
+
+def test_the_shipped_config_and_the_shipped_weights_agree():
+    """Catches a config that has drifted from the weights it points at."""
+    from ppe.config import Config
+    from ppe.detector import Detector
+
+    cfg = Config.load("config.yaml")
+    if not Path(cfg.model.weights).is_file():
+        pytest.skip(f"{cfg.model.weights} not present")
+
+    detector = Detector(ModelCfg(weights=cfg.model.weights, warmup=False), cfg.ppe)
+    assert detector.missing == [], (
+        f"config lists classes the model does not have: {detector.missing}"
+    )
+    assert set(detector.names.values()) == {c.name for c in cfg.ppe.classes}, (
+        "the model has classes the config never mentions, or vice versa"
+    )
+
+
+def test_the_shipped_model_returns_boxes_in_source_pixels(scene):
+    from ppe.config import Config
+    from ppe.detector import Detector
+
+    cfg = Config.load("config.yaml")
+    if not Path(cfg.model.weights).is_file():
+        pytest.skip(f"{cfg.model.weights} not present")
+
+    detector = Detector(ModelCfg(weights=cfg.model.weights, conf=0.25, warmup=False), cfg.ppe)
+    dets = detector.detect([scene])[0][0]
+    h, w = scene.shape[:2]
+    assert dets, "the model found nothing at all in the reference image"
+    for d in dets:
+        x1, y1, x2, y2 = d.xyxy
+        assert 0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h

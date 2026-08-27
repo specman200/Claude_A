@@ -5,10 +5,12 @@ __pycache__/
 .venv/
 venv/
 
-# Model weights — fetched on first run, not source
+# Model weights. The station's own fine-tuned weights are committed (see
+# models/); anything else — downloaded baselines, exports, experiments — is not.
 *.pt
 *.onnx
 *.engine
+!models/ppe-yolo11s.pt
 
 # Runtime output
 logs/

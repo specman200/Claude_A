@@ -8,7 +8,7 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 
-from .config import PPECfg, TowerCfg
+from .config import EXPECT_ABSENT, PPECfg, TowerCfg
 from .detector import Detection
 from .latency import now
 
@@ -28,10 +28,20 @@ class ClassState:
     name: str
     label: str
     required: bool
+    expect: str = "present"  # "absent" for a class whose presence is the fault
     present: bool = False
     conf: float = 0.0
     last_seen: float = 0.0
     available: bool = True   # False when the model has no such class
+
+    @property
+    def forbidden(self) -> bool:
+        return self.expect == EXPECT_ABSENT
+
+    @property
+    def compliant(self) -> bool:
+        """Is this class currently in the state the site rules want?"""
+        return not self.present if self.forbidden else self.present
 
 
 class ComplianceMonitor:
@@ -47,7 +57,7 @@ class ComplianceMonitor:
         self.confirm = max(1, cfg.confirm_frames)
         missing = set(unavailable or ())
         self.classes = [
-            ClassState(c.name, c.label, c.required, available=c.name not in missing)
+            ClassState(c.name, c.label, c.required, c.expect, available=c.name not in missing)
             for c in cfg.classes
         ]
         self._by_name = {c.name: c for c in self.classes}
@@ -75,7 +85,7 @@ class ComplianceMonitor:
         required = [c for c in self.classes if c.required]
         if not required or any(not c.available for c in required):
             return Status.DEGRADED
-        return Status.OK if all(c.present for c in required) else Status.VIOLATION
+        return Status.OK if all(c.compliant for c in required) else Status.VIOLATION
 
     def _debounce(self, candidate: Status) -> Status:
         if candidate == self.status:
@@ -92,8 +102,18 @@ class ComplianceMonitor:
         return self.status
 
     def missing(self) -> list[str]:
-        """Required items not currently seen."""
-        return [c.label for c in self.classes if c.required and not c.present]
+        """Required items that should be worn but are not being seen."""
+        return [
+            c.label for c in self.classes if c.required and not c.forbidden and not c.present
+        ]
+
+    def banned(self) -> list[str]:
+        """Items that must not appear, but are being detected right now."""
+        return [c.label for c in self.classes if c.required and c.forbidden and c.present]
+
+    def faults(self) -> list[str]:
+        """Everything currently keeping the station out of compliance."""
+        return self.missing() + self.banned()
 
     def unavailable(self) -> list[str]:
         """Required items the loaded model has no class for."""

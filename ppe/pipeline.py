@@ -34,6 +34,7 @@ class Result:
     tower_ok: bool = False
     missing: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
+    banned: list[str] = field(default_factory=list)
 
 
 class Pipeline(threading.Thread):
@@ -160,6 +161,7 @@ class Pipeline(threading.Thread):
             tower_ok=getattr(self.tower, "connected", False),
             missing=self.monitor.missing(),
             unavailable=self.monitor.unavailable(),
+            banned=self.monitor.banned(),
         )
         self.result = result
         if self.on_result is not None:

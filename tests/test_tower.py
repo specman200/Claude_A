@@ -11,10 +11,11 @@ def det(name, conf=0.9):
     return Detection(name, conf, (0.0, 0.0, 10.0, 10.0))
 
 
-def monitor(hold_ms=1000, confirm=1, optional=(), missing=()):
+def monitor(hold_ms=1000, confirm=1, optional=(), missing=(), forbidden=()):
     cfg = PPECfg(
         classes=[ClassCfg("helmet"), ClassCfg("vest")]
-        + [ClassCfg(n, required=False) for n in optional],
+        + [ClassCfg(n, required=False) for n in optional]
+        + [ClassCfg(n, expect="absent") for n in forbidden],
         hold_ms=hold_ms,
         confirm_frames=confirm,
     )
@@ -183,3 +184,67 @@ def test_a_disabled_tower_is_a_no_op():
     tower = make_tower(TowerCfg(enabled=False))
     assert tower.apply(Status.VIOLATION) is False
     tower.close()
+
+
+# -- forbidden classes -----------------------------------------------------
+# Some models carry violation classes (e.g. "Wrong Sleeve"): detecting one IS
+# the fault. Treating those like ordinary PPE would turn the light green on
+# exactly the condition it exists to catch.
+
+
+def test_a_forbidden_class_passes_while_it_is_absent():
+    m = monitor(forbidden=["wrong_sleeve"])
+    assert m.update([det("helmet"), det("vest")], t=1.0) is Status.OK
+    assert m.banned() == []
+    assert m.faults() == []
+
+
+def test_detecting_a_forbidden_class_is_a_violation():
+    m = monitor(forbidden=["wrong_sleeve"])
+    status = m.update([det("helmet"), det("vest"), det("wrong_sleeve")], t=1.0)
+    assert status is Status.VIOLATION
+    assert m.banned() == ["Wrong Sleeve"]
+    assert m.missing() == []
+
+
+def test_a_forbidden_class_is_never_reported_as_missing():
+    """The old logic would have listed it as absent PPE — the opposite fault."""
+    m = monitor(forbidden=["wrong_sleeve"])
+    m.update([det("helmet"), det("vest")], t=1.0)
+    assert "Wrong Sleeve" not in m.missing()
+
+
+def test_both_kinds_of_fault_are_reported_together():
+    m = monitor(forbidden=["wrong_sleeve"])
+    m.update([det("helmet"), det("wrong_sleeve")], t=1.0)
+    assert m.missing() == ["Vest"]
+    assert m.banned() == ["Wrong Sleeve"]
+    assert m.faults() == ["Vest", "Wrong Sleeve"]
+
+
+def test_the_hold_window_applies_to_forbidden_classes_too():
+    """A violation must not clear the instant the model blinks."""
+    m = monitor(hold_ms=1000, forbidden=["wrong_sleeve"])
+    m.update([det("helmet"), det("vest"), det("wrong_sleeve")], t=10.0)
+    assert m.update([det("helmet"), det("vest")], t=10.5) is Status.VIOLATION
+    assert m.update([det("helmet"), det("vest")], t=11.5) is Status.OK
+
+
+def test_an_unrequired_forbidden_class_does_not_gate_the_light():
+    cfg = PPECfg(
+        classes=[ClassCfg("helmet"), ClassCfg("wrong_sleeve", required=False, expect="absent")],
+        hold_ms=1000,
+        confirm_frames=1,
+    )
+    m = ComplianceMonitor(cfg)
+    assert m.update([det("helmet"), det("wrong_sleeve")], t=1.0) is Status.OK
+    assert m.banned() == []
+
+
+def test_class_state_reports_compliance_not_mere_presence():
+    m = monitor(forbidden=["wrong_sleeve"])
+    m.update([det("helmet"), det("vest")], t=1.0)
+    states = {c.name: c for c in m.classes}
+    assert states["helmet"].present and states["helmet"].compliant
+    assert not states["wrong_sleeve"].present and states["wrong_sleeve"].compliant
+    assert states["wrong_sleeve"].forbidden and not states["helmet"].forbidden
