@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# PPE detection station — edit this file (or the UI's Settings panel) to
+# reconfigure the app. Nothing else needs to change.
+# ---------------------------------------------------------------------------
+
+model:
+  weights: yolo11s.pt   # any YOLOv11 .pt / .engine / .onnx
+  imgsz: 640            # inference size; must be a multiple of 32
+  device: auto          # auto | cpu | cuda:0 | mps
+  half: true            # fp16 — ignored on CPU
+  conf: 0.35            # global confidence floor
+  iou: 0.50             # NMS IoU
+  max_det: 100
+  warmup: true          # run a dummy batch at startup so frame 1 is not slow
+
+cameras:
+  - name: Line A
+    source: 0           # index, RTSP/HTTP URL, or video file path
+    width: 1280         # requested capture size (see docs/accuracy note)
+    height: 720
+    fps: 30
+    api: any            # any | v4l2 | dshow | ffmpeg
+  - name: Line B
+    source: 1
+    width: 1280
+    height: 720
+    fps: 30
+    api: any
+
+ppe:
+  # The UI lists these in order. `required: true` classes drive the tower light.
+  # `name` must match the model's class name; `label` is what humans see.
+  classes:
+    - {name: helmet,      label: Hard Hat,       required: true}
+    - {name: vest,        label: Hi-Vis Vest,    required: true}
+    - {name: gloves,      label: Gloves,         required: true}
+    - {name: goggles,     label: Safety Glasses, required: true}
+    - {name: mask,        label: Face Mask,      required: false}
+    - {name: boots,       label: Safety Boots,   required: false}
+  hold_ms: 1500         # a class stays lit this long after its last sighting
+  confirm_frames: 3     # consecutive agreeing evaluations before the light flips
+
+tower:
+  enabled: true
+  transport: tcp        # tcp | rtu
+  host: 192.168.1.50    # tcp
+  port: 502             # tcp
+  serial_port: /dev/ttyUSB0   # rtu
+  baudrate: 9600        # rtu
+  unit: 1               # modbus slave / device id
+  timeout: 0.5          # seconds
+  coils:                # coil address of each relay channel
+    green: 0
+    amber: 1
+    red: 2
+    buzzer: 3
+  buzzer_on_violation: false
+
+telemetry:
+  csv: logs/latency.csv # per-cycle end-to-end log; empty string disables
+  window: 300           # samples kept for the rolling p50/p95 readout
+  print_every: 0.0      # seconds between console summaries; 0 disables

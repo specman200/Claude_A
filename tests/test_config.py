@@ -1,0 +1,53 @@
+"""Config load, save and validation."""
+
+import pytest
+import yaml
+
+from ppe.config import ClassCfg, Config
+
+
+def test_loads_the_shipped_config():
+    cfg = Config.load("config.yaml")
+    cfg.validate()
+    assert len(cfg.cameras) == 2
+    assert [c.name for c in cfg.ppe.required] == ["helmet", "vest", "gloves", "goggles"]
+    assert cfg.tower.coils["red"] == 2
+
+
+def test_labels_default_to_a_readable_name():
+    assert ClassCfg("safety_boots").label == "Safety Boots"
+
+
+def test_unknown_keys_are_ignored(tmp_path):
+    path = tmp_path / "c.yaml"
+    path.write_text(yaml.safe_dump({"model": {"imgsz": 320, "future_option": 1}}))
+    assert Config.load(path).model.imgsz == 320
+
+
+def test_save_round_trips(tmp_path):
+    cfg = Config.load("config.yaml")
+    cfg.ppe.classes.append(ClassCfg("apron", required=False, conf=0.6))
+    out = cfg.save(tmp_path / "out.yaml")
+
+    again = Config.load(out)
+    assert [c.name for c in again.ppe.classes] == [c.name for c in cfg.ppe.classes]
+    assert again.ppe.classes[-1].conf == 0.6
+    assert again.ppe.classes[-1].required is False
+    assert again.tower.coils == cfg.tower.coils
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda c: c.cameras.clear(), "camera"),
+        (lambda c: setattr(c.model, "imgsz", 641), "multiple of 32"),
+        (lambda c: c.ppe.classes.clear(), "empty"),
+        (lambda c: c.ppe.classes.append(ClassCfg("helmet")), "duplicate"),
+        (lambda c: c.tower.coils.update(strobe=9), "unknown tower coils"),
+    ],
+)
+def test_validate_rejects_broken_configs(mutate, message):
+    cfg = Config.load("config.yaml")
+    mutate(cfg)
+    with pytest.raises(ValueError, match=message):
+        cfg.validate()

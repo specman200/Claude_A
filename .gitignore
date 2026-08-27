@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Model weights — fetched on first run, not source
+*.pt
+*.onnx
+*.engine
+
+# Runtime output
+logs/
+*.prof

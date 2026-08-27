@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400" font-family="ui-sans-serif,Segoe UI,Helvetica,Arial,sans-serif">
+  <style>
+    .box   { fill:#161b22; stroke:#3d4753; stroke-width:1.5; rx:8 }
+    .lane  { fill:none; stroke:#2f3742; stroke-width:1.2; stroke-dasharray:5 4; rx:10 }
+    .t     { fill:#e5e7eb; font-size:13px }
+    .s     { fill:#9aa4b2; font-size:11px }
+    .lbl   { fill:#7d8797; font-size:10.5px; letter-spacing:1.1px }
+    .flow  { stroke:#5b6675; stroke-width:1.6; fill:none; marker-end:url(#a) }
+    .hot   { stroke:#38bdf8; stroke-width:2; fill:none; marker-end:url(#b) }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#38bdf8"/>
+    </marker>
+  </defs>
+  <rect width="900" height="400" fill="#0f1216"/>
+
+  <!-- capture threads -->
+  <rect class="lane" x="16" y="44" width="196" height="150"/>
+  <text class="lbl" x="28" y="64">CAPTURE THREADS</text>
+  <rect class="box" x="32" y="76" width="164" height="46"/>
+  <text class="t" x="46" y="95">Camera A</text>
+  <text class="s" x="46" y="112">latest frame wins</text>
+  <rect class="box" x="32" y="132" width="164" height="46"/>
+  <text class="t" x="46" y="151">Camera B</text>
+  <text class="s" x="46" y="168">stale frames dropped</text>
+
+  <!-- pipeline thread -->
+  <rect class="lane" x="248" y="44" width="300" height="222"/>
+  <text class="lbl" x="260" y="64">PIPELINE THREAD</text>
+  <rect class="box" x="264" y="76" width="268" height="42"/>
+  <text class="t" x="278" y="94">letterbox → 640×640</text>
+  <text class="s" x="278" y="110">aspect kept, padded not squashed</text>
+  <rect class="box" x="264" y="126" width="268" height="42"/>
+  <text class="t" x="278" y="144">YOLOv11s — one batched call</text>
+  <text class="s" x="278" y="160">both cameras, one GPU launch</text>
+  <rect class="box" x="264" y="176" width="268" height="42"/>
+  <text class="t" x="278" y="194">boxes → source pixels</text>
+  <text class="s" x="278" y="210">exact inverse of the letterbox</text>
+  <rect class="box" x="264" y="226" width="268" height="30"/>
+  <text class="t" x="278" y="246">compliance: hold + confirm</text>
+
+  <!-- outputs -->
+  <rect class="lane" x="584" y="44" width="300" height="222"/>
+  <text class="lbl" x="596" y="64">OUTPUTS</text>
+  <rect class="box" x="600" y="76" width="268" height="60"/>
+  <text class="t" x="614" y="96">Modbus tower light</text>
+  <text class="s" x="614" y="113">green = compliant · red = missing</text>
+  <text class="s" x="614" y="128">amber = no signal · changed coils only</text>
+  <rect class="box" x="600" y="146" width="268" height="110"/>
+  <text class="t" x="614" y="166">Qt UI</text>
+  <text class="s" x="614" y="184">video panes repaint at camera rate</text>
+  <text class="s" x="614" y="200">boxes share the pane's transform</text>
+  <text class="s" x="614" y="216">PPE checklist turns green on detect</text>
+  <text class="s" x="614" y="232">editable live · saves to config.yaml</text>
+  <text class="s" x="614" y="248">latency HUD, p50 / p95 per stage</text>
+
+  <!-- flows -->
+  <path class="flow" d="M196 99 H232 V140 H258"/>
+  <path class="flow" d="M196 155 H232 V148 H258"/>
+  <path class="flow" d="M398 118 V122"/>
+  <path class="flow" d="M398 168 V172"/>
+  <path class="flow" d="M398 218 V222"/>
+  <path class="flow" d="M532 241 H560 V106 H594"/>
+  <path class="flow" d="M560 241 V200 H594"/>
+  <path class="hot" d="M120 76 V30 H760 V70"/>
+  <text class="s" x="360" y="24" fill="#38bdf8">end-to-end latency: camera grab → relay write, timed every cycle</text>
+
+  <text class="s" x="32" y="300">Threads are decoupled by design: the detector never blocks the cameras, and the UI never waits on the detector.</text>
+  <text class="s" x="32" y="322">That is what keeps the feed smooth when inference is slower than the camera — boxes refresh at inference rate,</text>
+  <text class="s" x="32" y="344">pixels refresh at capture rate.</text>
+</svg>

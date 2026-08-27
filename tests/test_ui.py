@@ -1,0 +1,286 @@
+"""UI smoke tests — the window builds, paints, and reflects live state.
+
+Run headless via Qt's offscreen platform, so they work in CI.
+"""
+
+import os
+
+import numpy as np
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+pytest.importorskip("PySide6")
+
+from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from ppe.capture import Frame  # noqa: E402
+from ppe.config import ClassCfg, Config, ModelCfg, PPECfg  # noqa: E402
+from ppe.detector import Detection  # noqa: E402
+from ppe.tower import ClassState, Status  # noqa: E402
+from ppe.ui import (  # noqa: E402
+    ABSENT,
+    IDLE,
+    PRESENT,
+    UNAVAILABLE,
+    PPEPanel,
+    StatusBanner,
+    VideoPane,
+)
+
+from .conftest import StubDetector  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def app():
+    return QApplication.instance() or QApplication([])
+
+
+def paint(widget, w=800, h=600):
+    """Render a widget offscreen; raises if paintEvent throws."""
+    widget.resize(w, h)
+    image = QImage(w, h, QImage.Format_RGB32)
+    widget.render(image)
+    return image
+
+
+def frame(w=1280, h=720, seq=1):
+    return Frame(0, seq, np.full((h, w, 3), 90, np.uint8), 0.0)
+
+
+def test_pane_paints_before_any_video_arrives(app):
+    paint(VideoPane("Line A"))
+
+
+def test_pane_paints_frames_and_boxes(app):
+    pane = VideoPane("Line A")
+    pane.show_frame(frame(), 30.0, True)
+    pane.show_detections(
+        [Detection("helmet", 0.91, (100.0, 50.0, 300.0, 260.0))], {"helmet": PRESENT}
+    )
+    paint(pane)
+    assert pane.seq == 1
+
+
+@pytest.mark.parametrize("size", [(1920, 1080), (640, 480), (480, 640)])
+@pytest.mark.parametrize("widget", [(800, 600), (300, 700), (1000, 200)])
+def test_boxes_track_the_image_through_every_aspect_combination(app, size, widget):
+    """A box on the image's centre must land on the widget's drawn centre."""
+    from ppe.letterbox import fit
+
+    pane = VideoPane("cam")
+    pane.show_frame(frame(*size), 30.0, True)
+    pane.resize(*widget)
+
+    scale, ox, oy = fit(size[0], size[1], *widget)
+    # The drawn image must sit inside the widget, centred, aspect intact.
+    assert ox >= -1e-6 and oy >= -1e-6
+    assert size[0] * scale <= widget[0] + 1e-6
+    assert size[1] * scale <= widget[1] + 1e-6
+    assert ox == pytest.approx((widget[0] - size[0] * scale) / 2)
+    assert oy == pytest.approx((widget[1] - size[1] * scale) / 2)
+
+    cx = ox + (size[0] / 2) * scale
+    assert cx == pytest.approx(widget[0] / 2)
+    paint(pane, *widget)
+
+
+def config():
+    return Config(
+        model=ModelCfg(conf=0.3),
+        ppe=PPECfg(
+            classes=[ClassCfg("helmet"), ClassCfg("vest"), ClassCfg("mask", required=False)]
+        ),
+    )
+
+
+def dot_color(row):
+    return row.dot.styleSheet()
+
+
+def test_panel_lists_every_configured_class(app):
+    panel = PPEPanel(config(), ["helmet", "vest", "mask", "gloves"])
+    assert list(panel.rows) == ["helmet", "vest", "mask"]
+    assert panel.rows["helmet"].required.isChecked()
+    assert not panel.rows["mask"].required.isChecked()
+
+
+def test_row_colour_follows_detection(app):
+    panel = PPEPanel(config(), ["helmet", "vest", "mask"])
+    panel.apply(
+        [
+            ClassState("helmet", "Hard Hat", True, present=True, conf=0.87),
+            ClassState("vest", "Vest", True, present=False),
+            ClassState("mask", "Mask", False, present=False),
+        ]
+    )
+    assert PRESENT in dot_color(panel.rows["helmet"])   # detected -> green
+    assert ABSENT in dot_color(panel.rows["vest"])      # required, missing -> red
+    assert IDLE in dot_color(panel.rows["mask"])        # optional, missing -> grey
+    assert panel.rows["helmet"].score.text() == "0.87"
+
+
+def test_a_class_the_model_lacks_is_flagged_amber(app):
+    panel = PPEPanel(config(), ["helmet"])
+    panel.apply([ClassState("vest", "Vest", True, available=False)])
+    assert UNAVAILABLE in dot_color(panel.rows["vest"])
+    assert panel.rows["vest"].score.text() == "n/a"
+
+
+def test_editing_a_row_updates_the_config_and_signals(app):
+    cfg = config()
+    panel = PPEPanel(cfg, ["helmet", "vest", "mask"])
+    edits = []
+    panel.edited.connect(lambda: edits.append(1))
+
+    panel.rows["mask"].required.setChecked(True)
+    panel.rows["helmet"].conf.setValue(0.55)
+    assert cfg.ppe.classes[2].required is True
+    assert cfg.ppe.classes[0].conf == 0.55
+    assert len(edits) == 2
+
+
+def test_adding_and_removing_classes_rewrites_the_list(app):
+    cfg = config()
+    panel = PPEPanel(cfg, ["helmet", "vest", "mask", "gloves"])
+    panel.picker.setCurrentText("gloves")
+    panel._add_from_picker()
+    assert [c.name for c in cfg.ppe.classes][-1] == "gloves"
+    assert "gloves" in panel.rows
+
+    panel._remove("helmet")
+    assert "helmet" not in panel.rows
+    assert [c.name for c in cfg.ppe.classes] == ["vest", "mask", "gloves"]
+
+
+def test_duplicate_and_blank_additions_are_ignored(app):
+    cfg = config()
+    panel = PPEPanel(cfg, ["helmet"])
+    for text in ("helmet", "", "   "):
+        panel.picker.setCurrentText(text)
+        panel._add_from_picker()
+    assert len(cfg.ppe.classes) == 3
+
+
+def test_save_writes_the_edited_config(app, tmp_path):
+    cfg = config()
+    cfg.path = tmp_path / "config.yaml"
+    panel = PPEPanel(cfg, ["helmet", "vest", "mask"])
+    panel.rows["mask"].required.setChecked(True)
+    panel._save()
+
+    reloaded = Config.load(cfg.path)
+    assert [c.name for c in reloaded.ppe.required] == ["helmet", "vest", "mask"]
+
+
+def test_each_class_keeps_a_distinct_box_colour(app):
+    panel = PPEPanel(config(), ["helmet", "vest", "mask"])
+    colors = panel.colors()
+    assert set(colors) == {"helmet", "vest", "mask"}
+    assert len(set(colors.values())) == 3
+
+
+@pytest.mark.parametrize("status", list(Status))
+def test_banner_renders_every_status(app, status):
+    banner = StatusBanner()
+    banner.apply(status, ["Vest"], tower_ok=True)
+    assert banner.text()
+    paint(banner, 360, 64)
+
+
+def test_banner_names_what_is_missing_and_flags_a_dead_bus(app):
+    banner = StatusBanner()
+    banner.apply(Status.VIOLATION, ["Vest", "Gloves"], tower_ok=False)
+    assert "Vest, Gloves" in banner.text()
+    assert "tower offline" in banner.text()
+
+
+def test_degraded_banner_distinguishes_no_video_from_an_unusable_model(app):
+    """Both faults show amber; the operator still needs to know which it is."""
+    banner = StatusBanner()
+
+    banner.apply(Status.DEGRADED, [], tower_ok=True)
+    assert "NO VIDEO SIGNAL" in banner.text()
+
+    banner.apply(Status.DEGRADED, [], tower_ok=True, unavailable=["Hard Hat"])
+    assert "Hard Hat" in banner.text()
+    assert "NO VIDEO" not in banner.text()
+
+
+# -- whole window ----------------------------------------------------------
+
+
+@pytest.fixture
+def station(clip, tmp_path, monkeypatch, app):
+    """A live window over synthetic cameras and a stubbed model."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TelemetryCfg, TowerCfg
+    from ppe.ui import MainWindow
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.path = tmp_path / "config.yaml"
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240), CameraCfg("Line B", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cfg.telemetry = TelemetryCfg(csv=str(tmp_path / "latency.csv"))
+
+    cameras = CameraSet(cfg.cameras).start()
+    assert cameras.wait_ready(timeout=10.0)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    window = MainWindow(cfg, cameras, pipe)
+    pipe.start()
+    try:
+        yield window, pipe
+    finally:
+        window.close()
+
+
+def pump(app, until, timeout=10.0):
+    """Spin the Qt event loop until ``until()`` holds."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if until():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_window_shows_a_pane_per_camera(app, station):
+    window, _ = station
+    assert len(window.panes) == 2
+    assert [p.name for p in window.panes] == ["Line A", "Line B"]
+
+
+def test_live_frames_and_detections_reach_the_screen(app, station):
+    window, pipe = station
+    assert pump(app, lambda: all(p.seq > 0 for p in window.panes)), "no frames drawn"
+    assert pump(app, lambda: any(p._dets for p in window.panes)), "no boxes drawn"
+    assert pump(app, lambda: PRESENT in window.panel.rows["helmet"].dot.styleSheet())
+    assert "PPE MISSING" in window.banner.text()  # the stub never reports a vest
+    paint(window, 1200, 800)
+
+
+def test_the_hud_fills_in_from_real_measurements(app, station):
+    window, pipe = station
+    assert pump(app, lambda: pipe.metrics.stats("end_to_end")["n"] > 0)
+    window._draw_stats()
+    assert window.hud.cells["inference"][0].text() == "8.0"
+    assert float(window.hud.cells["end_to_end"][0].text()) >= 8.0
+    assert "inferences/s" in window.hud.rate.text()
+
+
+def test_render_time_is_measured_too(app, station):
+    window, pipe = station
+    assert pump(app, lambda: pipe.metrics.stats("render")["n"] > 0), "render not profiled"
+
+
+def test_editing_the_checklist_takes_effect_live(app, station):
+    window, pipe = station
+    assert pump(app, lambda: window.banner.text().startswith("PPE MISSING"))
+    window.panel._remove("vest")  # the user drops the vest requirement
+    assert pump(app, lambda: "ALL PPE PRESENT" in window.banner.text())

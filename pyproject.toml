@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "ARG"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest fixtures are requested by name, not used in the body; Qt slots and
+# stand-in doubles must match signatures they do not read.
+"tests/*" = ["ARG001", "ARG002", "ARG005", "B905"]
