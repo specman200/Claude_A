@@ -17,6 +17,7 @@ import time
 from ppe.capture import CameraSet
 from ppe.config import Config
 from ppe.latency import Profiler
+from ppe.runtime import configure
 
 log = logging.getLogger("ppe")
 
@@ -66,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = Config.load(args.config)
     cfg.validate()
+
+    # Before torch is imported: the maths libraries read their thread counts
+    # from the environment as they initialise.
+    configure(cfg.model.threads)
 
     profiler = Profiler(args.profile_out) if args.profile else None
     if profiler and not args.headless:

@@ -11,7 +11,9 @@ def test_loads_the_shipped_config():
     cfg.validate()
     assert len(cfg.cameras) == 2
     assert cfg.tower.coils["red"] == 2
-    assert cfg.model.weights.endswith(".pt")
+    from pathlib import Path
+
+    assert Path(cfg.model.weights).exists(), "config points at weights that are not there"
 
 
 def test_the_shipped_classes_match_the_fine_tuned_model():

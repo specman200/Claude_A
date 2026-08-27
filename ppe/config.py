@@ -25,6 +25,19 @@ class ModelCfg:
     iou: float = 0.50
     max_det: int = 100
     warmup: bool = True
+    threads: int = 0            # inference threads; 0 = every core
+    batch: bool | str = "auto"  # "auto" | true | false — batch both cameras?
+
+    def batches(self, device: str) -> bool:
+        """Should both cameras go through one call?
+
+        Only on a GPU. On a CPU a batch of two costs about twice a batch of
+        one *and* doubles how long each frame waits for its own result, and
+        ONNX/OpenVINO exports are fixed at batch 1 anyway.
+        """
+        if isinstance(self.batch, bool):
+            return self.batch
+        return device.startswith("cuda")
 
 
 @dataclass
@@ -140,6 +153,12 @@ class Config:
         if self.model.imgsz % 32:
             raise ValueError(
                 f"config: model.imgsz must be a multiple of 32, got {self.model.imgsz}"
+            )
+        if self.model.threads < 0:
+            raise ValueError(f"config: model.threads must be >= 0, got {self.model.threads}")
+        if not isinstance(self.model.batch, bool) and self.model.batch != "auto":
+            raise ValueError(
+                f"config: model.batch must be true, false or 'auto', got {self.model.batch!r}"
             )
         if not self.ppe.classes:
             raise ValueError("config: ppe.classes is empty — nothing to detect")

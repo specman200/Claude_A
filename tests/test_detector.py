@@ -172,7 +172,7 @@ def test_the_shipped_config_and_the_shipped_weights_agree():
     from ppe.detector import Detector
 
     cfg = Config.load("config.yaml")
-    if not Path(cfg.model.weights).is_file():
+    if not Path(cfg.model.weights).exists():
         pytest.skip(f"{cfg.model.weights} not present")
 
     detector = Detector(ModelCfg(weights=cfg.model.weights, warmup=False), cfg.ppe)
@@ -189,7 +189,7 @@ def test_the_shipped_model_returns_boxes_in_source_pixels(scene):
     from ppe.detector import Detector
 
     cfg = Config.load("config.yaml")
-    if not Path(cfg.model.weights).is_file():
+    if not Path(cfg.model.weights).exists():
         pytest.skip(f"{cfg.model.weights} not present")
 
     detector = Detector(ModelCfg(weights=cfg.model.weights, conf=0.25, warmup=False), cfg.ppe)

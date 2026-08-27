@@ -4,14 +4,19 @@
 # ---------------------------------------------------------------------------
 
 model:
-  weights: models/ppe-yolo11s.pt   # fine-tuned yolo11s; see README for the classes
-  imgsz: 640            # matches the size the model was trained at
+  # OpenVINO IR — about 5x faster than the .pt on an Intel CPU for the same
+  # detections. Regenerate for a different imgsz with `python -m ppe.export`,
+  # or point this at models/ppe-yolo11s.pt to run PyTorch directly.
+  weights: models/ppe-yolo11s_openvino_model/
+  imgsz: 640            # must match what the model was exported at
   device: auto          # auto | cpu | cuda:0 | mps
-  half: true            # fp16 — ignored on CPU
+  half: true            # fp16 — CUDA only, ignored elsewhere
   conf: 0.35            # global confidence floor
   iou: 0.50             # NMS IoU
   max_det: 100
   warmup: true          # run a dummy batch at startup so frame 1 is not slow
+  threads: 0            # inference threads; 0 = every core this process may use
+  batch: auto           # auto | true | false — batch both cameras in one call?
 
 cameras:
   - name: Line A

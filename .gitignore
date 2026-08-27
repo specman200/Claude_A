@@ -11,6 +11,7 @@ venv/
 *.onnx
 *.engine
 !models/ppe-yolo11s.pt
+!models/ppe-yolo11s_openvino_model/
 
 # Runtime output
 logs/

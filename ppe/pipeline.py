@@ -64,6 +64,7 @@ class Pipeline(threading.Thread):
         self._swap = threading.Lock()
         self._focus: list[Focus] = [Focus() for _ in range(len(cameras))]
         self._seqs: list[int] = [-1] * len(cameras)
+        self._turn = 0  # round-robin cursor when cameras are served one at a time
         self.infer_fps = 0.0
         self.cycles = 0
         self.result: Result | None = None
@@ -90,7 +91,7 @@ class Pipeline(threading.Thread):
                 time.sleep(0.001)  # nothing new; yield rather than spin
                 continue
 
-            self._cycle(fresh)
+            self._cycle(self._take(fresh))
             self.cycles += 1
 
             t = now()
@@ -115,6 +116,21 @@ class Pipeline(threading.Thread):
         """
         self._focus = [Focus() for _ in self._focus]
         self._publish(self.monitor.degrade())
+
+    def _take(self, fresh: list[Frame]) -> list[Frame]:
+        """Which fresh frames to run this cycle.
+
+        Batching only pays on a GPU. On a CPU two frames in one call cost about
+        twice one frame *and* make each frame wait for the other's result, so
+        serving one camera per cycle halves end-to-end latency at the same
+        per-camera update rate. Cameras take turns so neither starves.
+        """
+        if self.detector.batches or len(fresh) == 1:
+            return fresh
+        n = len(self.cameras)
+        chosen = min(fresh, key=lambda f: (f.index - self._turn) % n)
+        self._turn = (chosen.index + 1) % n
+        return [chosen]
 
     def _all_stale(self, frames: list[Frame | None]) -> bool:
         t = now()

@@ -62,20 +62,24 @@ def test_missing_required_ppe_reaches_the_status_and_the_ui_rows(clip, tmp_path,
     assert rows["helmet"].conf == pytest.approx(0.9)
 
 
-def test_both_cameras_share_one_batched_inference(clip, tmp_path, monkeypatch):
+def test_batching_puts_both_cameras_in_one_call(clip, tmp_path, monkeypatch):
+    """When batching is on (a GPU), both cameras share a single call."""
     cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(StubDetector, "batches", True)
     pipe, _ = run(cfg, monkeypatch, cycles=8)
-    # Two live cameras should mostly be served by one call each cycle.
     assert max(pipe.detector.batch_sizes) == 2
 
 
 def test_frames_are_dropped_not_queued(clip, tmp_path, monkeypatch):
-    """The detector must never process a frame it has already seen."""
+    """The detector must never go back to a frame it has already passed."""
     cfg = make_config(clip, tmp_path)
     pipe, seen = run(cfg, monkeypatch, cycles=8)
     seqs = [r.seqs[0] for r in seen]
+    # Round-robin repeats a camera's last sequence on the cycles it is not
+    # served, so the invariant is non-decreasing, never re-processed.
     assert seqs == sorted(seqs)
-    assert len(set(seqs)) == len(seqs)
+    assert seqs[-1] > seqs[0], "camera 0 never advanced"
+    assert pipe.detector.calls <= sum(1 for _ in seen) + 1
 
 
 def test_every_cycle_is_logged_with_a_full_stage_breakdown(clip, tmp_path, monkeypatch):
@@ -258,3 +262,56 @@ def test_gating_can_be_turned_off(clip, tmp_path, monkeypatch):
     result = run_scene(cfg, scene, monkeypatch)
     assert result.status is Status.OK
     assert result.ignored == [[], []]
+
+
+# -- CPU scheduling --------------------------------------------------------
+# On a CPU a batch of two costs about twice a batch of one and makes each frame
+# wait for the other's result, and the ONNX/OpenVINO exports are batch-1 only.
+
+
+def frames(*indices):
+    import numpy as np
+
+    from ppe.capture import Frame
+
+    return [Frame(i, i + 1, np.zeros((4, 4, 3), np.uint8), 0.0) for i in indices]
+
+
+def bare_pipeline(cfg, monkeypatch):
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cameras = CameraSet(cfg.cameras)  # never started; we only exercise _take
+    return pipeline_mod.Pipeline(cfg, cameras)
+
+
+def test_one_camera_per_cycle_when_not_batching(clip, tmp_path, monkeypatch):
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    assert pipe.detector.batches is False
+    assert len(pipe._take(frames(0, 1))) == 1
+
+
+def test_cameras_take_turns_so_neither_starves(clip, tmp_path, monkeypatch):
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    served = [pipe._take(frames(0, 1))[0].index for _ in range(6)]
+    assert served == [0, 1, 0, 1, 0, 1]
+
+
+def test_a_lone_fresh_camera_is_served_immediately(clip, tmp_path, monkeypatch):
+    """The other camera having no new frame must not stall this one."""
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    for _ in range(3):
+        assert pipe._take(frames(1))[0].index == 1
+
+
+def test_batching_still_takes_every_fresh_frame(clip, tmp_path, monkeypatch):
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    pipe.detector.batches = True
+    assert len(pipe._take(frames(0, 1))) == 2
+
+
+def test_round_robin_still_updates_both_cameras(clip, tmp_path, monkeypatch):
+    """Halving the per-cycle cost must not cost a camera its detections."""
+    cfg = make_config(clip, tmp_path)
+    pipe, seen = run(cfg, monkeypatch, cycles=10)
+    assert max(r.seqs[0] for r in seen) > 0
+    assert max(r.seqs[1] for r in seen) > 0
+    assert max(pipe.detector.batch_sizes) == 1  # one image per call

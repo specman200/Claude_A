@@ -84,6 +84,9 @@ class Camera(threading.Thread):
     def run(self) -> None:
         backoff = 0.5
         last = now()
+        # A live camera paces itself inside read(); a file or a free-running
+        # source does not, and would burn a core decoding frames nobody wants.
+        period = 1.0 / self.cfg.fps if self.cfg.fps else 0.0
         while not self._halt.is_set():
             if self._cap is None:
                 if not self._open():
@@ -93,6 +96,11 @@ class Camera(threading.Thread):
                     backoff = min(backoff * 2, 5.0)
                     continue
                 backoff = 0.5
+
+            if period:
+                behind = period - (now() - last)
+                if behind > 0.001:
+                    self._halt.wait(behind)
 
             ok, image = self._cap.read()
             ts = now()

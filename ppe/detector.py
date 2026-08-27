@@ -1,4 +1,4 @@
-"""YOLOv11 inference for both cameras in a single batched call."""
+"""YOLOv11 inference, tuned for whichever device it lands on."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 from .config import ModelCfg, PPECfg
 from .latency import now
 from .letterbox import Letterbox, letterbox
+from .runtime import apply_torch, configure
 
 log = logging.getLogger(__name__)
 
@@ -65,13 +66,22 @@ class Detector:
         self.cfg = cfg
         self.device = resolve_device(cfg.device)
         self.half = cfg.half and self.device.startswith("cuda")
+        self.threads = configure(cfg.threads)
+        if not self.device.startswith("cuda"):
+            apply_torch(self.threads)
+        # ONNX and OpenVINO exports are fixed at batch 1, and on CPU a batch of
+        # two costs about twice a batch of one anyway.
+        self.batches = cfg.batches(self.device)
 
         self.model = YOLO(cfg.weights)
         self.names: dict[int, str] = dict(self.model.names)
         self._precision = _precision_kwargs(self.half)
 
         self.set_classes(ppe)
-        log.info("model %s on %s (fp16=%s)", cfg.weights, self.device, self.half)
+        log.info(
+            "model %s on %s (fp16=%s, threads=%d, batched=%s)",
+            cfg.weights, self.device, self.half, self.threads, self.batches,
+        )
         if cfg.warmup:
             self.warmup()
 
@@ -95,11 +105,11 @@ class Detector:
         self._conf = min([self.cfg.conf, *self._floors.values()]) if self._floors else self.cfg.conf
         return self.missing
 
-    def warmup(self, batch: int = 2) -> None:
+    def warmup(self, batch: int = 0) -> None:
         """Pay the first-call cost (kernel autotune, cuDNN plans) up front."""
         blank = np.zeros((self.cfg.imgsz, self.cfg.imgsz, 3), dtype=np.uint8)
         t = now()
-        self._predict([blank] * batch)
+        self._predict([blank] * (batch or (2 if self.batches else 1)))
         log.info("warmup %.0f ms", (now() - t) * 1000)
 
     def _predict(self, canvases: list[np.ndarray]):

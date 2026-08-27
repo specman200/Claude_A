@@ -29,6 +29,7 @@ class StubDetector:
 
     names = {0: "helmet", 1: "vest"}
     missing: list[str] = []
+    batches = False  # CPU default: one camera per cycle
 
     def __init__(self, *_args, **_kwargs):
         self.dets = [Detection("helmet", 0.9, (10.0, 10.0, 100.0, 100.0))]

@@ -1,7 +1,13 @@
 # Core inference
 ultralytics>=8.3.0          # YOLOv11 (yolo11s) models
-torch>=2.2.0
+torch>=2.2.0                # required by ultralytics even when running OpenVINO
 opencv-python>=4.9.0
+
+# CPU acceleration — ~5x over PyTorch on an Intel CPU (see README, "Running on
+# a CPU"). Needed to export and to run the shipped models/*_openvino_model/.
+openvino>=2025.0
+onnx>=1.16                  # only for `python -m ppe.export --format onnx`
+onnxruntime>=1.17
 
 # UI
 PySide6>=6.6.0

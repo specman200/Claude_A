@@ -1,0 +1,31 @@
+description: Ultralytics YOLO11s model trained on C:\Users\Animesh\Desktop\PPE Detection\Generated
+  scripts\v4 -roboflow only\ppe-yolo11-roboflow-only\datasets\roboflow\data.yaml
+author: Ultralytics
+date: '2026-08-27T12:28:05.608310+00:00'
+version: 8.4.130
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+head: Detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: Gloves
+  1: Mask
+  2: Safetyglasses
+  3: Wrong Sleeve
+  4: headnet
+  5: person
+  6: sleeves
+args:
+  data: null
+  batch: 1
+  fraction: 1.0
+  quantize: null
+  dynamic: false
+  nms: false
+channels: 3
+end2end: false

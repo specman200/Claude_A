@@ -51,6 +51,8 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `model.weights` | Any YOLOv11 `.pt`, `.onnx` or TensorRT `.engine` |
 | `model.imgsz` | Inference size, a multiple of 32. Lower = faster, worse on small objects |
 | `model.device` | `auto`, `cpu`, `cuda:0`, `mps` |
+| `model.threads` | Inference threads; 0 = every core this process may use |
+| `model.batch` | `auto` (batch on GPU, take turns on CPU), or force `true`/`false` |
 | `model.half` | fp16 on CUDA — usually ~1.5-2x faster, no measurable accuracy cost |
 | `cameras[].source` | Camera index, RTSP/HTTP URL, or a video file |
 | `cameras[].width/height` | Requested capture size (see below) |
@@ -175,6 +177,66 @@ Wiring is `tower.coils`: a Modbus coil address per lamp. Set
 `tcp` with `host`/`port` for an Ethernet one. `tower.enabled: false` runs the
 whole app with no bus at all, which is how the tests and a dev laptop run.
 
+## Running on a CPU
+
+The station is set up for CPU inference out of the box. Four things get it
+there, measured on a 4-core Xeon with two 30 fps cameras:
+
+| | end-to-end p50 | inference p50 | cycles in 25 s |
+| --- | --- | --- | --- |
+| PyTorch `.pt`, batched, untuned | 488 ms | 476 ms | 56 |
+| **shipped defaults** | **48 ms** | **28 ms** | **793** |
+
+**OpenVINO instead of PyTorch — 5.2x.** Same weights, same detections: on the
+reference image every box lands within 1.2 px and 0.012 confidence of the
+PyTorch output. `models/ppe-yolo11s_openvino_model/` is committed; regenerate it
+for a different `imgsz` with `python -m ppe.export`.
+
+**One camera per cycle, not two.** A batch of two costs about 2.3x a batch of
+one on a CPU *and* makes each frame wait for the other's result. Serving the
+cameras in turn halves end-to-end latency at the same per-camera update rate —
+and the ONNX/OpenVINO exports are fixed at batch 1 regardless. `model.batch:
+auto` batches on a GPU and takes turns on a CPU; set `true`/`false` to force it.
+
+**Threads that don't fight.** OpenCV defaults to a thread per core *inside each
+camera thread*, so on 4 cores the decoders and the model were fighting over the
+same hardware — inference measured 3x slower inside the app than on its own.
+Capture is now pinned to one thread each and the model gets the cores
+(`model.threads`, 0 = all). That alone closed the gap: in-app inference now
+matches its isolated benchmark exactly.
+
+**Capture paced to `cameras[].fps`.** A live camera paces itself inside
+`read()`, but a file or a free-running source will decode flat out and burn a
+core producing frames nobody consumes.
+
+### Measuring it yourself
+
+The right backend depends on your CPU, so measure rather than assume:
+
+```bash
+python -m ppe.bench                        # every model in models/
+python -m ppe.bench --image shift.jpg      # on a real frame, with detection counts
+python -m ppe.bench --imgsz 640 512 448    # what a smaller input buys
+python -m ppe.export --format onnx         # if OpenVINO is not an option
+```
+
+`bench` prints the detection count beside each timing, so a backend that is fast
+because it stopped finding things is obvious.
+
+### If it is still too slow
+
+In the order I would try them:
+
+1. **Lower `model.imgsz`.** 640 → 512 → 448 costs roughly 25% each step. Export
+   at the size you intend to run (`python -m ppe.export --imgsz 512`), then
+   check recall on your own footage — small or distant PPE goes first.
+2. **`python -m ppe.export --int8 --data your-data.yaml`.** Usually ~2x again,
+   and this CPU has AMX-INT8. It needs *your* dataset yaml: calibrating on
+   someone else's images is how quantisation quietly loses recall. Validate
+   before trusting it — I have not, since the calibration set is yours.
+3. **Raise `ppe.confirm_frames`** rather than chasing frame rate. The tower does
+   not need to react in 50 ms; it needs to be right.
+
 ## Latency and profiling
 
 Latency is measured **from the camera grab**, not from the start of inference,
@@ -232,18 +294,21 @@ ppe/
   tower.py           compliance state machine + Modbus tower light
   pipeline.py        the loop tying it together
   latency.py         per-stage timing, CSV, thread-aware profiler
+  runtime.py         CPU thread budget: capture vs inference
   subject.py         who is being checked, and whose gear counts
+  export.py          `python -m ppe.export` — OpenVINO / ONNX conversion
+  bench.py           `python -m ppe.bench` — measure backends on your machine
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 docs/layout.svg      architecture diagram
-tests/               195 tests
+tests/               213 tests
 ```
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 195 tests
+pytest                       # 213 tests
 ruff check ppe main.py tests
 ```
 
