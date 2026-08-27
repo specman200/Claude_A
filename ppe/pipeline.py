@@ -13,6 +13,7 @@ from .capture import CameraSet, Frame
 from .config import Config
 from .detector import Detection, Detector
 from .latency import Cycle, Metrics, Profiler, now
+from .subject import Focus, focus
 from .tower import ClassState, ComplianceMonitor, Status, make_tower
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ class Result:
     status: Status
     classes: list[ClassState]
     detections: list[list[Detection]] = field(default_factory=list)
+    ignored: list[list[Detection]] = field(default_factory=list)   # off-subject
+    subjects: list[Detection | None] = field(default_factory=list)  # who is checked
     seqs: list[int] = field(default_factory=list)
     latency_ms: float = 0.0
     infer_fps: float = 0.0
@@ -59,7 +62,7 @@ class Pipeline(threading.Thread):
 
         self._halt = threading.Event()
         self._swap = threading.Lock()
-        self._dets: list[list[Detection]] = [[] for _ in range(len(cameras))]
+        self._focus: list[Focus] = [Focus() for _ in range(len(cameras))]
         self._seqs: list[int] = [-1] * len(cameras)
         self.infer_fps = 0.0
         self.cycles = 0
@@ -110,7 +113,7 @@ class Pipeline(threading.Thread):
         Boxes from the last good frame would otherwise sit on a dead feed,
         which reads as a live detection.
         """
-        self._dets = [[] for _ in self._dets]
+        self._focus = [Focus() for _ in self._focus]
         self._publish(self.monitor.degrade())
 
     def _all_stale(self, frames: list[Frame | None]) -> bool:
@@ -130,10 +133,12 @@ class Pipeline(threading.Thread):
             cyc.merge(timings)
 
         for f, d in zip(fresh, dets, strict=True):
-            self._dets[f.index] = d
+            # Each camera picks its own subject: with two views of one cell,
+            # a single global "largest" would silently discard the other view.
+            self._focus[f.index] = focus(d, self.cfg.ppe.subject, self.cfg.ppe.containment)
             self._seqs[f.index] = f.seq
 
-        flat = [det for per_cam in self._dets for det in per_cam]
+        flat = [det for f in self._focus for det in f.accepted]
         with self._swap:
             status = self.monitor.update(flat)
         for cyc in cycles.values():
@@ -154,7 +159,9 @@ class Pipeline(threading.Thread):
         result = Result(
             status=status,
             classes=[copy.copy(c) for c in self.monitor.classes],
-            detections=[list(d) for d in self._dets],
+            detections=[list(f.accepted) for f in self._focus],
+            ignored=[list(f.rejected) for f in self._focus],
+            subjects=[f.subject for f in self._focus],
             seqs=list(self._seqs),
             latency_ms=latency_ms,
             infer_fps=self.infer_fps,

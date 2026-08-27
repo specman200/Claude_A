@@ -66,6 +66,8 @@ class PPECfg:
     classes: list[ClassCfg] = field(default_factory=list)
     hold_ms: int = 1500
     confirm_frames: int = 3
+    subject: str = ""          # class that gates the checks; empty = check always
+    containment: float = 0.5   # fraction of a PPE box that must lie on the subject
 
     @property
     def required(self) -> list[ClassCfg]:
@@ -144,6 +146,16 @@ class Config:
         names = [c.name for c in self.ppe.classes]
         if len(names) != len(set(names)):
             raise ValueError("config: duplicate class names in ppe.classes")
+        if self.ppe.subject and self.ppe.subject not in names:
+            # The detector filters NMS down to the configured classes, so a
+            # subject that is not listed would never be detected at all.
+            raise ValueError(
+                f"config: ppe.subject {self.ppe.subject!r} must also appear in ppe.classes"
+            )
+        if not 0.0 <= self.ppe.containment <= 1.0:
+            raise ValueError(
+                f"config: ppe.containment must be between 0 and 1, got {self.ppe.containment}"
+            )
         for klass in self.ppe.classes:
             if klass.expect not in EXPECTATIONS:
                 raise ValueError(

@@ -57,7 +57,7 @@ def test_pane_paints_frames_and_boxes(app):
     pane = VideoPane("Line A")
     pane.show_frame(frame(), 30.0, True)
     pane.show_detections(
-        [Detection("helmet", 0.91, (100.0, 50.0, 300.0, 260.0))], {"helmet": PRESENT}
+        [Detection("helmet", 0.91, (100.0, 50.0, 300.0, 260.0))], [], None, {"helmet": PRESENT}
     )
     paint(pane)
     assert pane.seq == 1
@@ -351,3 +351,53 @@ def test_the_banner_names_each_kind_of_fault_in_its_own_terms(app):
     banner.apply(Status.VIOLATION, ["Gloves"], tower_ok=True)
     assert "MISSING: Gloves" in banner.text()
     assert "NOT ALLOWED" not in banner.text()
+
+
+# -- subject gating in the UI ----------------------------------------------
+
+
+def test_the_pane_draws_ignored_detections_and_rings_the_subject(app):
+    """Off-subject boxes stay visible, faintly, so nothing looks undetected."""
+    pane = VideoPane("Line A")
+    pane.show_frame(frame(), 30.0, True)
+    subject = Detection("person", 0.9, (100.0, 100.0, 500.0, 900.0))
+    pane.show_detections(
+        [subject, Detection("Gloves", 0.8, (200.0, 400.0, 260.0, 460.0))],
+        [Detection("person", 0.5, (600.0, 300.0, 700.0, 500.0))],
+        subject,
+        {"person": PRESENT, "Gloves": PRESENT},
+    )
+    paint(pane, 800, 600)
+    assert pane._subject is subject and len(pane._ignored) == 1
+
+
+def test_the_pane_survives_having_no_subject(app):
+    pane = VideoPane("Line A")
+    pane.show_frame(frame(), 30.0, True)
+    pane.show_detections([], [Detection("Gloves", 0.8, (10.0, 10.0, 50.0, 50.0))], None, {})
+    paint(pane, 800, 600)
+
+
+@pytest.mark.parametrize("status", [Status.STANDBY, Status.DEGRADED])
+def test_rows_go_neutral_when_the_station_is_not_judging(app, status):
+    """Red rows under a STANDBY banner would read as violations nobody caused."""
+    panel = PPEPanel(config(), ["helmet", "vest", "mask"])
+    states = [
+        ClassState("helmet", "Hard Hat", True, "present", present=False),
+        ClassState("vest", "Vest", True, "present", present=False),
+    ]
+    panel.apply(states, judging=False)
+    for name in ("helmet", "vest"):
+        assert IDLE in panel.rows[name].dot.styleSheet()
+        assert panel.rows[name].score.text() == "--"
+
+    panel.apply(states, judging=True)
+    assert ABSENT in panel.rows["helmet"].dot.styleSheet()
+
+
+def test_the_standby_banner_says_why_it_is_idle(app):
+    banner = StatusBanner()
+    banner.apply(Status.STANDBY, [], tower_ok=True)
+    assert "STANDBY" in banner.text() and "NO PERSON" in banner.text()
+    assert "MISSING" not in banner.text()
+    paint(banner, 360, 64)

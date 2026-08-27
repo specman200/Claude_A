@@ -56,6 +56,8 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `cameras[].width/height` | Requested capture size (see below) |
 | `ppe.classes[].required` | Only required classes drive the tower light |
 | `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
+| `ppe.subject` | Class the checks are applied to; empty checks every detection |
+| `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
 | `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf` |
 | `ppe.hold_ms` | How long a class stays "present" after its last sighting |
 | `ppe.confirm_frames` | Agreeing cycles before the lamp changes |
@@ -95,7 +97,7 @@ kind of thing:
 | `Gloves` | required | worn PPE |
 | `sleeves` | required | the correct sleeve type |
 | `Wrong Sleeve` | required, `expect: absent` | **a violation class** — see below |
-| `person` | not required | context, not equipment |
+| `person` | `subject` | who the checks are applied to |
 
 **`Wrong Sleeve` is inverted.** Detecting it is the fault, not the pass. Listed
 as ordinary required PPE it would turn the tower **green** on exactly the
@@ -104,11 +106,31 @@ gates the light, but compliance means *not* seeing it. The UI marks such rows
 with `⊘`, and green keeps its usual meaning — "as the site rules want it" —
 so an inverted row reads green while absent and red the moment it appears.
 
-**`person` is informational.** It is listed so you can see it, but it does not
-gate the light. Note the consequence: an empty cell has no PPE in it, so the
-station reads `VIOLATION` with nobody there. If you want the checks to apply
-only when someone is present, that is a deliberate change — and a fail-open
-one, since a missed `person` detection would then suppress the alarm entirely.
+**`person` is the subject.** PPE only means anything relative to someone
+wearing it, so `ppe.subject: person` gates the whole check:
+
+- **Nobody in view → `STANDBY`.** An empty cell has no PPE in it; reporting
+  every item as missing would be a nuisance alarm, and nuisance alarms get
+  systems ignored.
+- **Someone in view → only their equipment counts.** A detection is credited
+  to the subject when at least `ppe.containment` of its box (0.5 by default)
+  lies inside the subject's. A helmet on a bystander at the back of the cell
+  does not dress the person at the door.
+- **The largest person is the subject** — the one nearest the camera. Each
+  camera picks its own: with two views of one cell, a single global "largest"
+  would silently discard whatever the other camera could see.
+
+Off-subject detections are drawn faint in the video panes rather than dropped,
+so it stays obvious that the model saw them and the rules set them aside, and
+the chosen person is ringed `SUBJECT`. During standby the checklist goes
+neutral grey — a screen full of red items under a `STANDBY` banner would read
+as violations nobody committed.
+
+**This is fail-open, by construction.** If the model misses the person, the
+station stands by instead of alarming. That is the trade you accept for
+silencing empty-cell alarms; `ppe.hold_ms` keeps the subject alive across
+dropped frames, and setting `ppe.subject:` empty restores checking everything,
+everywhere, all the time.
 
 ### Choosing a different model
 
@@ -121,12 +143,19 @@ class that can never be detected must never read as compliant.
 
 | Status | Lamp | Meaning |
 | --- | --- | --- |
-| `OK` | green | Every required class is present |
+| `OK` | green | The subject is wearing everything required |
 | `VIOLATION` | red | A required class is missing, or a forbidden one appeared |
+| `STANDBY` | dark | No subject in view — nothing to judge |
 | `DEGRADED` | amber | No usable video, or a required class the model lacks |
 
 Detections are unioned across cameras: an item seen by either camera counts as
-present, which is what you want when two cameras view one cell.
+present, which is what you want when two cameras view one cell. Each camera
+selects its own subject first, so the union is over what both views saw *on the
+person they are each looking at*.
+
+Standby leaves the tower dark. Amber stays reserved for `DEGRADED`, which is a
+fault and needs to look like one; an unlit tower cannot be mistaken for a
+compliance verdict.
 
 Two guards keep the relay from chattering: `hold_ms` bridges a class that
 flickers out for a frame or two, and `confirm_frames` requires several agreeing
@@ -196,17 +225,18 @@ ppe/
   tower.py           compliance state machine + Modbus tower light
   pipeline.py        the loop tying it together
   latency.py         per-stage timing, CSV, thread-aware profiler
+  subject.py         who is being checked, and whose gear counts
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 docs/layout.svg      architecture diagram
-tests/               150 tests
+tests/               193 tests
 ```
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 150 tests
+pytest                       # 193 tests
 ruff check ppe main.py tests
 ```
 

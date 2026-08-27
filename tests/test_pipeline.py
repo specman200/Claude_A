@@ -156,3 +156,105 @@ def test_going_offline_clears_the_overlays_and_does_not_spin(clip, tmp_path, mon
     assert not any(published[-1].detections), "stale boxes left on a dead feed"
     # Throttled to ~1/OFFLINE_PERIOD, not once per poll of the 1 ms loop.
     assert (after - before) <= 2 / pipeline_mod.OFFLINE_PERIOD
+
+
+# -- subject gating end to end ---------------------------------------------
+
+
+def gated_config(clip, tmp_path, dets):
+    """A pipeline whose stub reports a fixed scene, with person gating on."""
+    cfg = make_config(clip, tmp_path)
+    cfg.ppe.classes = [
+        ClassCfg("helmet"), ClassCfg("vest"), ClassCfg("person", required=False)
+    ]
+    cfg.ppe.subject = "person"
+    cfg.ppe.containment = 0.5
+    cfg.ppe.confirm_frames = 1
+
+    class Scene(StubDetector):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.dets = dets
+
+    return cfg, Scene
+
+
+def run_scene(cfg, scene_cls, monkeypatch, cycles=4):
+    monkeypatch.setattr(pipeline_mod, "Detector", scene_cls)
+    cameras = CameraSet(cfg.cameras).start()
+    assert cameras.wait_ready(timeout=10.0)
+    seen = []
+    pipe = pipeline_mod.Pipeline(cfg, cameras, on_result=seen.append)
+    pipe.start()
+    deadline = time.monotonic() + 15.0
+    while len(seen) < cycles and time.monotonic() < deadline:
+        time.sleep(0.01)
+    pipe.stop()
+    cameras.stop()
+    assert len(seen) >= cycles
+    return seen[-1]
+
+
+def box(name, xyxy, conf=0.9):
+    from ppe.detector import Detection
+
+    return Detection(name, conf, xyxy)
+
+
+NEAR = box("person", (100.0, 100.0, 500.0, 900.0))
+FAR = box("person", (600.0, 300.0, 700.0, 500.0))
+
+
+def test_an_empty_cell_puts_the_station_on_standby(clip, tmp_path, monkeypatch):
+    cfg, scene = gated_config(clip, tmp_path, [box("helmet", (10.0, 10.0, 40.0, 40.0))])
+    result = run_scene(cfg, scene, monkeypatch)
+    assert result.status is Status.STANDBY
+    assert result.missing == []
+    assert all(s is None for s in result.subjects)
+    # The helmet is still reported, just not counted.
+    assert result.detections == [[], []]
+    assert all(any(d.name == "helmet" for d in ig) for ig in result.ignored)
+
+
+def test_ppe_on_the_subject_passes(clip, tmp_path, monkeypatch):
+    cfg, scene = gated_config(
+        clip, tmp_path,
+        [NEAR, box("helmet", (200.0, 150.0, 300.0, 250.0)),
+         box("vest", (150.0, 300.0, 450.0, 600.0))],
+    )
+    result = run_scene(cfg, scene, monkeypatch)
+    assert result.status is Status.OK
+    assert all(s is not None for s in result.subjects)
+
+
+def test_gear_on_a_bystander_does_not_dress_the_subject(clip, tmp_path, monkeypatch):
+    """The far person's vest must not satisfy the near person's requirement."""
+    cfg, scene = gated_config(
+        clip, tmp_path,
+        [NEAR, FAR,
+         box("helmet", (200.0, 150.0, 300.0, 250.0)),   # on the subject
+         box("vest", (610.0, 320.0, 690.0, 480.0))],    # on the bystander
+    )
+    result = run_scene(cfg, scene, monkeypatch)
+    assert result.status is Status.VIOLATION
+    assert result.missing == ["Vest"]
+
+
+def test_only_the_largest_person_is_taken_as_the_subject(clip, tmp_path, monkeypatch):
+    cfg, scene = gated_config(clip, tmp_path, [FAR, NEAR])
+    result = run_scene(cfg, scene, monkeypatch)
+    for subject in result.subjects:
+        assert subject is not None and subject.xyxy == NEAR.xyxy
+    assert all(any(d.xyxy == FAR.xyxy for d in ig) for ig in result.ignored)
+
+
+def test_gating_can_be_turned_off(clip, tmp_path, monkeypatch):
+    """With no subject class the station checks everything, as it used to."""
+    cfg, scene = gated_config(
+        clip, tmp_path,
+        [box("helmet", (10.0, 10.0, 40.0, 40.0)), box("vest", (50.0, 50.0, 90.0, 90.0))],
+    )
+    cfg.ppe.subject = ""
+    result = run_scene(cfg, scene, monkeypatch)
+    assert result.status is Status.OK
+    assert result.ignored == [[], []]

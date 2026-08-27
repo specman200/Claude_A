@@ -38,8 +38,13 @@ UNAVAILABLE = "#f59e0b"
 BANNER = {
     Status.OK: ("ALL PPE PRESENT", "#16a34a"),
     Status.VIOLATION: ("PPE MISSING", "#dc2626"),
+    Status.STANDBY: ("STANDBY \u2014 NO PERSON DETECTED", "#94a3b8"),
     Status.DEGRADED: ("NOT READY", "#d97706"),
 }
+
+# Statuses in which the station is actually judging PPE.
+JUDGING = (Status.OK, Status.VIOLATION)
+SUBJECT = "#f8fafc"
 
 STYLE = """
 QWidget       { background:#0f1216; color:#e5e7eb;
@@ -87,6 +92,8 @@ class VideoPane(QWidget):
         self._buf = None          # keeps the numpy buffer alive behind QImage
         self._image: QImage | None = None
         self._dets: list[Detection] = []
+        self._ignored: list[Detection] = []
+        self._subject: Detection | None = None
         self._colors: dict[str, str] = {}
         self.seq = -1
         self.fps = 0.0
@@ -100,8 +107,14 @@ class VideoPane(QWidget):
         self.seq, self.fps, self.online = frame.seq, fps, online
         self.update()
 
-    def show_detections(self, dets: list[Detection], colors: dict[str, str]) -> None:
-        self._dets, self._colors = dets, colors
+    def show_detections(
+        self,
+        dets: list[Detection],
+        ignored: list[Detection],
+        subject: Detection | None,
+        colors: dict[str, str],
+    ) -> None:
+        self._dets, self._ignored, self._subject, self._colors = dets, ignored, subject, colors
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802 — Qt naming
@@ -118,24 +131,54 @@ class VideoPane(QWidget):
 
         # Boxes go through the very same scale/offset as the pixels they mark.
         painter.setFont(QFont("Segoe UI", 9, QFont.DemiBold))
+        # Off-subject detections are drawn faint rather than dropped, so it is
+        # obvious the model saw them and the rules set them aside.
+        for det in self._ignored:
+            self._draw_box(painter, det, scale, ox, oy, dim=True)
         for det in self._dets:
-            x1, y1, x2, y2 = det.xyxy
-            rect = QRectF(ox + x1 * scale, oy + y1 * scale,
-                          (x2 - x1) * scale, (y2 - y1) * scale)
-            color = QColor(self._colors.get(det.name, "#38bdf8"))
-            painter.setPen(QPen(color, 2))
-            painter.drawRect(rect)
-
-            text = f"{det.name} {det.conf:.2f}"
-            metrics = painter.fontMetrics()
-            tw, th = metrics.horizontalAdvance(text) + 8, metrics.height() + 2
-            ty = rect.top() - th if rect.top() > th else rect.top()
-            painter.fillRect(QRectF(rect.left(), ty, tw, th), color)
-            painter.setPen(QColor("#0b0e11"))
-            painter.drawText(QRectF(rect.left() + 4, ty, tw, th), Qt.AlignVCenter, text)
+            self._draw_box(painter, det, scale, ox, oy)
+        if self._subject is not None:
+            self._draw_subject(painter, self._subject, scale, ox, oy)
 
         self._banner(painter, f"{self.name}   {src_w}x{src_h}   {self.fps:4.1f} fps"
                      + ("" if self.online else "   OFFLINE"))
+
+    def _rect(self, det: Detection, scale: float, ox: float, oy: float) -> QRectF:
+        x1, y1, x2, y2 = det.xyxy
+        return QRectF(ox + x1 * scale, oy + y1 * scale, (x2 - x1) * scale, (y2 - y1) * scale)
+
+    def _draw_box(
+        self, painter: QPainter, det: Detection, scale: float, ox: float, oy: float,
+        dim: bool = False,
+    ) -> None:
+        rect = self._rect(det, scale, ox, oy)
+        color = QColor(self._colors.get(det.name, "#38bdf8"))
+        if dim:
+            color.setAlpha(80)
+            painter.setPen(QPen(color, 1))
+            painter.drawRect(rect)
+            return
+
+        painter.setPen(QPen(color, 2))
+        painter.drawRect(rect)
+        text = f"{det.name} {det.conf:.2f}"
+        metrics = painter.fontMetrics()
+        tw, th = metrics.horizontalAdvance(text) + 8, metrics.height() + 2
+        ty = rect.top() - th if rect.top() > th else rect.top()
+        painter.fillRect(QRectF(rect.left(), ty, tw, th), color)
+        painter.setPen(QColor("#0b0e11"))
+        painter.drawText(QRectF(rect.left() + 4, ty, tw, th), Qt.AlignVCenter, text)
+
+    def _draw_subject(
+        self, painter: QPainter, det: Detection, scale: float, ox: float, oy: float
+    ) -> None:
+        """Ring the person the checks are being applied to."""
+        rect = self._rect(det, scale, ox, oy).adjusted(-3, -3, 3, 3)
+        pen = QPen(QColor(SUBJECT), 2, Qt.DashLine)
+        painter.setPen(pen)
+        painter.drawRect(rect)
+        painter.drawText(QRectF(rect.left() + 4, rect.bottom() - 18, 120, 16),
+                         Qt.AlignVCenter, "SUBJECT")
 
     def _banner(self, painter: QPainter, text: str) -> None:
         painter.setPen(QColor("#0b0e11"))
@@ -220,8 +263,15 @@ class ClassRow(QWidget):
         self.cfg.conf = round(value, 2)
         self.changed.emit()
 
-    def apply(self, state) -> None:
+    def apply(self, state, judging: bool = True) -> None:
         """Recolour from the live class state — the app's main visual feedback."""
+        if not judging:
+            # Standby or no signal: nothing is being assessed, so nothing is a
+            # fault. A checklist full of red here would read as violations.
+            self._paint_dot(IDLE)
+            self.label.setStyleSheet(f"color:{IDLE};")
+            self.score.setText("--")
+            return
         if not state.available:
             self._paint_dot(UNAVAILABLE)
             self.label.setStyleSheet(f"color:{UNAVAILABLE};")
@@ -301,11 +351,11 @@ class PPEPanel(QFrame):
             self.rows[klass.name] = row
             self._list.addWidget(row)
 
-    def apply(self, states) -> None:
+    def apply(self, states, judging: bool = True) -> None:
         for state in states:
             row = self.rows.get(state.name)
             if row is not None:
-                row.apply(state)
+                row.apply(state, judging)
 
     def _add_from_picker(self) -> None:
         name = self.picker.currentText().strip()
@@ -352,7 +402,9 @@ class StatusBanner(QLabel):
         banned: list[str] | None = None,
     ) -> None:
         text, color = BANNER[status]
-        if status is Status.VIOLATION:
+        if status is Status.STANDBY:
+            pass  # the standby text already says everything there is to say
+        elif status is Status.VIOLATION:
             parts = []
             if missing:
                 parts.append(f"PPE MISSING: {', '.join(missing)}")
@@ -490,9 +542,11 @@ class MainWindow(QMainWindow):
 
     def _on_result(self, result: Result) -> None:
         colors = self.panel.colors()
-        for pane, dets in zip(self.panes, result.detections, strict=True):
-            pane.show_detections(dets, colors)
-        self.panel.apply(result.classes)
+        for pane, dets, ignored, subject in zip(
+            self.panes, result.detections, result.ignored, result.subjects, strict=True
+        ):
+            pane.show_detections(dets, ignored, subject, colors)
+        self.panel.apply(result.classes, result.status in JUDGING)
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable, result.banned
         )

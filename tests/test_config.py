@@ -70,3 +70,27 @@ def test_validate_rejects_broken_configs(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+def test_the_shipped_config_gates_on_the_person_class():
+    cfg = Config.load("config.yaml")
+    assert cfg.ppe.subject == "person"
+    assert cfg.ppe.subject in {c.name for c in cfg.ppe.classes}, (
+        "the subject must be listed, or NMS would filter it out before we see it"
+    )
+    assert 0.0 <= cfg.ppe.containment <= 1.0
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda c: setattr(c.ppe, "subject", "nobody"), "must also appear in ppe.classes"),
+        (lambda c: setattr(c.ppe, "containment", 1.5), "between 0 and 1"),
+        (lambda c: setattr(c.ppe, "containment", -0.1), "between 0 and 1"),
+    ],
+)
+def test_validate_rejects_a_broken_subject_setup(mutate, message):
+    cfg = Config.load("config.yaml")
+    mutate(cfg)
+    with pytest.raises(ValueError, match=message):
+        cfg.validate()

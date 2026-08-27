@@ -97,10 +97,11 @@ def test_degrade_forces_the_amber_state():
     assert m.degrade() is Status.DEGRADED
 
 
-def test_every_status_maps_to_exactly_one_lamp():
+def test_every_status_maps_to_a_lamp_pattern():
     assert set(LAMPS) == set(Status)
-    for lamps in LAMPS.values():
-        assert len(lamps) == 1
+    for status, lamps in LAMPS.items():
+        # Standby is deliberately dark; every other status lights exactly one.
+        assert len(lamps) == (0 if status is Status.STANDBY else 1)
 
 
 # -- Modbus output ---------------------------------------------------------
@@ -248,3 +249,97 @@ def test_class_state_reports_compliance_not_mere_presence():
     assert states["helmet"].present and states["helmet"].compliant
     assert not states["wrong_sleeve"].present and states["wrong_sleeve"].compliant
     assert states["wrong_sleeve"].forbidden and not states["helmet"].forbidden
+
+
+# -- standby ---------------------------------------------------------------
+# PPE is only meaningful on a person. With a subject class configured, an empty
+# cell must read STANDBY, not "every item missing".
+
+
+def gated(hold_ms=1000, confirm=1, forbidden=()):
+    cfg = PPECfg(
+        classes=[ClassCfg("helmet"), ClassCfg("vest"), ClassCfg("person", required=False)]
+        + [ClassCfg(n, expect="absent") for n in forbidden],
+        hold_ms=hold_ms,
+        confirm_frames=confirm,
+        subject="person",
+    )
+    return ComplianceMonitor(cfg)
+
+
+def test_no_person_means_standby_not_a_pile_of_violations():
+    m = gated()
+    assert m.update([], t=1.0) is Status.STANDBY
+    assert m.missing() == []
+    assert m.banned() == []
+    assert not m.watching
+
+
+def test_a_person_with_full_ppe_passes():
+    m = gated()
+    assert m.update([det("person"), det("helmet"), det("vest")], t=1.0) is Status.OK
+    assert m.watching
+
+
+def test_a_person_missing_ppe_is_a_violation():
+    m = gated()
+    assert m.update([det("person"), det("helmet")], t=1.0) is Status.VIOLATION
+    assert m.missing() == ["Vest"]
+
+
+def test_the_person_leaving_returns_the_station_to_standby():
+    m = gated(hold_ms=0)
+    m.update([det("person"), det("helmet")], t=1.0)
+    assert m.status is Status.VIOLATION
+    assert m.update([], t=2.0) is Status.STANDBY
+
+
+def test_a_dropped_person_frame_does_not_flicker_into_standby():
+    """The subject rides the same hold window as the PPE it gates."""
+    m = gated(hold_ms=1000)
+    m.update([det("person"), det("helmet"), det("vest")], t=10.0)
+    assert m.update([], t=10.5) is Status.OK       # person still held
+    assert m.update([], t=11.5) is Status.STANDBY  # hold expired
+
+
+def test_a_forbidden_item_with_nobody_there_is_not_a_violation():
+    m = gated(forbidden=["wrong_sleeve"])
+    assert m.update([det("wrong_sleeve")], t=1.0) is Status.STANDBY
+    assert m.banned() == []
+
+
+def test_without_a_subject_class_the_station_never_stands_by():
+    m = monitor()  # no subject configured
+    assert m.update([], t=1.0) is Status.VIOLATION
+    assert m.watching
+
+
+def test_standby_is_debounced_like_any_other_transition():
+    m = gated(hold_ms=0, confirm=2)
+    for t in (1.0, 1.1):
+        m.update([det("person"), det("helmet"), det("vest")], t=t)
+    assert m.status is Status.OK
+    assert m.update([], t=2.0) is Status.OK        # one frame is not enough
+    assert m.update([], t=2.1) is Status.STANDBY
+
+
+def test_a_model_missing_a_required_class_still_beats_standby():
+    """An unusable model is a fault, and must not hide behind an empty cell."""
+    cfg = PPECfg(
+        classes=[ClassCfg("helmet"), ClassCfg("person", required=False)],
+        hold_ms=1000,
+        confirm_frames=1,
+        subject="person",
+    )
+    m = ComplianceMonitor(cfg, ["helmet"])
+    assert m.update([], t=1.0) is Status.DEGRADED
+
+
+def test_standby_shows_no_lamps():
+    """Amber stays reserved for faults; an idle cell leaves the tower dark."""
+    assert LAMPS[Status.STANDBY] == ()
+    tower, fake = tower_with_fake()
+    tower.apply(Status.OK)
+    fake.writes.clear()
+    tower.apply(Status.STANDBY)
+    assert dict(fake.writes) == {0: False}  # green off, nothing else lit

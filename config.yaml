@@ -40,6 +40,13 @@ ppe:
     - {name: sleeves,       label: Sleeves,        required: true}
     - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, expect: absent}
     - {name: person,        label: Person in Cell, required: false}
+  # PPE only means anything relative to a person. With `subject` set, the
+  # station checks the LARGEST detection of that class (the one nearest the
+  # camera, per camera) and only counts equipment found on them; with nobody
+  # in view it goes to STANDBY instead of reporting missing PPE.
+  # Leave `subject` empty to check every detection, wherever it is.
+  subject: person
+  containment: 0.5      # fraction of a PPE box that must lie on the subject
   hold_ms: 1500         # a class stays lit this long after its last sighting
   confirm_frames: 3     # consecutive agreeing evaluations before the light flips
 

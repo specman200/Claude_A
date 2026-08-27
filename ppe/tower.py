@@ -16,8 +16,9 @@ log = logging.getLogger(__name__)
 
 
 class Status(Enum):
-    OK = "ok"                # every required item present
-    VIOLATION = "violation"  # at least one required item missing
+    OK = "ok"                # the subject is wearing everything required
+    VIOLATION = "violation"  # a required item is missing, or a forbidden one appeared
+    STANDBY = "standby"      # nobody to check — nothing to judge
     DEGRADED = "degraded"    # can't judge: no camera, or classes the model lacks
 
 
@@ -55,12 +56,16 @@ class ComplianceMonitor:
     def __init__(self, cfg: PPECfg, unavailable: list[str] | None = None) -> None:
         self.hold = cfg.hold_ms / 1000.0
         self.confirm = max(1, cfg.confirm_frames)
+        self.subject_name = cfg.subject
         missing = set(unavailable or ())
         self.classes = [
             ClassState(c.name, c.label, c.required, c.expect, available=c.name not in missing)
             for c in cfg.classes
         ]
         self._by_name = {c.name: c for c in self.classes}
+        # The subject rides the same hold window as everything else, so one
+        # dropped frame does not drop the station into standby.
+        self._subject = self._by_name.get(cfg.subject) if cfg.subject else None
         self.status = Status.DEGRADED
         self._pending = Status.DEGRADED
         self._agree = 0
@@ -85,6 +90,9 @@ class ComplianceMonitor:
         required = [c for c in self.classes if c.required]
         if not required or any(not c.available for c in required):
             return Status.DEGRADED
+        if self._subject is not None and not self._subject.present:
+            # No one in the cell: there is no PPE to be missing.
+            return Status.STANDBY
         return Status.OK if all(c.compliant for c in required) else Status.VIOLATION
 
     def _debounce(self, candidate: Status) -> Status:
@@ -101,14 +109,23 @@ class ComplianceMonitor:
             self._agree = 0
         return self.status
 
+    @property
+    def watching(self) -> bool:
+        """Is there someone to check right now?"""
+        return self._subject is None or self._subject.present
+
     def missing(self) -> list[str]:
-        """Required items that should be worn but are not being seen."""
+        """Required items the subject should be wearing but is not."""
+        if not self.watching:
+            return []
         return [
             c.label for c in self.classes if c.required and not c.forbidden and not c.present
         ]
 
     def banned(self) -> list[str]:
         """Items that must not appear, but are being detected right now."""
+        if not self.watching:
+            return []
         return [c.label for c in self.classes if c.required and c.forbidden and c.present]
 
     def faults(self) -> list[str]:
@@ -132,6 +149,10 @@ class ComplianceMonitor:
 LAMPS: dict[Status, tuple[str, ...]] = {
     Status.OK: ("green",),
     Status.VIOLATION: ("red",),
+    # Standby is dark: nobody is there to read the lamp, and an unlit tower
+    # cannot be confused with a compliance verdict. Amber stays reserved for
+    # "the station cannot judge", which is a fault and needs to look like one.
+    Status.STANDBY: (),
     Status.DEGRADED: ("amber",),
 }
 
