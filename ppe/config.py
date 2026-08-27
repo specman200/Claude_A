@@ -77,6 +77,24 @@ class TowerCfg:
 
 
 @dataclass
+class BrandingCfg:
+    """Who built this station. Swap the logo by pointing `logo` at your file."""
+
+    name: str = ""
+    tagline: str = ""
+    logo: str = ""      # .svg, .png or .jpg; relative paths resolve from the config
+
+    def logo_path(self, base: Path | None = None) -> Path | None:
+        """Absolute path to the logo, or None if unset or missing on disk."""
+        if not self.logo:
+            return None
+        path = Path(self.logo)
+        if not path.is_absolute() and base is not None:
+            path = base / path
+        return path if path.is_file() else None
+
+
+@dataclass
 class TelemetryCfg:
     csv: str = "logs/latency.csv"
     window: int = 300
@@ -90,6 +108,7 @@ class Config:
     ppe: PPECfg = field(default_factory=PPECfg)
     tower: TowerCfg = field(default_factory=TowerCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
+    branding: BrandingCfg = field(default_factory=BrandingCfg)
     path: Path | None = None
 
     # -- io ----------------------------------------------------------------
@@ -106,6 +125,7 @@ class Config:
             ppe=ppe,
             tower=_build(TowerCfg, raw.get("tower") or {}),
             telemetry=_build(TelemetryCfg, raw.get("telemetry") or {}),
+            branding=_build(BrandingCfg, raw.get("branding") or {}),
             path=path,
         )
 
@@ -118,6 +138,11 @@ class Config:
         path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
         self.path = path
         return path
+
+    @property
+    def base_dir(self) -> Path:
+        """Directory relative paths in the config resolve against."""
+        return self.path.parent if self.path is not None else Path.cwd()
 
     # -- validation --------------------------------------------------------
     def validate(self) -> None:

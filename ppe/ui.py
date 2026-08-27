@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .capture import CameraSet, Frame
-from .config import ClassCfg, Config
+from .config import BrandingCfg, ClassCfg, Config
 from .detector import Detection
 from .latency import STAGES
 from .letterbox import fit
@@ -413,6 +415,82 @@ class LatencyHUD(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Branding
+# ---------------------------------------------------------------------------
+
+
+def load_logo(path: Path | None, size: int, ratio: float = 1.0) -> QPixmap | None:
+    """Render a logo file to a crisp ``size``-square pixmap, or None.
+
+    This file is meant to be swapped, so every failure — missing, unreadable,
+    an unsupported format — returns None and the UI simply omits the mark.
+    A logo must never be able to take the station down.
+    """
+    if path is None:
+        return None
+    px = max(1, int(size * ratio))
+    try:
+        if path.suffix.lower() in (".svg", ".svgz"):
+            from PySide6.QtSvg import QSvgRenderer
+
+            renderer = QSvgRenderer(str(path))
+            if not renderer.isValid():
+                return None
+            # Render at device resolution rather than scaling a small raster.
+            pixmap = QPixmap(px, px)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            renderer.render(painter, QRectF(0, 0, px, px))
+            painter.end()
+        else:
+            pixmap = QPixmap(str(path))
+            if pixmap.isNull():
+                return None
+            pixmap = pixmap.scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    except Exception:  # noqa: BLE001 — a bad logo is cosmetic, never fatal
+        return None
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
+
+
+class BrandStrip(QFrame):
+    """Logo, name and tagline. Hidden entirely when no name is configured."""
+
+    LOGO = 38
+
+    def __init__(self, cfg: BrandingCfg, base: Path, ratio: float = 1.0) -> None:
+        super().__init__()
+        self.setObjectName("card")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 10, 14, 10)
+        row.setSpacing(12)
+
+        pixmap = load_logo(cfg.logo_path(base), self.LOGO, ratio)
+        if pixmap is not None:
+            mark = QLabel()
+            mark.setPixmap(pixmap)
+            mark.setFixedSize(self.LOGO, self.LOGO)
+            mark.setScaledContents(True)
+            row.addWidget(mark)
+
+        text = QVBoxLayout()
+        text.setSpacing(1)
+        name = QLabel(cfg.name)
+        name.setStyleSheet("font-size:14px; font-weight:700;")
+        text.addWidget(name)
+        if cfg.tagline:
+            tagline = QLabel(cfg.tagline)
+            tagline.setObjectName("h")
+            tagline.setWordWrap(True)
+            text.addWidget(tagline)
+        row.addLayout(text, 1)
+
+        if not cfg.name:
+            self.hide()
+
+
+# ---------------------------------------------------------------------------
 # Window
 # ---------------------------------------------------------------------------
 
@@ -434,6 +512,13 @@ class MainWindow(QMainWindow):
         for pane in self.panes:
             video.addWidget(pane)
 
+        base = cfg.base_dir
+        ratio = self.devicePixelRatioF() or 1.0
+        icon = load_logo(cfg.branding.logo_path(base), 256, 1.0)
+        if icon is not None:
+            self.setWindowIcon(QIcon(icon))
+        self.brand = BrandStrip(cfg.branding, base, ratio)
+
         self.banner = StatusBanner()
         self.panel = PPEPanel(cfg, list(pipeline.detector.names.values()))
         self.panel.edited.connect(self._on_edit)
@@ -448,6 +533,7 @@ class MainWindow(QMainWindow):
         column.addWidget(self.panel)
         column.addWidget(self.hud)
         column.addStretch(1)
+        column.addWidget(self.brand)
 
         root = QWidget()
         layout = QHBoxLayout(root)

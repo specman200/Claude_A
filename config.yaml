@@ -56,6 +56,14 @@ tower:
     buzzer: 3
   buzzer_on_violation: false
 
+branding:
+  # Shown in the app's side panel and used as the window icon.
+  # Point `logo` at your own .svg/.png to replace the placeholder mark;
+  # a relative path resolves from this file. Leave `name` empty to hide it.
+  name: Your Name
+  tagline: Computer Vision & Industrial Automation
+  logo: assets/logo.svg
+
 telemetry:
   csv: logs/latency.csv # per-cycle end-to-end log; empty string disables
   window: 300           # samples kept for the rolling p50/p95 readout

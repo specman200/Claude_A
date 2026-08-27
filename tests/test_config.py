@@ -51,3 +51,65 @@ def test_validate_rejects_broken_configs(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+# -- branding --------------------------------------------------------------
+
+
+def test_branding_loads_from_the_shipped_config():
+    cfg = Config.load("config.yaml")
+    assert cfg.branding.name and cfg.branding.tagline
+    assert cfg.branding.logo_path(cfg.base_dir) is not None
+
+
+def test_a_relative_logo_resolves_from_the_config_file_not_the_cwd(tmp_path):
+    from ppe.config import BrandingCfg
+
+    (tmp_path / "brand").mkdir()
+    logo = tmp_path / "brand" / "mine.svg"
+    logo.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+
+    cfg = BrandingCfg(name="Me", logo="brand/mine.svg")
+    assert cfg.logo_path(tmp_path) == logo
+    assert cfg.logo_path(tmp_path / "elsewhere") is None
+
+
+def test_an_absolute_logo_path_is_used_as_given(tmp_path):
+    from ppe.config import BrandingCfg
+
+    logo = tmp_path / "mark.png"
+    logo.write_bytes(b"x")
+    assert BrandingCfg(logo=str(logo)).logo_path(tmp_path / "ignored") == logo
+
+
+@pytest.mark.parametrize("logo", ["", "does/not/exist.svg"])
+def test_an_unset_or_missing_logo_resolves_to_nothing(tmp_path, logo):
+    from ppe.config import BrandingCfg
+
+    assert BrandingCfg(logo=logo).logo_path(tmp_path) is None
+
+
+def test_a_directory_is_not_mistaken_for_a_logo(tmp_path):
+    from ppe.config import BrandingCfg
+
+    (tmp_path / "assets").mkdir()
+    assert BrandingCfg(logo="assets").logo_path(tmp_path) is None
+
+
+def test_branding_survives_a_save_round_trip(tmp_path):
+    cfg = Config.load("config.yaml")
+    cfg.branding.name = "A. Engineer"
+    cfg.branding.logo = "assets/mine.png"
+    out = cfg.save(tmp_path / "out.yaml")
+
+    again = Config.load(out)
+    assert again.branding.name == "A. Engineer"
+    assert again.branding.logo == "assets/mine.png"
+    assert again.branding.tagline == cfg.branding.tagline
+
+
+def test_a_config_without_a_branding_block_still_loads(tmp_path):
+    path = tmp_path / "c.yaml"
+    path.write_text(yaml.safe_dump({"model": {"imgsz": 320}}))
+    cfg = Config.load(path)
+    assert cfg.branding.name == "" and cfg.branding.logo_path(tmp_path) is None
