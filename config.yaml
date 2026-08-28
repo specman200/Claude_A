@@ -19,18 +19,25 @@ model:
   batch: auto           # auto | true | false — batch both cameras in one call?
 
 cameras:
+  # fourcc: MJPG asks the camera to compress its own output before it hits
+  # the wire. Leaving this at the driver's default usually means raw YUY2 —
+  # ~55 MB/s per camera at 1280x720@30, more than one USB 2.0 port carries,
+  # let alone two sharing a hub. MJPG cuts that to a few MB/s. Leave "" only
+  # if a specific camera does not support it (rare on any modern UVC webcam).
   - name: Line A
     source: 0           # index, RTSP/HTTP URL, or video file path
     width: 1280         # requested capture size (see docs/accuracy note)
     height: 720
     fps: 30
     api: any            # any | v4l2 (Linux) | dshow | msmf (Windows) | ffmpeg
+    fourcc: MJPG
   - name: Line B
     source: 1
     width: 1280
     height: 720
     fps: 30
     api: any
+    fourcc: MJPG
 
 ppe:
   # The UI lists these in order. `name` must match the model's class name.

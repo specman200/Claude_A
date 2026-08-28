@@ -48,6 +48,7 @@ class CameraCfg:
     height: int = 720
     fps: int = 30
     api: str = "any"
+    fourcc: str = "MJPG"  # "" leaves the driver's default (usually raw, and much bigger)
 
 
 # What a class's presence means for compliance.

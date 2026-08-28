@@ -71,6 +71,15 @@ class Camera(threading.Thread):
                 self.cfg.name, src, self.cfg.api,
             )
             return False
+        # FOURCC first: on DirectShow/MSMF the pixel format changes which
+        # resolutions and frame rates the driver will negotiate at all, so
+        # setting it after width/height can silently lock in the wrong mode.
+        # Without this most UVC webcams (including the Logitech C920) hand
+        # back raw YUY2 by default — 1280x720@30 raw is ~55 MB/s, more than
+        # USB 2.0 carries for ONE camera, let alone two on a shared hub.
+        # MJPG is the same sensor data, compressed in the camera itself.
+        if self.cfg.fourcc:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.cfg.fourcc))
         # A 1-frame driver buffer is the difference between live and lagging.
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if self.cfg.width:
@@ -81,12 +90,17 @@ class Camera(threading.Thread):
             cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
         self._cap = cap
         self.connected = True
+        got_fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+        got_tag = got_fourcc.to_bytes(4, "little").decode("ascii", "replace").strip()
         log.info(
-            "%s open: %dx%d @ %.0f fps",
+            "%s open: %dx%d @ %.0f fps (%s)%s",
             self.cfg.name,
             cap.get(cv2.CAP_PROP_FRAME_WIDTH),
             cap.get(cv2.CAP_PROP_FRAME_HEIGHT),
             cap.get(cv2.CAP_PROP_FPS),
+            got_tag or "?",
+            "" if not self.cfg.fourcc or got_tag == self.cfg.fourcc
+            else f"  <- asked for {self.cfg.fourcc}, driver ignored it",
         )
         return True
 

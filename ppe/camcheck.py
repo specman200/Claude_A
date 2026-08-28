@@ -88,6 +88,10 @@ def probe(cfg: CameraCfg, timeout: float, save: str | None, tag: str) -> bool:
         return False
     print(f"  opened via {cap.getBackendName()}")
 
+    # Same order the app uses: FOURCC before resolution, since on
+    # DirectShow/MSMF that decides which resolutions are even offered.
+    if cfg.fourcc:
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*cfg.fourcc))
     if cfg.width:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.width)
     if cfg.height:
@@ -98,9 +102,16 @@ def probe(cfg: CameraCfg, timeout: float, save: str | None, tag: str) -> bool:
     got_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     got_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
     got_fps = cap.get(cv2.CAP_PROP_FPS)
-    print(f"  reports {got_w:.0f}x{got_h:.0f} @ {got_fps:.0f} fps"
+    got_fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    got_tag = got_fourcc.to_bytes(4, "little").decode("ascii", "replace").strip() or "?"
+    print(f"  reports {got_w:.0f}x{got_h:.0f} @ {got_fps:.0f} fps, format {got_tag}"
          + ("" if not cfg.width else
             "  <- driver ignored the requested size" if got_w != cfg.width else ""))
+    if cfg.fourcc and got_tag != cfg.fourcc:
+        raw_bw = got_w * got_h * 2 * got_fps / 1e6
+        print(f"  WARNING: asked for {cfg.fourcc}, driver gave {got_tag} instead — "
+              f"if that is a raw format this is ~{raw_bw:.0f} MB/s over USB, "
+              "likely why two cameras will not both come up")
 
     deadline = time.monotonic() + timeout
     attempts = 0

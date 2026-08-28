@@ -63,10 +63,24 @@ app only ever logs "unavailable, retrying": that message survives on purpose,
 so the station keeps trying rather than crashing when a cable comes loose
 mid-shift, but it is not built to be a diagnostic.
 
+**Two USB webcams sharing one port's bandwidth is the single most common
+reason two cameras "get no signal" together while either works alone** — see
+the bandwidth note under `cameras[].fourcc` below before chasing anything
+else; it is now the shipped default specifically because of this.
+
 ### On Windows
 
 Ranked by how often each one is the actual cause:
 
+0. **Raw video format eating the USB budget — check this first for TWO
+   cameras that individually work but not together.** `cameras[].fourcc:
+   MJPG` (the shipped default) asks each camera to compress its own frames
+   before sending them; without it most UVC webcams — the Logitech C920
+   included — hand back raw YUY2, which is **~55 MB/s at 1280x720@30 for one
+   camera**, comfortably more than a single USB 2.0 port carries and roughly
+   3x over what two share on one hub. That reads as "no signal" or "opens but
+   never delivers a frame," not a visible error. `camcheck` (below) prints
+   the actual format each camera negotiated and warns if it is not MJPG.
 1. **The camera privacy setting, silently.** Settings → Privacy & security →
    Camera → **"Let desktop apps access your camera."** If this is off, a
    Python/OpenCV process is blocked while the built-in Windows Camera app
@@ -130,6 +144,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `cameras[].width/height` | Requested capture size (see below) |
 | `ppe.classes[].required` | Only required classes drive the tower light |
 | `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
+| `cameras[].fourcc` | Compression the camera is asked to use — `MJPG` (default) or `""` for the driver's raw default |
 | `ppe.classes[].count` | How many must be on the subject — 2 gloves, 2 sleeves (default 1) |
 | `ppe.subject` | Class the checks are applied to; empty checks every detection |
 | `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
@@ -392,7 +407,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               266 tests
+tests/               271 tests
 ```
 
 ## About
@@ -428,7 +443,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 266 tests
+pytest                       # 271 tests
 ruff check ppe main.py tests
 ```
 
