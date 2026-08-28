@@ -37,12 +37,14 @@ ppe:
   #   required: true   -> this class gates the tower light
   #   expect: present  -> the item must be worn (the default)
   #   expect: absent   -> detecting it IS the violation
+  #   count: N         -> N of them must be on the subject (default 1)
   classes:
     - {name: headnet,       label: Head Net,       required: true}
     - {name: Safetyglasses, label: Safety Glasses, required: true}
     - {name: Mask,          label: Face Mask,      required: true}
-    - {name: Gloves,        label: Gloves,         required: true}
-    - {name: sleeves,       label: Sleeves,        required: true}
+    # count: how many must be on the subject — two hands, two arms.
+    - {name: Gloves,        label: Gloves,         required: true, count: 2}
+    - {name: sleeves,       label: Sleeves,        required: true, count: 2}
     - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, expect: absent}
     - {name: person,        label: Person in Cell, required: false}
   # PPE only means anything relative to a person. With `subject` set, the

@@ -62,6 +62,7 @@ class ClassCfg:
     label: str = ""                # shown in the UI
     required: bool = True          # does this class gate the tower light?
     expect: str = EXPECT_PRESENT   # "present" to require it, "absent" to forbid it
+    count: int = 1                 # how many must be on the subject (2 gloves, 2 sleeves)
     conf: float | None = None      # per-class confidence override
 
     def __post_init__(self) -> None:
@@ -180,6 +181,17 @@ class Config:
                 raise ValueError(
                     f"config: {klass.name}.expect must be one of {list(EXPECTATIONS)}, "
                     f"got {klass.expect!r}"
+                )
+            if klass.count < 1:
+                raise ValueError(
+                    f"config: {klass.name}.count must be at least 1, got {klass.count}"
+                )
+            if klass.forbidden and klass.count != 1:
+                # "two of them are a violation but one is fine" is not a rule
+                # anyone means; a forbidden class is a fault the moment it appears.
+                raise ValueError(
+                    f"config: {klass.name} is expect:absent, so count must be 1, "
+                    f"got {klass.count}"
                 )
         missing = set(self.tower.coils) - {"green", "amber", "red", "buzzer"}
         if missing:

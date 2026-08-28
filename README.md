@@ -58,6 +58,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `cameras[].width/height` | Requested capture size (see below) |
 | `ppe.classes[].required` | Only required classes drive the tower light |
 | `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
+| `ppe.classes[].count` | How many must be on the subject — 2 gloves, 2 sleeves (default 1) |
 | `ppe.subject` | Class the checks are applied to; empty checks every detection |
 | `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
 | `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf`; also editable live in the UI |
@@ -96,8 +97,8 @@ kind of thing:
 | `headnet` | required | worn PPE |
 | `Safetyglasses` | required | worn PPE |
 | `Mask` | required | worn PPE |
-| `Gloves` | required | worn PPE |
-| `sleeves` | required | the correct sleeve type |
+| `Gloves` | required, `count: 2` | two hands |
+| `sleeves` | required, `count: 2` | two arms, correct sleeve type |
 | `Wrong Sleeve` | required, `expect: absent` | **a violation class** — see below |
 | `person` | `subject` | who the checks are applied to |
 
@@ -107,6 +108,20 @@ condition it exists to catch, so it is configured `expect: absent`: the class
 gates the light, but compliance means *not* seeing it. The UI marks such rows
 with `⊘`, and green keeps its usual meaning — "as the site rules want it" —
 so an inverted row reads green while absent and red the moment it appears.
+
+**Two gloves, not "gloves".** A worker has two hands and two arms, so
+`Gloves` and `sleeves` carry `count: 2`. A class is only compliant once that
+many are on the subject; one glove reads `VIOLATION` and the banner says
+`Gloves (1 of 2)` rather than a bare label. The checklist marks these rows
+`×2` and shows the tally — `1/2` — instead of a confidence score, because the
+tally is the fault.
+
+Counts are the **best single camera's view, never the sum.** Two cameras
+watching one worker both see the same two gloves; adding them up would report
+four and pass a one-gloved worker on a doubled count. So the front camera
+seeing both gloves gives 2, and a side view that can only see one does not veto
+it. The hold window applies to the count as well, so a glove the model loses
+for a frame does not read as a bare hand.
 
 **`person` is the subject.** PPE only means anything relative to someone
 wearing it, so `ppe.subject: person` gates the whole check:
@@ -301,14 +316,14 @@ ppe/
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 docs/layout.svg      architecture diagram
-tests/               213 tests
+tests/               230 tests
 ```
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 213 tests
+pytest                       # 230 tests
 ruff check ppe main.py tests
 ```
 

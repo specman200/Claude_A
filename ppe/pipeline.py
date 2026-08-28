@@ -154,9 +154,10 @@ class Pipeline(threading.Thread):
             self._focus[f.index] = focus(d, self.cfg.ppe.subject, self.cfg.ppe.containment)
             self._seqs[f.index] = f.seq
 
-        flat = [det for f in self._focus for det in f.accepted]
+        # Per camera, not flattened: counts are the best single view, since
+        # both cameras see the same two gloves on one worker.
         with self._swap:
-            status = self.monitor.update(flat)
+            status = self.monitor.update([f.accepted for f in self._focus])
         for cyc in cycles.values():
             cyc.stamp("logic")
 

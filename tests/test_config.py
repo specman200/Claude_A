@@ -96,3 +96,35 @@ def test_validate_rejects_a_broken_subject_setup(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+def test_the_shipped_config_requires_two_gloves_and_two_sleeves():
+    """A worker has two hands and two arms; one glove must not read as compliant."""
+    cfg = Config.load("config.yaml")
+    counts = {c.name: c.count for c in cfg.ppe.classes}
+    assert counts["Gloves"] == 2
+    assert counts["sleeves"] == 2
+    assert counts["headnet"] == 1
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda c: setattr(c.ppe.classes[0], "count", 0), "count must be at least 1"),
+        (lambda c: setattr(c.ppe.classes[0], "count", -2), "count must be at least 1"),
+    ],
+)
+def test_validate_rejects_impossible_counts(mutate, message):
+    cfg = Config.load("config.yaml")
+    mutate(cfg)
+    with pytest.raises(ValueError, match=message):
+        cfg.validate()
+
+
+def test_a_forbidden_class_cannot_carry_a_count():
+    """'two are a violation but one is fine' is not a rule anyone means."""
+    cfg = Config.load("config.yaml")
+    banned = next(c for c in cfg.ppe.classes if c.forbidden)
+    banned.count = 2
+    with pytest.raises(ValueError, match="count must be 1"):
+        cfg.validate()

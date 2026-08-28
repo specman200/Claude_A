@@ -30,10 +30,16 @@ class ClassState:
     label: str
     required: bool
     expect: str = "present"  # "absent" for a class whose presence is the fault
-    present: bool = False
+    need: int = 1            # how many the subject must be wearing
+    count: int = 0           # how many are on them right now
     conf: float = 0.0
     last_seen: float = 0.0
+    counted_at: float = 0.0  # when `count` was observed, for the hold window
     available: bool = True   # False when the model has no such class
+
+    @property
+    def present(self) -> bool:
+        return self.count > 0
 
     @property
     def forbidden(self) -> bool:
@@ -42,7 +48,14 @@ class ClassState:
     @property
     def compliant(self) -> bool:
         """Is this class currently in the state the site rules want?"""
-        return not self.present if self.forbidden else self.present
+        if self.forbidden:
+            return self.count == 0
+        return self.count >= self.need
+
+    @property
+    def shortfall(self) -> int:
+        """How many are still missing; 0 once the rule is satisfied."""
+        return 0 if self.forbidden else max(0, self.need - self.count)
 
 
 class ComplianceMonitor:
@@ -59,7 +72,10 @@ class ComplianceMonitor:
         self.subject_name = cfg.subject
         missing = set(unavailable or ())
         self.classes = [
-            ClassState(c.name, c.label, c.required, c.expect, available=c.name not in missing)
+            ClassState(
+                c.name, c.label, c.required, c.expect, c.count,
+                available=c.name not in missing,
+            )
             for c in cfg.classes
         ]
         self._by_name = {c.name: c for c in self.classes}
@@ -70,19 +86,34 @@ class ComplianceMonitor:
         self._pending = Status.DEGRADED
         self._agree = 0
 
-    def update(self, detections: list[Detection], t: float | None = None) -> Status:
-        """Fold one cycle's detections (all cameras) into the station status."""
+    def update(
+        self, per_camera: list[list[Detection]], t: float | None = None
+    ) -> Status:
+        """Fold one cycle's detections into the station status.
+
+        Counts are taken as the **best single camera's** view, never the sum:
+        two cameras looking at one worker both see the same two gloves, so
+        adding them up would report four and pass a one-gloved worker.
+        """
         t = now() if t is None else t
-        for det in detections:
-            state = self._by_name.get(det.name)
-            if state is None:
-                continue
-            # Keep the best confidence seen this cycle, across both cameras.
-            state.conf = det.conf if state.last_seen < t else max(state.conf, det.conf)
-            state.last_seen = t
 
         for state in self.classes:
-            state.present = state.last_seen > 0 and (t - state.last_seen) <= self.hold
+            seen = 0
+            best_conf = 0.0
+            for dets in per_camera:
+                found = [d for d in dets if d.name == state.name]
+                if len(found) > seen:
+                    seen = len(found)
+                best_conf = max(best_conf, *(d.conf for d in found)) if found else best_conf
+
+            # The hold window keeps the best recent count, so a glove the model
+            # loses for a frame does not read as a bare hand.
+            if seen >= state.count or (t - state.counted_at) > self.hold:
+                state.count = seen
+                state.counted_at = t
+            if seen:
+                state.last_seen = t
+                state.conf = best_conf
 
         return self._debounce(self._evaluate())
 
@@ -115,12 +146,16 @@ class ComplianceMonitor:
         return self._subject is None or self._subject.present
 
     def missing(self) -> list[str]:
-        """Required items the subject should be wearing but is not."""
+        """Required items the subject is short of, with the count when it matters."""
         if not self.watching:
             return []
-        return [
-            c.label for c in self.classes if c.required and not c.forbidden and not c.present
-        ]
+        out = []
+        for c in self.classes:
+            if not c.required or c.forbidden or not c.shortfall:
+                continue
+            # "Gloves (1 of 2)" tells an operator far more than "Gloves".
+            out.append(f"{c.label} ({c.count} of {c.need})" if c.need > 1 else c.label)
+        return out
 
     def banned(self) -> list[str]:
         """Items that must not appear, but are being detected right now."""

@@ -217,11 +217,15 @@ class ClassRow(QWidget):
         self.required.toggled.connect(self._on_required)
 
         # The circled slash marks a class whose presence is itself the fault,
-        # so an inverted row can never be mistaken for a normal one.
-        self.label = QLabel(("\u2298 " if cfg.forbidden else "") + cfg.label)
+        # so an inverted row can never be mistaken for a normal one; the ×N
+        # says how many the worker needs.
+        prefix = "\u2298 " if cfg.forbidden else ""
+        suffix = f"  \u00d7{cfg.count}" if cfg.count > 1 else ""
+        self.label = QLabel(prefix + cfg.label + suffix)
         self.label.setToolTip(
             f"model class: {cfg.name}\n"
             + ("must NOT appear — detecting it is a violation" if cfg.forbidden
+               else f"{cfg.count} must be on the worker" if cfg.count > 1
                else "must be worn")
         )
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -236,7 +240,7 @@ class ClassRow(QWidget):
         self.conf.valueChanged.connect(self._on_conf)
 
         self.score = QLabel("--")
-        self.score.setFixedWidth(34)
+        self.score.setFixedWidth(38)
         self.score.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         remove = QPushButton("\u00d7")  # ×
@@ -250,7 +254,7 @@ class ClassRow(QWidget):
             row.addWidget(widget)
 
         # Start in the "not seen yet" look rather than an inherited default.
-        self.apply(ClassState(cfg.name, cfg.label, cfg.required, cfg.expect))
+        self.apply(ClassState(cfg.name, cfg.label, cfg.required, cfg.expect, cfg.count))
 
     def _paint_dot(self, color: str) -> None:
         self.dot.setStyleSheet(f"background:{color}; border-radius:6px;")
@@ -278,7 +282,11 @@ class ClassRow(QWidget):
             self.label.setToolTip(f"'{self.cfg.name}' is not a class in the loaded model")
             self.score.setText("n/a")
             return
-        text = f"{state.conf:.2f}" if state.present else "--"
+        # A count rule needs the tally, not the confidence: "1/2" is the fault.
+        if state.need > 1:
+            text = f"{state.count}/{state.need}"
+        else:
+            text = f"{state.conf:.2f}" if state.present else "--"
         if not state.required:
             color = PRESENT if state.present else IDLE
         else:

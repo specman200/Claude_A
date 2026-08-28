@@ -110,9 +110,9 @@ def test_row_colour_follows_detection(app):
     panel = PPEPanel(config(), ["helmet", "vest", "mask"])
     panel.apply(
         [
-            ClassState("helmet", "Hard Hat", True, present=True, conf=0.87),
-            ClassState("vest", "Vest", True, present=False),
-            ClassState("mask", "Mask", False, present=False),
+            ClassState("helmet", "Hard Hat", True, count=1, conf=0.87),
+            ClassState("vest", "Vest", True, count=0),
+            ClassState("mask", "Mask", False, count=0),
         ]
     )
     assert PRESENT in dot_color(panel.rows["helmet"])   # detected -> green
@@ -318,11 +318,11 @@ def test_green_means_compliant_even_when_that_means_absent(app):
     panel = PPEPanel(forbidden_config(), ["sleeves", "Wrong Sleeve"])
     row = panel.rows["Wrong Sleeve"]
 
-    panel.apply([ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", present=False)])
+    panel.apply([ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", count=0)])
     assert PRESENT in row.dot.styleSheet()
 
     panel.apply(
-        [ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", present=True, conf=0.71)]
+        [ClassState("Wrong Sleeve", "Wrong Sleeve", True, "absent", count=1, conf=0.71)]
     )
     assert ABSENT in row.dot.styleSheet()
     assert row.score.text() == "0.71"
@@ -331,9 +331,9 @@ def test_green_means_compliant_even_when_that_means_absent(app):
 def test_a_normal_row_is_unaffected_by_the_inverted_rule(app):
     panel = PPEPanel(forbidden_config(), ["sleeves", "Wrong Sleeve"])
     row = panel.rows["sleeves"]
-    panel.apply([ClassState("sleeves", "Sleeves", True, "present", present=True, conf=0.9)])
+    panel.apply([ClassState("sleeves", "Sleeves", True, "present", count=1, conf=0.9)])
     assert PRESENT in row.dot.styleSheet()
-    panel.apply([ClassState("sleeves", "Sleeves", True, "present", present=False)])
+    panel.apply([ClassState("sleeves", "Sleeves", True, "present", count=0)])
     assert ABSENT in row.dot.styleSheet()
 
 
@@ -383,8 +383,8 @@ def test_rows_go_neutral_when_the_station_is_not_judging(app, status):
     """Red rows under a STANDBY banner would read as violations nobody caused."""
     panel = PPEPanel(config(), ["helmet", "vest", "mask"])
     states = [
-        ClassState("helmet", "Hard Hat", True, "present", present=False),
-        ClassState("vest", "Vest", True, "present", present=False),
+        ClassState("helmet", "Hard Hat", True, "present", count=0),
+        ClassState("vest", "Vest", True, "present", count=0),
     ]
     panel.apply(states, judging=False)
     for name in ("helmet", "vest"):
@@ -427,3 +427,29 @@ def test_each_class_carries_its_own_confidence(app, tmp_path):
 
     saved = {c.name: c.conf for c in Config.load(cfg.path).ppe.classes}
     assert saved == {"helmet": 0.70, "vest": None, "mask": 0.20}
+
+
+def test_a_count_rule_shows_the_tally_not_the_confidence(app):
+    """'1/2' is the fault; a confidence score would hide it."""
+    from ppe.config import ClassCfg, Config, ModelCfg, PPECfg
+
+    cfg = Config(
+        model=ModelCfg(conf=0.3),
+        ppe=PPECfg(classes=[ClassCfg("Gloves", "Gloves", count=2), ClassCfg("Mask", "Mask")]),
+    )
+    panel = PPEPanel(cfg, ["Gloves", "Mask"])
+    assert "×2" in panel.rows["Gloves"].label.text()
+    assert "×" not in panel.rows["Mask"].label.text()
+
+    panel.apply([
+        ClassState("Gloves", "Gloves", True, "present", need=2, count=1, conf=0.8),
+        ClassState("Mask", "Mask", True, "present", need=1, count=1, conf=0.8),
+    ])
+    assert panel.rows["Gloves"].score.text() == "1/2"
+    assert ABSENT in panel.rows["Gloves"].dot.styleSheet()   # short by one
+    assert panel.rows["Mask"].score.text() == "0.80"
+    assert PRESENT in panel.rows["Mask"].dot.styleSheet()
+
+    panel.apply([ClassState("Gloves", "Gloves", True, "present", need=2, count=2, conf=0.8)])
+    assert panel.rows["Gloves"].score.text() == "2/2"
+    assert PRESENT in panel.rows["Gloves"].dot.styleSheet()
