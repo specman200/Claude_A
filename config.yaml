@@ -45,15 +45,22 @@ ppe:
   #   expect: present  -> the item must be worn (the default)
   #   expect: absent   -> detecting it IS the violation
   #   count: N         -> N of them must be on the subject (default 1)
+  #   conf / hold_ms   -> per-class overrides of model.conf and ppe.hold_ms
+  #
+  # The conf and hold_ms values below come from a station running this same
+  # model on real hardware. Note the shape of them: `person` has a low floor
+  # (find the subject easily), worn PPE sits high (be strict about crediting
+  # equipment), and `Wrong Sleeve` is highest of all — a false positive there
+  # is a spurious red light, which is the thing that gets a station ignored.
   classes:
-    - {name: headnet,       label: Head Net,       required: true}
-    - {name: Safetyglasses, label: Safety Glasses, required: true}
-    - {name: Mask,          label: Face Mask,      required: true}
-    # count: how many must be on the subject — two hands, two arms.
-    - {name: Gloves,        label: Gloves,         required: true, count: 2}
-    - {name: sleeves,       label: Sleeves,        required: true, count: 2}
-    - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, expect: absent}
-    - {name: person,        label: Person in Cell, required: false}
+    - {name: headnet,       label: Head Net,       required: true, conf: 0.50, hold_ms: 800}
+    - {name: Safetyglasses, label: Safety Glasses, required: true, conf: 0.60, hold_ms: 1100}
+    - {name: Mask,          label: Face Mask,      required: true, conf: 0.60, hold_ms: 700}
+    - {name: Gloves,        label: Gloves,         required: true, conf: 0.60, hold_ms: 1000, count: 2}
+    - {name: sleeves,       label: Sleeves,        required: true, conf: 0.75, hold_ms: 1200, count: 2}
+    - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, conf: 0.90, hold_ms: 400, expect: absent}
+    - {name: person,        label: Person in Cell, required: false, conf: 0.25, hold_ms: 1000}
+
   # PPE only means anything relative to a person. With `subject` set, the
   # station checks the LARGEST detection of that class (the one nearest the
   # camera, per camera) and only counts equipment found on them; with nobody
@@ -61,8 +68,15 @@ ppe:
   # Leave `subject` empty to check every detection, wherever it is.
   subject: person
   containment: 0.5      # fraction of a PPE box that must lie on the subject
-  hold_ms: 1500         # a class stays lit this long after its last sighting
-  confirm_frames: 3     # consecutive agreeing evaluations before the light flips
+  hold_ms: 1500         # default hold for classes that do not set their own
+
+  # How long a status must hold before the lamp follows it, in seconds.
+  # Asymmetric on purpose: slow to claim compliance, quick to raise an alarm.
+  confirm_sec:
+    ok: 1.0             # slow to go green
+    violation: 0.4      # quick to go red
+    standby: 1.0        # slow to conclude nobody is there
+    degraded: 0.5
 
 tower:
   enabled: true

@@ -65,6 +65,7 @@ class ClassCfg:
     expect: str = EXPECT_PRESENT   # "present" to require it, "absent" to forbid it
     count: int = 1                 # how many must be on the subject (2 gloves, 2 sleeves)
     conf: float | None = None      # per-class confidence override
+    hold_ms: int | None = None     # per-class hold override; None uses ppe.hold_ms
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -79,10 +80,24 @@ class ClassCfg:
 @dataclass
 class PPECfg:
     classes: list[ClassCfg] = field(default_factory=list)
-    hold_ms: int = 1500
-    confirm_frames: int = 3
+    hold_ms: int = 1500        # default hold; a class's own hold_ms overrides it
     subject: str = ""          # class that gates the checks; empty = check always
     containment: float = 0.5   # fraction of a PPE box that must lie on the subject
+
+    # How long a status must hold before the lamp follows it, in SECONDS —
+    # not frames. Inference rate moves with CPU load, so a frame count is a
+    # different amount of real time from one minute to the next.
+    #
+    # These are deliberately asymmetric. Going green is a safety claim and
+    # should be slow; going red is an alarm and should be quick.
+    confirm_sec: dict[str, float] = field(
+        default_factory=lambda: {
+            "ok": 1.0,        # slow to declare compliant
+            "violation": 0.4,  # quick to alarm
+            "standby": 1.0,    # slow to conclude nobody is there
+            "degraded": 0.5,
+        }
+    )
 
     @property
     def required(self) -> list[ClassCfg]:
@@ -198,6 +213,21 @@ class Config:
             raise ValueError(
                 f"config: ppe.subject {self.ppe.subject!r} must also appear in ppe.classes"
             )
+        valid_status = {"ok", "violation", "standby", "degraded"}
+        unknown = set(self.ppe.confirm_sec) - valid_status
+        if unknown:
+            raise ValueError(
+                f"config: ppe.confirm_sec has unknown status {sorted(unknown)}; "
+                f"expected any of {sorted(valid_status)}"
+            )
+        for status, secs in self.ppe.confirm_sec.items():
+            if secs < 0:
+                raise ValueError(f"config: ppe.confirm_sec[{status}] must be >= 0, got {secs}")
+        for klass in self.ppe.classes:
+            if klass.hold_ms is not None and klass.hold_ms < 0:
+                raise ValueError(
+                    f"config: {klass.name}.hold_ms must be >= 0, got {klass.hold_ms}"
+                )
         if not 0.0 <= self.ppe.containment <= 1.0:
             raise ValueError(
                 f"config: ppe.containment must be between 0 and 1, got {self.ppe.containment}"

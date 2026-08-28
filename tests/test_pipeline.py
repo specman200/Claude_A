@@ -16,7 +16,13 @@ def make_config(clip, tmp_path, **telemetry):
     return Config(
         model=ModelCfg(imgsz=320, warmup=False),
         cameras=[CameraCfg("Line A", clip, 320, 240), CameraCfg("Line B", clip, 320, 240)],
-        ppe=PPECfg(classes=[ClassCfg("helmet"), ClassCfg("vest")], hold_ms=1000, confirm_frames=1),
+        ppe=PPECfg(
+            classes=[ClassCfg("helmet"), ClassCfg("vest")],
+            hold_ms=1000,
+            # Zero confirm wait: these tests assert on the first published
+            # cycle, not on how long a status must stand before it applies.
+            confirm_sec=dict.fromkeys(("ok", "violation", "standby", "degraded"), 0.0),
+        ),
         tower=TowerCfg(enabled=False),
         telemetry=TelemetryCfg(csv=str(tmp_path / "latency.csv"), **telemetry),
     )
@@ -173,7 +179,6 @@ def gated_config(clip, tmp_path, dets):
     ]
     cfg.ppe.subject = "person"
     cfg.ppe.containment = 0.5
-    cfg.ppe.confirm_frames = 1
 
     class Scene(StubDetector):
         def __init__(self, *a, **k):

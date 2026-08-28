@@ -31,6 +31,7 @@ class ClassState:
     required: bool
     expect: str = "present"  # "absent" for a class whose presence is the fault
     need: int = 1            # how many the subject must be wearing
+    hold: float = 1.5        # seconds this class stays "seen" after its last sighting
     count: int = 0           # how many are on them right now
     conf: float = 0.0
     last_seen: float = 0.0
@@ -67,13 +68,14 @@ class ComplianceMonitor:
     """
 
     def __init__(self, cfg: PPECfg, unavailable: list[str] | None = None) -> None:
-        self.hold = cfg.hold_ms / 1000.0
-        self.confirm = max(1, cfg.confirm_frames)
         self.subject_name = cfg.subject
+        # Confirm times are per status and in seconds — see PPECfg.confirm_sec.
+        self.confirm = {Status(k): float(v) for k, v in cfg.confirm_sec.items()}
         missing = set(unavailable or ())
         self.classes = [
             ClassState(
                 c.name, c.label, c.required, c.expect, c.count,
+                hold=(c.hold_ms if c.hold_ms is not None else cfg.hold_ms) / 1000.0,
                 available=c.name not in missing,
             )
             for c in cfg.classes
@@ -84,7 +86,7 @@ class ComplianceMonitor:
         self._subject = self._by_name.get(cfg.subject) if cfg.subject else None
         self.status = Status.DEGRADED
         self._pending = Status.DEGRADED
-        self._agree = 0
+        self._pending_since = 0.0
 
     def update(
         self, per_camera: list[list[Detection]], t: float | None = None
@@ -108,14 +110,14 @@ class ComplianceMonitor:
 
             # The hold window keeps the best recent count, so a glove the model
             # loses for a frame does not read as a bare hand.
-            if seen >= state.count or (t - state.counted_at) > self.hold:
+            if seen >= state.count or (t - state.counted_at) > state.hold:
                 state.count = seen
                 state.counted_at = t
             if seen:
                 state.last_seen = t
                 state.conf = best_conf
 
-        return self._debounce(self._evaluate())
+        return self._debounce(self._evaluate(), t)
 
     def _evaluate(self) -> Status:
         required = [c for c in self.classes if c.required]
@@ -126,19 +128,27 @@ class ComplianceMonitor:
             return Status.STANDBY
         return Status.OK if all(c.compliant for c in required) else Status.VIOLATION
 
-    def _debounce(self, candidate: Status) -> Status:
-        if candidate == self.status:
-            self._agree = 0
-            self._pending = candidate
-            return self.status
+    def _debounce(self, candidate: Status, t: float) -> Status:
+        """Hold a candidate status until it has stood for long enough.
+
+        Timed in seconds rather than counted in frames: inference rate moves
+        with CPU load, so a frame count is a different amount of real time
+        from one minute to the next. The wait is per status and deliberately
+        asymmetric — going green is a safety claim and should be slow, going
+        red is an alarm and should be quick.
+        """
         if candidate != self._pending:
-            self._pending, self._agree = candidate, 0
-        self._agree += 1
-        if self._agree >= self.confirm:
+            self._pending = candidate
+            self._pending_since = t
+        # Deliberately not an elif: a zero wait should apply on the same
+        # update, not cost an extra tick that no setting asked for.
+        if candidate != self.status and (t - self._pending_since) >= self._wait(candidate):
             log.info("status %s -> %s", self.status.value, candidate.value)
             self.status = candidate
-            self._agree = 0
         return self.status
+
+    def _wait(self, status: Status) -> float:
+        return self.confirm.get(status, 0.5)
 
     @property
     def watching(self) -> bool:
@@ -171,9 +181,9 @@ class ComplianceMonitor:
         """Required items the loaded model has no class for."""
         return [c.label for c in self.classes if c.required and not c.available]
 
-    def degrade(self) -> Status:
+    def degrade(self, t: float | None = None) -> Status:
         """Force DEGRADED — used when no camera is delivering frames."""
-        return self._debounce(Status.DEGRADED)
+        return self._debounce(Status.DEGRADED, now() if t is None else t)
 
 
 # --------------------------------------------------------------------------

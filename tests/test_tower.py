@@ -11,13 +11,18 @@ def det(name, conf=0.9):
     return Detection(name, conf, (0.0, 0.0, 10.0, 10.0))
 
 
-def monitor(hold_ms=1000, confirm=1, optional=(), missing=(), forbidden=()):
+def confirm_all(seconds):
+    """Same confirm wait for every status, so tests can pin the timing."""
+    return dict.fromkeys(("ok", "violation", "standby", "degraded"), seconds)
+
+
+def monitor(hold_ms=1000, confirm=0.0, optional=(), missing=(), forbidden=()):
     cfg = PPECfg(
         classes=[ClassCfg("helmet"), ClassCfg("vest")]
         + [ClassCfg(n, required=False) for n in optional]
         + [ClassCfg(n, expect="absent") for n in forbidden],
         hold_ms=hold_ms,
-        confirm_frames=confirm,
+        confirm_sec=confirm_all(confirm),
     )
     return ComplianceMonitor(cfg, list(missing))
 
@@ -59,25 +64,59 @@ def test_hold_window_bridges_a_dropped_frame():
     assert m.update([[det("helmet")]], t=11.5) is Status.VIOLATION  # hold expired
 
 
-def test_confirm_frames_debounce_the_relay():
-    m = monitor(confirm=3)
-    # Two agreeing frames are not enough; the third one flips the lamp.
+def test_a_status_must_stand_for_its_confirm_time_before_the_lamp_follows():
+    m = monitor(confirm=1.0)
+    # The clock starts when the candidate first appears, not when it is asserted.
     assert m.update([[det("helmet"), det("vest")]], t=1.0) is Status.DEGRADED
-    assert m.update([[det("helmet"), det("vest")]], t=1.1) is Status.DEGRADED
-    assert m.update([[det("helmet"), det("vest")]], t=1.2) is Status.OK
+    assert m.update([[det("helmet"), det("vest")]], t=1.5) is Status.DEGRADED
+    assert m.update([[det("helmet"), det("vest")]], t=2.0) is Status.OK
 
-    # A single bad frame must not flip the light back.
-    assert m.update([[det("helmet")]], t=1.4) is Status.OK
-    assert m.update([[det("helmet"), det("vest")]], t=1.5) is Status.OK
+    # A single bad frame restarts the wait rather than flipping the lamp.
+    assert m.update([[det("helmet")]], t=2.1) is Status.OK
+    assert m.update([[det("helmet"), det("vest")]], t=2.2) is Status.OK
+
+
+def test_confirm_time_is_wall_clock_not_frames():
+    """The same number of updates flips or does not flip purely on elapsed
+    time — a frame count would behave differently under CPU load."""
+    fast = monitor(confirm=1.0)
+    for t in (0.0, 0.01, 0.02, 0.03, 0.04):  # 5 updates, 40 ms of real time
+        fast.update([[det("helmet"), det("vest")]], t=t)
+    assert fast.status is Status.DEGRADED, "40 ms of agreement must not confirm a 1 s wait"
+
+    slow = monitor(confirm=1.0)
+    for t in (0.0, 1.5):  # 2 updates, 1.5 s of real time
+        slow.update([[det("helmet"), det("vest")]], t=t)
+    assert slow.status is Status.OK
+
+
+def test_going_red_is_quicker_than_going_green():
+    """Fail-safe asymmetry: an alarm should beat a safety claim to the lamp."""
+    cfg = PPECfg(
+        classes=[ClassCfg("helmet"), ClassCfg("vest")],
+        hold_ms=0,
+        confirm_sec={"ok": 1.0, "violation": 0.4, "standby": 1.0, "degraded": 0.0},
+    )
+    m = ComplianceMonitor(cfg)
+    m.update([[det("helmet"), det("vest")]], t=0.0)   # candidate OK starts here
+    assert m.update([[det("helmet"), det("vest")]], t=0.5) is Status.DEGRADED  # 0.5 < 1.0
+    assert m.update([[det("helmet"), det("vest")]], t=1.1) is Status.OK
+
+    # Now lose the vest: red lands in 0.4 s, less than the 1.0 s green took.
+    m.update([[det("helmet")]], t=1.2)               # candidate VIOLATION starts
+    assert m.status is Status.OK
+    # 0.5 s later, comfortably past the 0.4 s violation wait but still under
+    # the 1.0 s it took to go green in the first place.
+    assert m.update([[det("helmet")]], t=1.7) is Status.VIOLATION
 
 
 def test_a_sustained_change_does_flip_after_confirmation():
-    m = monitor(hold_ms=0, confirm=2)
-    for t in (1.0, 1.1, 1.2):
+    m = monitor(hold_ms=0, confirm=0.2)
+    for t in (1.0, 1.2, 1.4):
         m.update([[det("helmet"), det("vest")]], t=t)
     assert m.status is Status.OK
-    m.update([[det("helmet")]], t=1.3)
-    assert m.update([[det("helmet")]], t=1.4) is Status.VIOLATION
+    m.update([[det("helmet")]], t=1.5)          # candidate starts here
+    assert m.update([[det("helmet")]], t=1.8) is Status.VIOLATION
 
 
 def test_confidence_keeps_the_best_view_across_cameras():
@@ -235,7 +274,7 @@ def test_an_unrequired_forbidden_class_does_not_gate_the_light():
     cfg = PPECfg(
         classes=[ClassCfg("helmet"), ClassCfg("wrong_sleeve", required=False, expect="absent")],
         hold_ms=1000,
-        confirm_frames=1,
+        confirm_sec=confirm_all(0.0),
     )
     m = ComplianceMonitor(cfg)
     assert m.update([[det("helmet"), det("wrong_sleeve")]], t=1.0) is Status.OK
@@ -256,12 +295,12 @@ def test_class_state_reports_compliance_not_mere_presence():
 # cell must read STANDBY, not "every item missing".
 
 
-def gated(hold_ms=1000, confirm=1, forbidden=()):
+def gated(hold_ms=1000, confirm=0.0, forbidden=()):
     cfg = PPECfg(
         classes=[ClassCfg("helmet"), ClassCfg("vest"), ClassCfg("person", required=False)]
         + [ClassCfg(n, expect="absent") for n in forbidden],
         hold_ms=hold_ms,
-        confirm_frames=confirm,
+        confirm_sec=confirm_all(confirm),
         subject="person",
     )
     return ComplianceMonitor(cfg)
@@ -315,12 +354,12 @@ def test_without_a_subject_class_the_station_never_stands_by():
 
 
 def test_standby_is_debounced_like_any_other_transition():
-    m = gated(hold_ms=0, confirm=2)
-    for t in (1.0, 1.1):
+    m = gated(hold_ms=0, confirm=0.5)
+    for t in (1.0, 1.5, 2.0):
         m.update([[det("person"), det("helmet"), det("vest")]], t=t)
     assert m.status is Status.OK
-    assert m.update([[]], t=2.0) is Status.OK        # one frame is not enough
-    assert m.update([[]], t=2.1) is Status.STANDBY
+    assert m.update([[]], t=2.1) is Status.OK        # 0.1 s is not enough
+    assert m.update([[]], t=2.7) is Status.STANDBY   # 0.6 s clears the 0.5 s wait
 
 
 def test_a_model_missing_a_required_class_still_beats_standby():
@@ -328,7 +367,7 @@ def test_a_model_missing_a_required_class_still_beats_standby():
     cfg = PPECfg(
         classes=[ClassCfg("helmet"), ClassCfg("person", required=False)],
         hold_ms=1000,
-        confirm_frames=1,
+        confirm_sec=confirm_all(0.0),
         subject="person",
     )
     m = ComplianceMonitor(cfg, ["helmet"])
@@ -349,11 +388,11 @@ def test_standby_shows_no_lamps():
 # A worker has two hands and two arms. One glove is not "gloves: present".
 
 
-def paired(hold_ms=1000, confirm=1):
+def paired(hold_ms=1000, confirm=0.0):
     cfg = PPECfg(
         classes=[ClassCfg("Gloves", count=2), ClassCfg("person", required=False)],
         hold_ms=hold_ms,
-        confirm_frames=confirm,
+        confirm_sec=confirm_all(confirm),
         subject="person",
     )
     return ComplianceMonitor(cfg)

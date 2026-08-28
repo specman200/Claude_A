@@ -167,7 +167,8 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
 | `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf`; also editable live in the UI |
 | `ppe.hold_ms` | How long a class stays "present" after its last sighting |
-| `ppe.confirm_frames` | Agreeing cycles before the lamp changes |
+| `ppe.confirm_sec` | Seconds a status must hold before the lamp follows, per status |
+| `ppe.classes[].hold_ms` | Per-class hold override; falls back to `ppe.hold_ms` |
 | `tower.*` | Transport, address, and the coil behind each lamp |
 | `telemetry.csv` | Per-cycle latency log; empty string disables |
 | `branding.name` / `.tagline` | Shown in the app's side panel; empty `name` hides the strip |
@@ -288,8 +289,33 @@ fault and needs to look like one; an unlit tower cannot be mistaken for a
 compliance verdict.
 
 Two guards keep the relay from chattering: `hold_ms` bridges a class that
-flickers out for a frame or two, and `confirm_frames` requires several agreeing
-cycles before the lamp changes. Only coils that actually changed are written,
+flickers out for a frame or two, and `confirm_sec` requires a status to stand
+for a set time before the lamp follows it.
+
+Both are timed in **seconds, not frames**. Inference rate moves with CPU load,
+so a frame count is a different amount of real time from one minute to the
+next — the same setting would debounce for 0.1 s under light load and 1.5 s
+under heavy load.
+
+`confirm_sec` is asymmetric on purpose:
+
+```yaml
+confirm_sec:
+  ok: 1.0             # slow to go green — a safety claim
+  violation: 0.4      # quick to go red — an alarm
+  standby: 1.0        # slow to conclude nobody is there
+  degraded: 0.5
+```
+
+Going green asserts that a worker is protected; going red asserts that they
+might not be. Those are not equally weighty claims and should not take equally
+long. `standby: 1.0` matters for the same reason: slow to conclude the cell is
+empty, so a blinked `person` detection cannot quietly drop the alarm.
+
+Hold windows are per class, because detection stability is not uniform —
+`sleeves` are large and viewpoint-dependent (1.2 s), a `Mask` is reliably seen
+head-on (0.7 s), and `Wrong Sleeve` is short (0.4 s) so a violation clears
+promptly once the worker fixes it. Only coils that actually changed are written,
 and a bus that drops out is retried in the background without stalling
 detection — the UI says `tower offline` while that lasts.
 
@@ -355,7 +381,7 @@ In the order I would try them:
    and this CPU has AMX-INT8. It needs *your* dataset yaml: calibrating on
    someone else's images is how quantisation quietly loses recall. Validate
    before trusting it — I have not, since the calibration set is yours.
-3. **Raise `ppe.confirm_frames`** rather than chasing frame rate. The tower does
+3. **Raise `ppe.confirm_sec`** rather than chasing frame rate. The tower does
    not need to react in 50 ms; it needs to be right.
 
 ## Latency and profiling
@@ -424,7 +450,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               285 tests
+tests/               287 tests
 ```
 
 ## About
@@ -460,7 +486,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 285 tests
+pytest                       # 287 tests
 ruff check ppe main.py tests
 ```
 
