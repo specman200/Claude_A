@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from .annunciator import Annunciator
 from .capture import CameraSet, Frame
 from .config import Config
 from .detector import Detection, Detector
@@ -69,6 +70,9 @@ class Pipeline(threading.Thread):
         self.detector: Detector | None = None
         self.monitor: ComplianceMonitor | None = None
         self.tower = None
+        self.annunciator = Annunciator(
+            cfg.audio.file, cfg.audio.grace_sec, cfg.audio.repeat_sec, cfg.base_dir
+        )
         self.ready = threading.Event()
         self.error: Exception | None = None
 
@@ -201,6 +205,7 @@ class Pipeline(threading.Thread):
             cyc.stamp("logic")
 
         self.tower.apply(status)
+        self.annunciator.update(status)
         for cyc in cycles.values():
             cyc.stamp("relay")
             cyc.finish()
@@ -246,6 +251,7 @@ class Pipeline(threading.Thread):
     def _shutdown(self) -> None:
         if self.profiler is not None:
             self.profiler.stop_thread()
+        self.annunciator.close()
         if self.tower is not None:
             self.tower.close()
         self.metrics.flush()

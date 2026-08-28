@@ -108,11 +108,11 @@ Ranked by how often each one is the actual cause:
 2. **Another process already has it open.** Most UVC devices allow only one
    reader. Close Teams/Zoom/the Camera app, and check Task Manager for a
    previous crashed run of this program still holding the device.
-3. **Wrong backend.** `api: any` normally resolves to MSMF (Media Foundation)
-   on a current OpenCV build, but some UVC cameras — especially older or
-   industrial ones with a vendor driver — answer to DirectShow and not MSMF,
-   or the reverse. Set `api: dshow` or `api: msmf` explicitly; `--scan` shows
-   which backend answers for which index.
+3. **Wrong backend — try `api: dshow` first.** `api: any` normally resolves to
+   MSMF (Media Foundation), but a reference station running these same C920s
+   on Windows opens them with `cv2.CAP_DSHOW` explicitly. That is a working
+   configuration on the same hardware, so it is the first thing to try rather
+   than the third. `--scan` shows which backend answers for which index.
 4. **Driver problem.** Device Manager → Cameras (or "Imaging devices") — a
    yellow warning icon means the driver did not install.
 5. **USB power management.** Device Manager → the camera's USB Root Hub →
@@ -170,6 +170,11 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `ppe.confirm_sec` | Seconds a status must hold before the lamp follows, per status |
 | `ppe.classes[].hold_ms` | Per-class hold override; falls back to `ppe.hold_ms` |
 | `tower.*` | Transport, address, and the coil behind each lamp |
+| `tower.channels` | Channels on the relay board; all are driven low at connect |
+| `tower.reconnect_sec` | Wait between reconnect attempts after a bus failure |
+| `audio.file` | Spoken prompt while a violation stands; empty = silent |
+| `audio.grace_sec` | Pause before the first prompt — time to comply |
+| `audio.repeat_sec` | Gap between repeats while the violation stands |
 | `telemetry.csv` | Per-cycle latency log; empty string disables |
 | `branding.name` / `.tagline` | Shown in the app's side panel; empty `name` hides the strip |
 | `branding.logo` | Your mark — `.svg`, `.png` or `.jpg`; relative paths resolve from the config file |
@@ -263,6 +268,23 @@ class names in `ppe.classes`. Any name the model does not have is flagged amber
 in the UI and forces the tower to `DEGRADED` rather than silently passing — a
 class that can never be detected must never read as compliant.
 
+## Audio
+
+A lamp only works on someone facing it. Point `audio.file` at an .mp3 or .wav
+and the station speaks while a violation stands:
+
+```yaml
+audio:
+  file: assets/please_wear_ppe.mp3
+  grace_sec: 3.0     # time to comply before the first prompt
+  repeat_sec: 3.0    # gap between repeats while it stands
+```
+
+`grace_sec` is the part worth keeping. Prompting the instant PPE is missing
+trains people to tune it out; a few seconds to finish putting a glove on means
+the prompt only ever fires at someone who actually needed telling. Leave `file`
+empty for a silent station — nothing else changes.
+
 ## The tower light
 
 | Status | Lamp | Meaning |
@@ -318,6 +340,17 @@ head-on (0.7 s), and `Wrong Sleeve` is short (0.4 s) so a violation clears
 promptly once the worker fixes it. Only coils that actually changed are written,
 and a bus that drops out is retried in the background without stalling
 detection — the UI says `tower offline` while that lasts.
+
+**Relay channel numbering.** These boards label their channels from 1 while
+Modbus addresses coils from 0, so **board channel N is coil N−1**. A reference
+station on this hardware wires green to channel 1 (coil 0) and red to channel 3
+(coil 2) — which is what `tower.coils` ships with. That station has no amber or
+buzzer at all, so if yours is wired the same way, check what `DEGRADED` and the
+buzzer actually reach before relying on them.
+
+At connect the station drives every channel on the board low, not just the ones
+it manages, so a coil left energised by a run that crashed cannot survive into
+this one.
 
 Wiring is `tower.coils`: a Modbus coil address per lamp. Set
 `tower.transport: rtu` with `serial_port`/`baudrate` for a serial relay, or
@@ -442,6 +475,7 @@ ppe/
   pipeline.py        the loop tying it together
   latency.py         per-stage timing, CSV, thread-aware profiler
   runtime.py         CPU thread budget: capture vs inference
+  annunciator.py     the spoken prompt, and when not to give it
   subject.py         who is being checked, and whose gear counts
   export.py          `python -m ppe.export` — OpenVINO / ONNX conversion
   bench.py           `python -m ppe.bench` — measure backends on your machine
@@ -450,7 +484,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               287 tests
+tests/               300 tests
 ```
 
 ## About
@@ -486,7 +520,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 287 tests
+pytest                       # 300 tests
 ruff check ppe main.py tests
 ```
 

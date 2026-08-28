@@ -114,10 +114,21 @@ class TowerCfg:
     baudrate: int = 9600
     unit: int = 1
     timeout: float = 0.5
+    reconnect_sec: float = 5.0  # wait between reconnect attempts
+    channels: int = 8           # channels on the board; all blanked at connect
     coils: dict[str, int] = field(
         default_factory=lambda: {"green": 0, "amber": 1, "red": 2, "buzzer": 3}
     )
     buzzer_on_violation: bool = False
+
+
+@dataclass
+class AudioCfg:
+    """Spoken prompt while a violation stands. Empty `file` = silent."""
+
+    file: str = ""          # .mp3/.wav; relative paths resolve from the config
+    grace_sec: float = 3.0   # wait before the first prompt — time to comply
+    repeat_sec: float = 3.0  # gap between repeats while the violation stands
 
 
 @dataclass
@@ -153,6 +164,7 @@ class Config:
     tower: TowerCfg = field(default_factory=TowerCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
     branding: BrandingCfg = field(default_factory=BrandingCfg)
+    audio: AudioCfg = field(default_factory=AudioCfg)
     path: Path | None = None
 
     # -- io ----------------------------------------------------------------
@@ -170,6 +182,7 @@ class Config:
             tower=_build(TowerCfg, raw.get("tower") or {}),
             telemetry=_build(TelemetryCfg, raw.get("telemetry") or {}),
             branding=_build(BrandingCfg, raw.get("branding") or {}),
+            audio=_build(AudioCfg, raw.get("audio") or {}),
             path=path,
         )
 
@@ -195,6 +208,10 @@ class Config:
         if self.model.imgsz % 32:
             raise ValueError(
                 f"config: model.imgsz must be a multiple of 32, got {self.model.imgsz}"
+            )
+        if self.audio.grace_sec < 0 or self.audio.repeat_sec <= 0:
+            raise ValueError(
+                "config: audio.grace_sec must be >= 0 and audio.repeat_sec > 0"
             )
         if self.model.threads < 0:
             raise ValueError(f"config: model.threads must be >= 0, got {self.model.threads}")

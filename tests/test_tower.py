@@ -174,8 +174,20 @@ def tower_with_fake():
     return tower, fake
 
 
+def test_every_channel_is_blanked_before_the_station_takes_control():
+    """A previous run that crashed may have left coils energised — including
+    channels this station does not manage."""
+    tower, fake = tower_with_fake()
+    tower.cfg.channels = 8
+    tower.connect()
+    assert [c for c, _ in fake.writes] == list(range(8))
+    assert all(v is False for _, v in fake.writes)
+
+
 def test_apply_energises_only_the_status_lamp():
     tower, fake = tower_with_fake()
+    tower.connect()
+    fake.writes.clear()          # discard the blanking pass
     assert tower.apply(Status.OK)
     assert dict(fake.writes) == {0: True, 1: False, 2: False, 3: False}
 
@@ -216,8 +228,9 @@ def test_a_bus_failure_is_survived_and_resynced():
     fake.fail = False
     tower._retry_at = 0.0
     assert tower.apply(Status.VIOLATION)
-    # After a reconnect every coil is rewritten, not just the changed ones.
-    assert set(dict(fake.writes)) == {0, 1, 2, 3}
+    # After a reconnect the board is blanked and every managed coil rewritten,
+    # rather than trusting a cache that a failed write may have poisoned.
+    assert set(dict(fake.writes)) >= {0, 1, 2, 3}
 
 
 def test_a_disabled_tower_is_a_no_op():

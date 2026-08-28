@@ -29,6 +29,9 @@ cameras:
     width: 1280         # requested capture size (see docs/accuracy note)
     height: 720
     fps: 30
+    # A reference station running these same C920s on Windows uses DirectShow
+    # explicitly rather than letting OpenCV choose (it usually picks MSMF).
+    # On Windows try `dshow` first; on Linux use `v4l2` or leave `any`.
     api: any            # any | v4l2 (Linux) | dshow | msmf (Windows) | ffmpeg
     fourcc: MJPG
   - name: Line B
@@ -93,6 +96,16 @@ tower:
     red: 2
     buzzer: 3
   buzzer_on_violation: false
+
+audio:
+  # Spoken prompt while a violation stands — a lamp only works on someone
+  # facing it. Leave `file` empty for a silent station.
+  # `grace_sec` is a deliberate pause before the first prompt: nagging the
+  # instant PPE is missing trains people to ignore it, so give them time to
+  # finish putting the glove on first.
+  file: ""              # e.g. assets/please_wear_ppe.mp3
+  grace_sec: 3.0
+  repeat_sec: 3.0
 
 branding:
   # Shown in the app's side panel and used as the window icon.

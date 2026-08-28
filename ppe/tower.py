@@ -227,11 +227,28 @@ class TowerLight:
             log.warning("tower connect failed: %s", exc)
             self.connected = False
         if not self.connected:
-            self._retry_at = now() + 2.0
+            self._retry_at = now() + self.cfg.reconnect_sec
         else:
             log.info("tower connected (%s)", self.cfg.transport)
-            self._state = dict.fromkeys(self.cfg.coils)  # force a resync
+            self._blank()
+            self._state = dict.fromkeys(self.cfg.coils)  # None = force a resync
         return self.connected
+
+    def _blank(self) -> None:
+        """Drive every channel on the board low before taking control.
+
+        The relay may still be holding coils from a previous run that crashed
+        or was killed, including channels this station does not manage. Taking
+        the board to a known state costs one pass at connect time and removes
+        a class of "why is that lamp still on" that no amount of careful
+        writing afterwards would explain.
+        """
+        for coil in range(self.cfg.channels):
+            try:
+                self._client.write_coil(coil, False, **{self._kw: self.cfg.unit})
+            except Exception as exc:  # noqa: BLE001 — best effort, never fatal
+                log.debug("tower: could not blank coil %d: %s", coil, exc)
+                return
 
     def _make_client(self):
         if self.cfg.transport == "rtu":
@@ -281,7 +298,7 @@ class TowerLight:
             except Exception as exc:  # noqa: BLE001
                 log.warning("tower write failed: %s", exc)
                 self.connected = False
-                self._retry_at = now() + 2.0
+                self._retry_at = now() + self.cfg.reconnect_sec
                 return False
             return True
 
