@@ -98,3 +98,83 @@ def test_main_reports_a_useful_error_with_no_cameras_configured(tmp_path, monkey
     cfg_path.write_text(yaml.safe_dump({"cameras": []}))
     monkeypatch.chdir(tmp_path)
     assert main(["-c", str(cfg_path)]) == 1
+
+
+# -- platform dispatch -------------------------------------------------
+# This suite runs on Linux, so the Windows branch is exercised by forcing
+# ON_WINDOWS rather than by an actual Windows machine — the real backend
+# calls (cv2.CAP_DSHOW / CAP_MSMF) are still made, just against no hardware.
+
+
+def test_windows_index_scan_never_raises_with_no_cameras_present(monkeypatch):
+    import ppe.camcheck as camcheck
+
+    # No real camera responds in this environment; the call must still
+    # return cleanly rather than raising or hanging.
+    assert camcheck.scan_windows_indices(max_index=2) == []
+
+
+def test_causes_text_content_is_platform_specific():
+    from ppe.camcheck import CAUSES_LINUX, CAUSES_WINDOWS
+
+    assert "camera privacy" in CAUSES_WINDOWS.lower()
+    assert "/dev/video" not in CAUSES_WINDOWS
+
+    assert "/dev/video" in CAUSES_LINUX
+    assert "privacy" not in CAUSES_LINUX.lower()
+
+
+def test_causes_reads_on_windows_live_not_at_import_time(monkeypatch):
+    """A frozen CAUSES computed at import would keep printing Linux advice
+    forever once ON_WINDOWS is set — causes() must read it fresh."""
+    import ppe.camcheck as camcheck
+
+    monkeypatch.setattr(camcheck, "ON_WINDOWS", True)
+    assert camcheck.causes() is camcheck.CAUSES_WINDOWS
+
+    monkeypatch.setattr(camcheck, "ON_WINDOWS", False)
+    assert camcheck.causes() is camcheck.CAUSES_LINUX
+
+
+def test_main_scan_dispatches_to_windows_probing_when_forced(monkeypatch, tmp_path, capsys):
+    import yaml
+
+    import ppe.camcheck as camcheck
+
+    monkeypatch.setattr(camcheck, "ON_WINDOWS", True)
+    monkeypatch.setattr(camcheck, "scan_windows_indices", lambda max_index=6: [(0, "msmf")])
+
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump({"cameras": [{"name": "Dead", "source": 9999, "api": "msmf"}]})
+    )
+    monkeypatch.chdir(tmp_path)
+    camcheck.main(["-c", str(cfg_path), "--scan", "--timeout", "0.2"])
+
+    out = capsys.readouterr().out
+    assert "index 0: opens via msmf" in out
+    assert "probing indices" in out
+
+
+def test_main_scan_uses_dev_video_glob_when_not_windows(monkeypatch, tmp_path, capsys):
+    import yaml
+
+    import ppe.camcheck as camcheck
+
+    monkeypatch.setattr(camcheck, "ON_WINDOWS", False)
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump({"cameras": [{"name": "Dead", "source": 9999, "api": "v4l2"}]})
+    )
+    monkeypatch.chdir(tmp_path)
+    camcheck.main(["-c", str(cfg_path), "--scan", "--timeout", "0.2"])
+
+    out = capsys.readouterr().out
+    assert "/dev/video" in out
+    assert "probing indices" not in out
+
+
+def test_msmf_and_dshow_are_valid_backend_names():
+    from ppe.capture import _APIS
+
+    assert "msmf" in _APIS and "dshow" in _APIS

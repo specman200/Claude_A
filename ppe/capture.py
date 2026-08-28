@@ -23,8 +23,9 @@ log = logging.getLogger(__name__)
 
 _APIS = {
     "any": cv2.CAP_ANY,
-    "v4l2": getattr(cv2, "CAP_V4L2", cv2.CAP_ANY),
-    "dshow": getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),
+    "v4l2": getattr(cv2, "CAP_V4L2", cv2.CAP_ANY),        # Linux
+    "dshow": getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),       # Windows, the older/broader backend
+    "msmf": getattr(cv2, "CAP_MSMF", cv2.CAP_ANY),         # Windows, the modern default
     "ffmpeg": getattr(cv2, "CAP_FFMPEG", cv2.CAP_ANY),
     "gstreamer": getattr(cv2, "CAP_GSTREAMER", cv2.CAP_ANY),
 }

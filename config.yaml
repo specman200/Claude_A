@@ -24,7 +24,7 @@ cameras:
     width: 1280         # requested capture size (see docs/accuracy note)
     height: 720
     fps: 30
-    api: any            # any | v4l2 | dshow | ffmpeg
+    api: any            # any | v4l2 (Linux) | dshow | msmf (Windows) | ffmpeg
   - name: Line B
     source: 1
     width: 1280

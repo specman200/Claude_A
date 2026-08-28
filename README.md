@@ -50,40 +50,70 @@ configured source directly:
 
 ```bash
 python -m ppe.camcheck            # probes every camera in config.yaml
-python -m ppe.camcheck --scan     # also lists every /dev/video* node (Linux)
-python -m ppe.camcheck -v         # + OpenCV's own VIDEOIO error
+python -m ppe.camcheck --scan     # also enumerates cameras this machine sees
+python -m ppe.camcheck -v         # + OpenCV's own diagnostic
 python -m ppe.camcheck --save frame.jpg   # save what each camera actually sees
 ```
 
-It reports exactly where things stand for each camera — cannot open, opens but
-never delivers a frame, delivers a frame that is one flat colour (lens cap,
-dead sensor), or works — and `-v` prints OpenCV's native error, which usually
-names the cause directly (`no such device`, `device or resource busy`, a
-permission denial). The main app only ever logs "unavailable, retrying": that
-message survives on purpose, so the station keeps trying rather than crashing
-when a cable is unplugged mid-shift, but it is not built to be a diagnostic.
+It works the same on Windows and Linux — `--scan` and the printed causes adapt
+to whichever it finds itself running on — and reports exactly where things
+stand for each camera: cannot open, opens but never delivers a frame, delivers
+a frame that is one flat colour (lens cap, dead sensor), or works. The main
+app only ever logs "unavailable, retrying": that message survives on purpose,
+so the station keeps trying rather than crashing when a cable comes loose
+mid-shift, but it is not built to be a diagnostic.
 
-Ranked by how often each one is the actual cause, for two USB webcams on a
-CPU-only industrial PC:
+### On Windows
 
-1. **Wrong index.** Many UVC webcams expose *two* `/dev/video` nodes — one
-   real, one metadata-only — so `source: 1` can be the wrong node of camera 0,
-   not camera 1 at all. `--scan` lists every node; try each number directly.
-2. **Permissions.** `groups` must include `video`, or the process needs root.
-   `sudo usermod -aG video $USER`, then log out and back in.
-3. **USB bandwidth.** Two MJPG/YUYV streams at high resolution can exceed what
-   one shared hub or controller carries — the second camera fails to open
-   while the first works fine alone. Split them across separate controllers,
-   or lower `width`/`height`.
-4. **Device busy.** A previous crashed run, or another app, still holds it:
-   `sudo fuser -v /dev/video0`, or reboot.
-5. **Backend mismatch.** `api: any` picks whatever OpenCV finds first; set
-   `api: v4l2` explicitly on Linux if it guesses wrong.
-6. **Containers.** Inside Docker, `/dev/video0`/`/dev/video1` need explicit
-   `--device` flags — they are not visible by default even to a
-   privileged-looking container.
+Ranked by how often each one is the actual cause:
 
-## Configure
+1. **The camera privacy setting, silently.** Settings → Privacy & security →
+   Camera → **"Let desktop apps access your camera."** If this is off, a
+   Python/OpenCV process is blocked while the built-in Windows Camera app
+   keeps working fine — which is what makes this one so easy to chase in the
+   wrong direction. Extremely common on a locked-down industrial/kiosk image,
+   and it usually fails with no error at all rather than a clear one. Check
+   this before anything else.
+2. **Another process already has it open.** Most UVC devices allow only one
+   reader. Close Teams/Zoom/the Camera app, and check Task Manager for a
+   previous crashed run of this program still holding the device.
+3. **Wrong backend.** `api: any` normally resolves to MSMF (Media Foundation)
+   on a current OpenCV build, but some UVC cameras — especially older or
+   industrial ones with a vendor driver — answer to DirectShow and not MSMF,
+   or the reverse. Set `api: dshow` or `api: msmf` explicitly; `--scan` shows
+   which backend answers for which index.
+4. **Driver problem.** Device Manager → Cameras (or "Imaging devices") — a
+   yellow warning icon means the driver did not install.
+5. **USB power management.** Device Manager → the camera's USB Root Hub →
+   Power Management → uncheck *"Allow the computer to turn off this device to
+   save power."* Looks identical to a camera that "randomly" stops, and is
+   common on industrial PCs with aggressive power profiles.
+6. **USB bandwidth.** Two cameras at high resolution can exceed one shared
+   hub/controller — the second fails to open while the first works alone.
+   Move them to separate controllers, or lower `width`/`height`.
+7. **Wrong index.** Windows can renumber cameras after a reboot or a replug;
+   `--scan` opens indices 0–5 against both backends and reports what answers,
+   so this stops being a guess.
+
+### On Linux
+
+1. **Wrong index.** A UVC webcam commonly exposes *two* `/dev/video` nodes —
+   one real, one metadata-only — so `source: 1` can be the wrong node of
+   camera 0, not camera 1 at all. `--scan` lists every node.
+2. **Permissions.** `groups` needs `video`, or root. `sudo usermod -aG video
+   $USER`, then log out and back in.
+3. **USB bandwidth.** Same as Windows above; split across controllers or
+   lower the requested resolution.
+4. **Device busy.** `sudo fuser -v /dev/video0`, or reboot.
+5. **Backend mismatch.** Set `api: v4l2` explicitly if `api: any` guesses
+   wrong.
+6. **Containers.** `/dev/video0`/`/dev/video1` need explicit `--device`
+   passthrough — not visible by default even in a privileged container.
+
+`-v` prints OpenCV's own diagnostic under any of the above, and it usually
+names the cause directly.
+
+## Configure## Configure
 
 Everything lives in `config.yaml`, and the parts you tune most often are also
 editable in the UI (the checklist's **Save to config** button writes them back).
@@ -362,7 +392,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               260 tests
+tests/               266 tests
 ```
 
 ## About
@@ -398,7 +428,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 260 tests
+pytest                       # 266 tests
 ruff check ppe main.py tests
 ```
 
