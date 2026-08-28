@@ -43,6 +43,46 @@ python main.py --profile           # add a hotspot report on exit
 python main.py --headless --seconds 30 --profile   # a fixed benchmark run
 ```
 
+## No video signal?
+
+Run this first — no threads, no detector, no UI, just OpenCV opening each
+configured source directly:
+
+```bash
+python -m ppe.camcheck            # probes every camera in config.yaml
+python -m ppe.camcheck --scan     # also lists every /dev/video* node (Linux)
+python -m ppe.camcheck -v         # + OpenCV's own VIDEOIO error
+python -m ppe.camcheck --save frame.jpg   # save what each camera actually sees
+```
+
+It reports exactly where things stand for each camera — cannot open, opens but
+never delivers a frame, delivers a frame that is one flat colour (lens cap,
+dead sensor), or works — and `-v` prints OpenCV's native error, which usually
+names the cause directly (`no such device`, `device or resource busy`, a
+permission denial). The main app only ever logs "unavailable, retrying": that
+message survives on purpose, so the station keeps trying rather than crashing
+when a cable is unplugged mid-shift, but it is not built to be a diagnostic.
+
+Ranked by how often each one is the actual cause, for two USB webcams on a
+CPU-only industrial PC:
+
+1. **Wrong index.** Many UVC webcams expose *two* `/dev/video` nodes — one
+   real, one metadata-only — so `source: 1` can be the wrong node of camera 0,
+   not camera 1 at all. `--scan` lists every node; try each number directly.
+2. **Permissions.** `groups` must include `video`, or the process needs root.
+   `sudo usermod -aG video $USER`, then log out and back in.
+3. **USB bandwidth.** Two MJPG/YUYV streams at high resolution can exceed what
+   one shared hub or controller carries — the second camera fails to open
+   while the first works fine alone. Split them across separate controllers,
+   or lower `width`/`height`.
+4. **Device busy.** A previous crashed run, or another app, still holds it:
+   `sudo fuser -v /dev/video0`, or reboot.
+5. **Backend mismatch.** `api: any` picks whatever OpenCV finds first; set
+   `api: v4l2` explicitly on Linux if it guesses wrong.
+6. **Containers.** Inside Docker, `/dev/video0`/`/dev/video1` need explicit
+   `--device` flags — they are not visible by default even to a
+   privileged-looking container.
+
 ## Configure
 
 Everything lives in `config.yaml`, and the parts you tune most often are also
@@ -317,11 +357,12 @@ ppe/
   subject.py         who is being checked, and whose gear counts
   export.py          `python -m ppe.export` — OpenVINO / ONNX conversion
   bench.py           `python -m ppe.bench` — measure backends on your machine
+  camcheck.py         `python -m ppe.camcheck` — diagnose "no video signal"
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               251 tests
+tests/               260 tests
 ```
 
 ## About
@@ -357,7 +398,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 251 tests
+pytest                       # 260 tests
 ruff check ppe main.py tests
 ```
 

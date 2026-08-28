@@ -61,6 +61,14 @@ class Camera(threading.Thread):
         cap = cv2.VideoCapture(src, _APIS.get(self.cfg.api, cv2.CAP_ANY))
         if not cap.isOpened():
             cap.release()
+            # OpenCV's own reason (no such device, permission denied, device
+            # busy...) goes to its native logger, not this one — surface it
+            # here rather than leaving "unavailable" as the only clue.
+            log.debug(
+                "%s: cv2.VideoCapture(%r, api=%s) did not open "
+                "(run with -v for OpenCV's own diagnostic, or `python -m ppe.camcheck`)",
+                self.cfg.name, src, self.cfg.api,
+            )
             return False
         # A 1-frame driver buffer is the difference between live and lagging.
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)

@@ -64,6 +64,13 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    if args.verbose:
+        # cv2's own VIDEOIO errors ("device busy", "no such device", a
+        # permission denial) go to its native logger, not Python's — this is
+        # usually the actual answer when a camera silently won't open.
+        import cv2
+
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_DEBUG)
 
     cfg = Config.load(args.config)
     cfg.validate()
