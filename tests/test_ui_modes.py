@@ -5,6 +5,7 @@ would no longer be showing you what production does.
 """
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 import ppe.pipeline as pipeline_mod  # noqa: E402
 from ppe.capture import CameraSet  # noqa: E402
 from ppe.config import (  # noqa: E402
+    BrandingCfg,
     CameraCfg,
     ClassCfg,
     Config,
@@ -43,6 +45,13 @@ def build(mode, clip, monkeypatch):
         cameras=[CameraCfg("Line A", clip, 320, 240)],
         tower=TowerCfg(enabled=False),
         ui=UICfg(mode=mode),
+        # Real branding, so the logo assertions actually run instead of
+        # skipping and quietly proving nothing.
+        branding=BrandingCfg(
+            name="A. Engineer",
+            tagline="Vision & Automation",
+            logo=str(Path("assets/logo.svg").resolve()),
+        ),
     )
     cameras = CameraSet(cfg.cameras)
     pipe = pipeline_mod.Pipeline(cfg, cameras)
@@ -170,3 +179,54 @@ def test_an_unknown_mode_is_rejected():
 def test_the_shipped_config_is_operator_mode():
     """A station that boots into debug on the floor is a mistake."""
     assert Config.load("config.yaml").ui.mode == "operator"
+
+
+# -- the privacy notice ---------------------------------------------------
+# People are filmed here all shift. The notice is the thing that says why,
+# so it must not quietly shrink back into a footnote.
+
+
+def notice_of(window):
+    from PySide6.QtWidgets import QLabel
+
+    for label in window.findChildren(QLabel):
+        if "SURVEILLANCE" in label.text().upper():
+            return label
+    raise AssertionError("no privacy notice found in the window")
+
+
+@pytest.mark.parametrize("mode", ["operator", "debug"])
+def test_the_privacy_notice_is_shown_in_both_modes(app, clip, monkeypatch, mode):
+    window, _, _ = build(mode, clip, monkeypatch)
+    text = notice_of(window).text().upper()
+    assert "SAFETY" in text
+    assert "NOT RECORDED" in text and "NOT SURVEILLANCE" in text
+
+
+def test_the_privacy_notice_is_prominent_not_a_footnote(app, clip, monkeypatch):
+    window, _, _ = build("operator", clip, monkeypatch)
+    notice = notice_of(window)
+    style = notice.styleSheet()
+
+    # Bigger than the muted 11px caption style used for section headings.
+    size = int(style.split("font-size:")[1].split("px")[0])
+    assert size >= 15, f"notice font is {size}px — that is footnote treatment"
+    assert "font-weight:700" in style
+    assert notice.minimumHeight() >= 40
+    # Not the muted grey used for de-emphasised text.
+    assert notice.objectName() != "h"
+
+
+def test_the_logo_gets_real_estate(app, clip, monkeypatch):
+    """'Allow more space for the logo' — pin it so a later tidy-up cannot
+    silently shrink it back."""
+    from PySide6.QtWidgets import QLabel
+
+    window, _, cfg = build("operator", clip, monkeypatch)
+    marks = [
+        w for w in window.brand.findChildren(QLabel)
+        if w.pixmap() is not None and not w.pixmap().isNull()
+    ]
+    if not marks:
+        pytest.skip("no logo configured in this fixture")
+    assert marks[0].width() >= 64

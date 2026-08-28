@@ -50,6 +50,12 @@ python main.py              # operator — what the floor sees
 python main.py --debug      # everything above, plus the numbers behind it
 ```
 
+The header carries the identity and the notice: logo top-left at 76 px with
+room around it, and the privacy notice as a full-width banner rather than a
+caption. People are filmed at this station all shift; the line that says why,
+and that nobody is recording them, is not a footnote and does not get footnote
+treatment.
+
 One window, two layouts — deliberately not two windows. A separate debug
 window would drift from the operator one, and then debug would no longer be
 showing you what production actually does. The mode gates which panels exist,
@@ -528,7 +534,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               315 tests
+tests/               319 tests
 ```
 
 ## About
@@ -564,7 +570,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 315 tests
+pytest                       # 319 tests
 ruff check ppe main.py tests
 ```
 

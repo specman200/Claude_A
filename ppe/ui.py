@@ -800,25 +800,29 @@ class BrandStrip(QFrame):
 
     LOGO = 38
 
-    def __init__(self, cfg: BrandingCfg, base: Path, ratio: float = 1.0) -> None:
+    def __init__(
+        self, cfg: BrandingCfg, base: Path, ratio: float = 1.0, logo_px: int | None = None
+    ) -> None:
         super().__init__()
         self.setObjectName("card")
+        size = logo_px or self.LOGO
         row = QHBoxLayout(self)
-        row.setContentsMargins(14, 10, 14, 10)
+        row.setContentsMargins(16, 12, 18, 12)
         row.setSpacing(12)
 
-        pixmap = load_logo(cfg.logo_path(base), self.LOGO, ratio)
+        pixmap = load_logo(cfg.logo_path(base), size, ratio)
         if pixmap is not None:
             mark = QLabel()
             mark.setPixmap(pixmap)
-            mark.setFixedSize(self.LOGO, self.LOGO)
+            mark.setFixedSize(size, size)
             mark.setScaledContents(True)
             row.addWidget(mark)
+            row.addSpacing(6)
 
         text = QVBoxLayout()
         text.setSpacing(1)
         name = QLabel(cfg.name)
-        name.setStyleSheet("font-size:14px; font-weight:700;")
+        name.setStyleSheet(f"font-size:{max(14, size // 4)}px; font-weight:700;")
         text.addWidget(name)
         if cfg.tagline:
             tagline = QLabel(cfg.tagline)
@@ -861,7 +865,7 @@ class MainWindow(QMainWindow):
         icon = load_logo(cfg.branding.logo_path(base), 256, 1.0)
         if icon is not None:
             self.setWindowIcon(QIcon(icon))
-        self.brand = BrandStrip(cfg.branding, base, ratio)
+        self.brand = BrandStrip(cfg.branding, base, ratio, logo_px=76)
 
         # Status is one widget in both modes; debug just gets the short form,
         # so the two views can never disagree about what the station thinks.
@@ -878,7 +882,6 @@ class MainWindow(QMainWindow):
         column = QVBoxLayout(side)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(12)
-        column.addWidget(self.brand)          # logo sits top-left
         column.addWidget(self.banner)
         column.addWidget(self.panel)
 
@@ -897,28 +900,46 @@ class MainWindow(QMainWindow):
             # to fit the viewport, squashing the panels instead of scrolling.
             column.addStretch(1)
 
-        # --- header: title and the notice the floor is entitled to --------
+        # --- header: identity, title, and the notice the floor is owed -----
         title = QLabel("PPE DETECTION")
-        title.setStyleSheet("font-size:22px; font-weight:700; letter-spacing:2px;")
-        notice = QLabel("This feed is for safety only \u2014 not recording, not surveillance")
-        notice.setObjectName("h")
-        header = QVBoxLayout()
-        header.setSpacing(2)
-        header.addWidget(title)
-        header.addWidget(notice)
+        title.setStyleSheet("font-size:26px; font-weight:700; letter-spacing:3px;")
+
+        titles = QVBoxLayout()
+        titles.setSpacing(4)
+        titles.addStretch(1)
+        titles.addWidget(title, alignment=Qt.AlignRight)
         if self.debug:
             badge = QLabel("DEBUG \u2014 annunciator muted")
             badge.setStyleSheet(
                 "background:#7c2d12; color:#fed7aa; border-radius:6px;"
-                " padding:3px 10px; font-weight:700;"
+                " padding:4px 12px; font-weight:700; font-size:12px;"
             )
-            badge.setFixedHeight(24)
-            header.addWidget(badge, alignment=Qt.AlignLeft)
+            badge.setFixedHeight(26)
+            titles.addWidget(badge, alignment=Qt.AlignRight)
+        titles.addStretch(1)
 
         top = QWidget()
         top_row = QHBoxLayout(top)
-        top_row.setContentsMargins(4, 0, 4, 0)
-        top_row.addLayout(header, 1)
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(14)
+        top_row.addWidget(self.brand)     # logo, given room, top-left
+        top_row.addStretch(1)
+        top_row.addLayout(titles)
+
+        # People are filmed here all shift. The notice that says why — and
+        # that nobody is recording them — is not a footnote, so it does not
+        # get footnote treatment: full width, high contrast, its own frame.
+        notice = QLabel(
+            "THIS FEED IS FOR SAFETY ONLY   \u2022   "
+            "NOT RECORDED   \u2022   NOT SURVEILLANCE"
+        )
+        notice.setAlignment(Qt.AlignCenter)
+        notice.setMinimumHeight(46)
+        notice.setStyleSheet(
+            "font-size:16px; font-weight:700; letter-spacing:1.5px; color:#dbeafe;"
+            " background:#1e293b; border:1px solid #38bdf8; border-radius:10px;"
+            " padding:10px 18px;"
+        )
 
         # --- assemble: checklist on the left, cameras on the right --------
         body = QWidget()
@@ -944,6 +965,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
         layout.addWidget(top)
+        layout.addWidget(notice)
         layout.addWidget(body, 1)
         self.setCentralWidget(root)
 
