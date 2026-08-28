@@ -48,17 +48,29 @@ class Pipeline(threading.Thread):
         cfg: Config,
         cameras: CameraSet,
         on_result: Callable[[Result], None] | None = None,
+        on_ready: Callable[[], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
         profiler: Profiler | None = None,
     ) -> None:
         super().__init__(name="pipeline", daemon=True)
         self.cfg = cfg
         self.cameras = cameras
         self.on_result = on_result
+        self.on_ready = on_ready    # called once the model has loaded
+        self.on_error = on_error   # called once, instead, if loading fails
         self.profiler = profiler
         self.metrics = Metrics(cfg.telemetry.window, cfg.telemetry.csv or None)
-        self.detector = Detector(cfg.model, cfg.ppe)
-        self.monitor = ComplianceMonitor(cfg.ppe, self.detector.missing)
-        self.tower = make_tower(cfg.tower)
+
+        # The model can take seconds to load and warm up. Loading it here,
+        # in the constructor, would block whoever creates the Pipeline —
+        # including a UI that wants to show a window and live video before
+        # the model is ready. So construction is cheap; loading happens in
+        # run(), on the pipeline thread, where it belongs.
+        self.detector: Detector | None = None
+        self.monitor: ComplianceMonitor | None = None
+        self.tower = None
+        self.ready = threading.Event()
+        self.error: Exception | None = None
 
         self._halt = threading.Event()
         self._swap = threading.Lock()
@@ -70,9 +82,36 @@ class Pipeline(threading.Thread):
         self.result: Result | None = None
 
     # -- loop --------------------------------------------------------------
+    def _load(self) -> bool:
+        """Build the model and the state machines that depend on it.
+
+        Runs on the pipeline thread in normal use; test code that never
+        starts the thread may call this directly. Returns False, with
+        ``self.error`` set and ``on_error`` fired, rather than raising —
+        a Pipeline that failed to load must say so and stop cleanly, not
+        take the app down or hang forever looking like it is still busy.
+        """
+        try:
+            self.detector = Detector(self.cfg.model, self.cfg.ppe)
+            self.monitor = ComplianceMonitor(self.cfg.ppe, self.detector.missing)
+            self.tower = make_tower(self.cfg.tower)
+        except Exception as exc:  # noqa: BLE001 — reported via on_error, never silent
+            log.exception("failed to load model %s", self.cfg.model.weights)
+            self.error = exc
+            if self.on_error is not None:
+                self.on_error(exc)
+            return False
+        self.ready.set()
+        if self.on_ready is not None:
+            self.on_ready()
+        return True
+
     def run(self) -> None:
         if self.profiler is not None:
             self.profiler.start()  # cProfile is per-thread; opt this one in
+        if not self._load():
+            self._shutdown()
+            return
         last_print = now()
         last_cycle = 0.0
         last_offline = 0.0
@@ -194,6 +233,8 @@ class Pipeline(threading.Thread):
     def reconfigure(self) -> None:
         """Adopt an edited class list without restarting the model or cameras."""
         with self._swap:
+            if self.detector is None:
+                return  # not loaded yet — the load under way will already see the edit
             missing = self.detector.set_classes(self.cfg.ppe)
             self.monitor = ComplianceMonitor(self.cfg.ppe, missing)
 
@@ -205,7 +246,8 @@ class Pipeline(threading.Thread):
     def _shutdown(self) -> None:
         if self.profiler is not None:
             self.profiler.stop_thread()
-        self.tower.close()
+        if self.tower is not None:
+            self.tower.close()
         self.metrics.flush()
         self.metrics.close()
         log.info("pipeline stopped after %d cycles", self.cycles)

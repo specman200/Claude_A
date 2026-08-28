@@ -403,6 +403,24 @@ class StatusBanner(QLabel):
         self.setFont(QFont("Segoe UI", 17, QFont.Bold))
         self.apply(Status.DEGRADED, [], False)
 
+    def show_loading(self) -> None:
+        """Distinct from DEGRADED: video may already be live, only the
+        model is not — "no video signal" here would be actively wrong."""
+        self.setText("LOADING MODEL\u2026")
+        self.setStyleSheet("background:#334155; color:#e5e7eb; border-radius:10px; padding:10px;")
+
+    def show_error(self, message: str) -> None:
+        self.setText(f"MODEL FAILED TO LOAD: {message}")
+        self.setStyleSheet("background:#7f1d1d; color:#fecaca; border-radius:10px; padding:10px;")
+
+    def show_waiting_for_frame(self) -> None:
+        """The model is loaded; the first detection cycle needs a camera
+        frame to run on next, which is a separate wait — worth saying, since
+        it is often the slower of the two and "loading model" would blame
+        the wrong thing."""
+        self.setText("MODEL READY \u2014 WAITING FOR FIRST FRAME")
+        self.setStyleSheet("background:#334155; color:#e5e7eb; border-radius:10px; padding:10px;")
+
     def apply(
         self,
         status: Status,
@@ -570,6 +588,8 @@ class BrandStrip(QFrame):
 
 class MainWindow(QMainWindow):
     result_ready = Signal(object)
+    model_ready = Signal()
+    model_failed = Signal(str)
 
     def __init__(self, cfg: Config, cameras: CameraSet, pipeline: Pipeline) -> None:
         super().__init__()
@@ -593,7 +613,13 @@ class MainWindow(QMainWindow):
         self.brand = BrandStrip(cfg.branding, base, ratio)
 
         self.banner = StatusBanner()
-        self.panel = PPEPanel(cfg, list(pipeline.detector.names.values()))
+        self.banner.show_loading()
+        # The model may take seconds to load; the class picker's entries
+        # depend on it, so start empty and fill in once it is ready. The
+        # checklist itself does not — it is built from cfg.ppe.classes,
+        # which is already known — so it appears immediately either way.
+        self._model_loaded = False
+        self.panel = PPEPanel(cfg, [])
         self.panel.edited.connect(self._on_edit)
         self.hud = LatencyHUD()
 
@@ -616,9 +642,23 @@ class MainWindow(QMainWindow):
         layout.addWidget(side)
         self.setCentralWidget(root)
 
-        # Results arrive on the pipeline thread; the signal hops them to the GUI.
+        # Results, and the one-time ready/error signal, arrive on the
+        # pipeline thread; each Signal hops the call onto the GUI thread.
         self.result_ready.connect(self._on_result)
         pipeline.on_result = self.result_ready.emit
+
+        self.model_ready.connect(self._on_model_ready)
+        self.model_failed.connect(self._on_model_failed)
+        pipeline.on_ready = self.model_ready.emit
+        pipeline.on_error = lambda exc: self.model_failed.emit(str(exc))
+        # The load may already have finished (or failed) by the time this
+        # window exists — the signal would have fired with nothing yet
+        # connected to hear it — so check directly rather than waiting for
+        # an event that may never come.
+        if pipeline.ready.is_set():
+            self._on_model_ready()
+        elif pipeline.error is not None:
+            self._on_model_failed(str(pipeline.error))
 
         self._video = QTimer(self, interval=16, timeout=self._draw_frames)
         self._video.start()
@@ -647,6 +687,25 @@ class MainWindow(QMainWindow):
 
     def _draw_stats(self) -> None:
         self.hud.apply(self.pipeline.metrics.snapshot(), self.pipeline.infer_fps)
+
+    def _on_model_ready(self) -> None:
+        if self._model_loaded:  # the direct check and the signal can both fire
+            return
+        self._model_loaded = True
+        self.panel.picker.addItems(sorted(self.pipeline.detector.names.values()))
+        if self.pipeline.result is not None:
+            # A cycle may already have published — the ready and result
+            # signals are queued independently, so this one can be
+            # processed first even though the pipeline thread itself has
+            # since raced ahead and produced a result. Apply it directly
+            # rather than waiting for its own signal to catch up, so the
+            # banner is never stuck on "loading" after loading is done.
+            self._on_result(self.pipeline.result)
+        else:
+            self.banner.show_waiting_for_frame()
+
+    def _on_model_failed(self, message: str) -> None:
+        self.banner.show_error(message)
 
     def _on_edit(self) -> None:
         self.pipeline.reconfigure()

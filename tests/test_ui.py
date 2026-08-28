@@ -25,6 +25,7 @@ from ppe.ui import (  # noqa: E402
     IDLE,
     PRESENT,
     UNAVAILABLE,
+    MainWindow,
     PPEPanel,
     StatusBanner,
     VideoPane,
@@ -218,8 +219,6 @@ def station(clip, tmp_path, monkeypatch, app):
     import ppe.pipeline as pipeline_mod
     from ppe.capture import CameraSet
     from ppe.config import BrandingCfg, CameraCfg, TelemetryCfg, TowerCfg
-    from ppe.ui import MainWindow
-
     monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
     cfg = config()
     cfg.path = tmp_path / "config.yaml"
@@ -560,3 +559,215 @@ def test_the_window_wears_the_logo_as_its_icon(app, station):
     window, _ = station
     assert not window.windowIcon().isNull()
     assert not window.brand.isHidden()
+
+
+# -- deferred model loading in the window --------------------------------
+
+
+def test_window_shows_immediately_without_the_model_loaded(app, clip, tmp_path, monkeypatch):
+    """Construction must not touch pipeline.detector — it may not exist yet."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras)  # deliberately never started
+    pipe = pipeline_mod.Pipeline(cfg, cameras)  # deliberately never started
+
+    window = MainWindow(cfg, cameras, pipe)  # must not raise
+    assert "LOADING MODEL" in window.banner.text()
+    assert window.panel.picker.count() == 0
+    # Not closed: the pipeline was deliberately never started, and close()
+    # would try to join a thread that never ran — a real app always starts
+    # the pipeline before the window exists, so this ordering never occurs.
+
+
+def test_the_checklist_appears_before_the_model_does(app, clip, tmp_path, monkeypatch):
+    """The row list comes from config, not the model — it needs no wait."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+
+    window = MainWindow(cfg, cameras, pipe)
+    assert set(window.panel.rows) == {c.name for c in cfg.ppe.classes}
+
+
+def test_model_ready_after_construction_populates_the_picker(app, station):
+    window, pipe = station
+    assert pump(app, lambda: window._model_loaded), "model_ready never reached the window"
+    assert window.panel.picker.count() == len(pipe.detector.names)
+
+
+def test_model_already_ready_before_the_window_exists_is_not_missed(
+    app, clip, monkeypatch, tmp_path
+):
+    """The race this guards: the pipeline could finish loading, and even
+    fire on_ready, before MainWindow exists to hear it."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras).start()
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    assert pipe._load()  # loaded synchronously, before any window exists
+
+    window = MainWindow(cfg, cameras, pipe)
+    assert window._model_loaded
+    assert window.panel.picker.count() > 0
+    # Model is loaded, but no detection cycle has run yet (the thread was
+    # never started) — the banner must say so distinctly, not keep blaming
+    # a model load that already finished.
+    assert "LOADING MODEL" not in window.banner.text()
+    assert "MODEL READY" in window.banner.text()
+    cameras.stop()  # the pipeline itself was never started; nothing to stop there
+
+
+def test_a_model_that_already_failed_before_the_window_exists_shows_the_error(
+    app, clip, monkeypatch, tmp_path
+):
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    class Broken(StubDetector):
+        def __init__(self, *a, **k):
+            raise RuntimeError("bad weights path")
+
+    monkeypatch.setattr(pipeline_mod, "Detector", Broken)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    assert not pipe._load()
+
+    window = MainWindow(cfg, cameras, pipe)
+    assert "FAILED TO LOAD" in window.banner.text()
+    assert "bad weights path" in window.banner.text()
+
+
+def test_a_model_that_fails_after_the_window_exists_shows_the_error_live(
+    app, clip, monkeypatch, tmp_path
+):
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    class Broken(StubDetector):
+        def __init__(self, *a, **k):
+            raise RuntimeError("camera-adjacent config error")
+
+    monkeypatch.setattr(pipeline_mod, "Detector", Broken)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras).start()
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    window = MainWindow(cfg, cameras, pipe)
+    pipe.start()
+
+    assert pump(app, lambda: "FAILED TO LOAD" in window.banner.text())
+    assert "camera-adjacent config error" in window.banner.text()
+    window.close()
+    pipe.stop()
+    cameras.stop()
+
+
+def test_the_banner_blames_the_camera_not_the_model_when_only_the_camera_is_slow(
+    app, monkeypatch, tmp_path
+):
+    """The scenario this feature exists for: a camera that never opens must
+    read as a video problem, never as a stuck model load — the model in
+    this case loads (and a first, camera-less cycle publishes) in well
+    under a millisecond, faster than the GUI thread can even be scheduled."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", str(tmp_path / "never-appears.avi"), 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras).start()
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    window = MainWindow(cfg, cameras, pipe)
+    pipe.start()
+
+    assert pump(app, lambda: window._model_loaded)
+    assert "LOADING MODEL" not in window.banner.text()
+    assert "NO VIDEO SIGNAL" in window.banner.text()  # the true, accurate cause
+
+    window.close()
+    pipe.stop()
+    cameras.stop()
+
+
+def test_model_ready_with_nothing_published_yet_shows_a_distinct_waiting_state(
+    app, clip, monkeypatch, tmp_path
+):
+    """Deterministic version of the race above: the model is loaded (not via
+    the thread, so no cycle has run) and pipeline.result is still None."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    assert pipe._load()
+    assert pipe.result is None
+
+    window = MainWindow(cfg, cameras, pipe)
+    assert "MODEL READY" in window.banner.text()
+    assert "LOADING MODEL" not in window.banner.text()
+
+
+def test_model_ready_with_a_result_already_published_applies_it_immediately(
+    app, clip, monkeypatch, tmp_path
+):
+    """Deterministic version: loading finished AND a result already exists
+    (set directly, not via the thread) before the window is constructed —
+    _on_model_ready must apply it rather than showing "waiting"."""
+    import ppe.pipeline as pipeline_mod
+    from ppe.capture import CameraSet
+    from ppe.config import CameraCfg, TowerCfg
+    from ppe.tower import ClassState, Status
+
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cfg = config()
+    cfg.cameras = [CameraCfg("Line A", clip, 320, 240)]
+    cfg.tower = TowerCfg(enabled=False)
+    cameras = CameraSet(cfg.cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    assert pipe._load()
+    pipe.result = pipeline_mod.Result(
+        status=Status.OK,
+        classes=[ClassState("helmet", "Hard Hat", True, "present", need=1, count=1, conf=0.9)],
+        detections=[[]],
+        ignored=[[]],
+        subjects=[None],
+        seqs=[1],
+        tower_ok=True,
+    )
+
+    window = MainWindow(cfg, cameras, pipe)
+    assert "ALL PPE PRESENT" in window.banner.text()
+    assert "MODEL READY" not in window.banner.text()
+    assert "LOADING" not in window.banner.text()

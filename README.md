@@ -43,6 +43,23 @@ python main.py --profile           # add a hotspot report on exit
 python main.py --headless --seconds 30 --profile   # a fixed benchmark run
 ```
 
+## Slow to appear on launch?
+
+The window and the video feed do not wait on the model. On this machine:
+window shown in 60 ms, live video within 113 ms of launch, the model itself
+taking ~4 s to load and warm up in the background. If the app used to look
+like it was hanging for several seconds before anything appeared, that was
+the model load blocking window creation — fixed by moving model loading onto
+the pipeline thread instead of the constructor, so a UI can show and start
+painting frames immediately.
+
+While the model loads, the banner reads `LOADING MODEL…`, then `MODEL
+READY — WAITING FOR FIRST FRAME` if the cameras are the slower part (the
+common case on a real industrial PC — see the camera troubleshooting above),
+then the real compliance status once the first cycle completes. A model that
+fails to load — a bad path, missing weights — reports `MODEL FAILED TO LOAD:
+<reason>` instead of leaving the window stuck on "loading" forever.
+
 ## No video signal?
 
 Run this first — no threads, no detector, no UI, just OpenCV opening each
@@ -407,7 +424,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               271 tests
+tests/               285 tests
 ```
 
 ## About
@@ -443,7 +460,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 271 tests
+pytest                       # 285 tests
 ruff check ppe main.py tests
 ```
 

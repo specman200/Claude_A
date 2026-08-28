@@ -280,7 +280,9 @@ def frames(*indices):
 def bare_pipeline(cfg, monkeypatch):
     monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
     cameras = CameraSet(cfg.cameras)  # never started; we only exercise _take
-    return pipeline_mod.Pipeline(cfg, cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    assert pipe._load()  # load synchronously; the thread never runs here
+    return pipe
 
 
 def test_one_camera_per_cycle_when_not_batching(clip, tmp_path, monkeypatch):
@@ -315,3 +317,79 @@ def test_round_robin_still_updates_both_cameras(clip, tmp_path, monkeypatch):
     assert max(r.seqs[0] for r in seen) > 0
     assert max(r.seqs[1] for r in seen) > 0
     assert max(pipe.detector.batch_sizes) == 1  # one image per call
+
+
+# -- deferred model loading --------------------------------------------
+# Loading the model can take real, human-noticeable time. It must not block
+# whoever constructs the Pipeline, so a UI can show a window and live video
+# immediately instead of appearing to hang.
+
+
+def test_construction_does_not_load_the_model(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    pipe = pipeline_mod.Pipeline(cfg, CameraSet(cfg.cameras))
+    assert pipe.detector is None
+    assert not pipe.ready.is_set()
+
+
+def test_starting_the_thread_loads_it_and_fires_on_ready(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cameras = CameraSet(cfg.cameras).start()
+    ready = []
+    pipe = pipeline_mod.Pipeline(cfg, cameras, on_ready=lambda: ready.append(True))
+    pipe.start()
+    deadline = time.monotonic() + 10.0
+    while not ready and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready and pipe.ready.is_set()
+    assert pipe.detector is not None
+    pipe.stop()
+    cameras.stop()
+
+
+def test_a_model_that_fails_to_load_reports_the_error_and_stops_cleanly(
+    clip, tmp_path, monkeypatch
+):
+    """A bad config must fail loudly, not hang forever looking like it is
+    still busy — and must not crash the process either."""
+    cfg = make_config(clip, tmp_path)
+
+    class Broken(StubDetector):
+        def __init__(self, *a, **k):
+            raise RuntimeError("no such weights file")
+
+    monkeypatch.setattr(pipeline_mod, "Detector", Broken)
+    cameras = CameraSet(cfg.cameras).start()
+    errors = []
+    pipe = pipeline_mod.Pipeline(cfg, cameras, on_error=errors.append)
+    pipe.start()
+    pipe.join(timeout=10.0)
+
+    assert not pipe.is_alive()
+    assert len(errors) == 1 and "no such weights file" in str(errors[0])
+    assert pipe.detector is None and not pipe.ready.is_set()
+    assert isinstance(pipe.error, RuntimeError)
+    cameras.stop()
+
+
+def test_reconfigure_before_the_model_loads_is_a_harmless_no_op(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    pipe = pipeline_mod.Pipeline(cfg, CameraSet(cfg.cameras))
+    pipe.reconfigure()  # must not raise even though nothing has loaded yet
+
+
+def test_shutdown_before_the_model_loads_does_not_crash_on_a_missing_tower(
+    clip, tmp_path, monkeypatch
+):
+    """stop() can land while the thread is still inside _load(); _shutdown()
+    must not assume self.tower exists yet."""
+    cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cameras = CameraSet(cfg.cameras).start()
+    pipe = pipeline_mod.Pipeline(cfg, cameras)
+    pipe.start()
+    pipe.stop()  # stop immediately; loading may or may not have finished
+    cameras.stop()

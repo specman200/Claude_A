@@ -86,17 +86,25 @@ def main(argv: list[str] | None = None) -> int:
         profiler.start()
 
     cameras = CameraSet(cfg.cameras).start()
-    if not cameras.wait_ready(timeout=10.0):
-        log.warning("not every camera delivered a frame; continuing anyway")
 
     # Imported here so --help and config errors never wait on torch.
     from ppe.pipeline import Pipeline
 
+    # The model loads on the pipeline thread, in the background — building
+    # a Pipeline here is cheap, and pipeline.start() returns immediately.
+    # Nothing in the UI path waits on it: the window shows straight away,
+    # video panes paint as soon as the cameras deliver a frame, and the
+    # checklist shows a "loading model" banner in the meantime rather than
+    # the whole app appearing to hang until a several-second load finishes.
     pipeline = Pipeline(cfg, cameras, profiler=profiler)
     pipeline.start()
 
     try:
         if args.headless:
+            # No window to show early here, so waiting up front is only
+            # ever useful, never something to skip.
+            if not cameras.wait_ready(timeout=10.0):
+                log.warning("not every camera delivered a frame; continuing anyway")
             run_headless(args.seconds)
             code = 0
         else:
