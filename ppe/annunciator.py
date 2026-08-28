@@ -33,9 +33,15 @@ class Annunciator:
         grace_sec: float = 3.0,
         repeat_sec: float = 3.0,
         base: Path | None = None,
+        mute: bool = False,
     ) -> None:
         self.grace = max(0.0, grace_sec)
         self.repeat = max(0.5, repeat_sec)
+        # Muted still runs the whole timing model — it just does not make a
+        # sound. Skipping the evaluation instead would hide the behaviour you
+        # opened the debug view to look at.
+        self.mute = mute
+        self.suppressed = 0
         self._sound = None
         self._since: float | None = None   # when the current violation began
         self._next: float = 0.0            # when the next prompt is due
@@ -93,7 +99,16 @@ class Annunciator:
         self._next = t + self.repeat
         return self._play()
 
+    def due_in(self, t: float | None = None) -> float | None:
+        """Seconds until the next prompt, or None when nothing is pending."""
+        if self._since is None:
+            return None
+        return max(0.0, self._next - (now() if t is None else t))
+
     def _play(self) -> bool:
+        if self.mute:
+            self.suppressed += 1
+            return False
         if self._sound is None:
             return False
         try:

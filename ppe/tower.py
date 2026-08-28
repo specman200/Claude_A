@@ -84,9 +84,10 @@ class ComplianceMonitor:
         # The subject rides the same hold window as everything else, so one
         # dropped frame does not drop the station into standby.
         self._subject = self._by_name.get(cfg.subject) if cfg.subject else None
-        self.status = Status.DEGRADED
-        self._pending = Status.DEGRADED
-        self._pending_since = 0.0
+        self.status = Status.DEGRADED     # what the lamp is showing
+        self.raw = Status.DEGRADED        # this cycle's verdict, before debounce
+        self.candidate = Status.DEGRADED  # what is waiting to be confirmed
+        self.candidate_since = 0.0
 
     def update(
         self, per_camera: list[list[Detection]], t: float | None = None
@@ -137,18 +138,27 @@ class ComplianceMonitor:
         asymmetric — going green is a safety claim and should be slow, going
         red is an alarm and should be quick.
         """
-        if candidate != self._pending:
-            self._pending = candidate
-            self._pending_since = t
+        self.raw = candidate
+        if candidate != self.candidate:
+            self.candidate = candidate
+            self.candidate_since = t
         # Deliberately not an elif: a zero wait should apply on the same
         # update, not cost an extra tick that no setting asked for.
-        if candidate != self.status and (t - self._pending_since) >= self._wait(candidate):
+        if candidate != self.status and (t - self.candidate_since) >= self._wait(candidate):
             log.info("status %s -> %s", self.status.value, candidate.value)
             self.status = candidate
         return self.status
 
     def _wait(self, status: Status) -> float:
         return self.confirm.get(status, 0.5)
+
+    def candidate_age(self, t: float | None = None) -> float:
+        """How long the pending status has stood — the debounce, made visible."""
+        return (now() if t is None else t) - self.candidate_since
+
+    def confirm_wait(self) -> float:
+        """Seconds the pending status still needs before the lamp follows it."""
+        return self._wait(self.candidate)
 
     @property
     def watching(self) -> bool:

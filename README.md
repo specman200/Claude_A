@@ -43,6 +43,49 @@ python main.py --profile           # add a hotspot report on exit
 python main.py --headless --seconds 30 --profile   # a fixed benchmark run
 ```
 
+## Two faces: operator and debug
+
+```bash
+python main.py              # operator — what the floor sees
+python main.py --debug      # everything above, plus the numbers behind it
+```
+
+One window, two layouts — deliberately not two windows. A separate debug
+window would drift from the operator one, and then debug would no longer be
+showing you what production actually does. The mode gates which panels exist,
+not which pipeline runs.
+
+| | operator | debug |
+| --- | --- | --- |
+| Status, checklist, video | yes | yes |
+| Checklist rows | read-only, `OK` / `MISSING` / `1/2` | editable, with confidence floors |
+| Latency HUD | hidden | shown |
+| Decision panel | hidden | shown |
+| Annunciator | **speaks** | **muted** |
+
+**Debug mutes the speaker but keeps the timing running.** The decision panel
+still counts down to the prompt that would have played. Muting by skipping the
+evaluation would hide the behaviour you opened the debug view to look at.
+
+The **decision panel** is what makes hold and confirm times tunable rather than
+guesswork — it shows the raw verdict, what is waiting to be confirmed and for
+how long, and how much hold each class has left before it stops counting as
+seen:
+
+```
+raw       violation
+candidate violation  (0.14s of 0.40s, in 0.26s)
+applied   violation
+audio     muted, next would be 2.9s
+CLASS HOLD REMAINING
+headnet       0/1  hold 0.78/0.80s
+Gloves        1/2  hold 0.62/1.00s
+```
+
+`ui.mode` in `config.yaml` sets the default; `--debug` and `--operator`
+override it per run. The shipped default is `operator` — a station that boots
+into debug on the floor is a mistake.
+
 ## Slow to appear on launch?
 
 The window and the video feed do not wait on the model. On this machine:
@@ -175,6 +218,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `audio.file` | Spoken prompt while a violation stands; empty = silent |
 | `audio.grace_sec` | Pause before the first prompt — time to comply |
 | `audio.repeat_sec` | Gap between repeats while the violation stands |
+| `ui.mode` | `operator` (floor) or `debug` (diagnostics, muted audio) |
 | `telemetry.csv` | Per-cycle latency log; empty string disables |
 | `branding.name` / `.tagline` | Shown in the app's side panel; empty `name` hides the strip |
 | `branding.logo` | Your mark — `.svg`, `.png` or `.jpg`; relative paths resolve from the config file |
@@ -484,7 +528,7 @@ ppe/
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               300 tests
+tests/               315 tests
 ```
 
 ## About
@@ -520,7 +564,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 300 tests
+pytest                       # 315 tests
 ruff check ppe main.py tests
 ```
 

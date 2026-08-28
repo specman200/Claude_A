@@ -31,6 +31,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--profile", action="store_true", help="cProfile the run and report hotspots")
     p.add_argument("--profile-out", default="logs/profile.prof", help="where to write the profile")
     p.add_argument("--seconds", type=float, default=0.0, help="stop after N seconds (0 = forever)")
+    p.add_argument(
+        "--debug", action="store_true",
+        help="debug UI: decision panel, latency HUD, editable checklist, muted audio",
+    )
+    p.add_argument(
+        "--operator", action="store_true", help="force the plain operator UI",
+    )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     return p.parse_args(argv)
 
@@ -73,6 +80,10 @@ def main(argv: list[str] | None = None) -> int:
         cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_DEBUG)
 
     cfg = Config.load(args.config)
+    if args.debug:
+        cfg.ui.mode = "debug"
+    if args.operator:
+        cfg.ui.mode = "operator"
     cfg.validate()
 
     # Before torch is imported: the maths libraries read their thread counts

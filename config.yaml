@@ -97,6 +97,13 @@ tower:
     buzzer: 3
   buzzer_on_violation: false
 
+ui:
+  # operator: what the floor sees — status, checklist, video, nothing to touch.
+  # debug:    adds the decision panel and latency HUD, makes the checklist
+  #           editable, and MUTES the annunciator so tuning is not audible.
+  # `python main.py --debug` / `--operator` override this per run.
+  mode: operator
+
 audio:
   # Spoken prompt while a violation stands — a lamp only works on someone
   # facing it. Leave `file` empty for a silent station.

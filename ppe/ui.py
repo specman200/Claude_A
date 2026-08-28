@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QVBoxLayout,
@@ -26,6 +36,7 @@ from .capture import CameraSet, Frame
 from .config import BrandingCfg, ClassCfg, Config
 from .detector import Detection
 from .latency import STAGES
+from .latency import now as _clock
 from .letterbox import fit
 from .pipeline import Pipeline, Result
 from .tower import ClassState, Status
@@ -201,10 +212,13 @@ class ClassRow(QWidget):
     changed = Signal()
     removed = Signal(str)
 
-    def __init__(self, cfg: ClassCfg, color: str, default_conf: float) -> None:
+    def __init__(
+        self, cfg: ClassCfg, color: str, default_conf: float, editable: bool = True
+    ) -> None:
         super().__init__()
         self.cfg = cfg
         self.color = color
+        self.editable = editable
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 2, 0, 2)
@@ -255,6 +269,16 @@ class ClassRow(QWidget):
         for widget in (self.dot, self.required, self.label, self.score, self.conf, remove):
             row.addWidget(widget)
 
+        if not editable:
+            # An operator has no business retuning a confidence floor mid-shift,
+            # and a stray click on "remove" would silently drop a check. The
+            # row still shows everything; it just cannot be changed.
+            for widget in (self.required, self.conf, remove):
+                widget.hide()
+            self.label.setFont(QFont("Segoe UI", 12))
+            self.score.setFixedWidth(84)
+            self.score.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
+
         # Start in the "not seen yet" look rather than an inherited default.
         self.apply(ClassState(cfg.name, cfg.label, cfg.required, cfg.expect, cfg.count))
 
@@ -287,8 +311,11 @@ class ClassRow(QWidget):
         # A count rule needs the tally, not the confidence: "1/2" is the fault.
         if state.need > 1:
             text = f"{state.count}/{state.need}"
-        else:
+        elif self.editable:
             text = f"{state.conf:.2f}" if state.present else "--"
+        else:
+            # Operators read words faster than they read decimals.
+            text = "OK" if state.compliant else ("SEEN" if state.present else "MISSING")
         if not state.required:
             color = PRESENT if state.present else IDLE
         else:
@@ -301,13 +328,14 @@ class ClassRow(QWidget):
 
 
 class PPEPanel(QFrame):
-    """The editable checklist. Edits apply live; Save writes them to YAML."""
+    """The checklist. Editable in debug; read-only for an operator."""
 
     edited = Signal()
 
-    def __init__(self, cfg: Config, model_names: list[str]) -> None:
+    def __init__(self, cfg: Config, model_names: list[str], editable: bool = True) -> None:
         super().__init__()
         self.cfg = cfg
+        self.editable = editable
         self.setObjectName("card")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(14, 12, 14, 12)
@@ -343,6 +371,10 @@ class PPEPanel(QFrame):
         footer.addWidget(self.saved, 1)
         outer.addLayout(footer)
 
+        if not editable:
+            for widget in (self.picker, add, save, self.saved):
+                widget.hide()
+
         self.rebuild()
 
     def colors(self) -> dict[str, str]:
@@ -355,7 +387,9 @@ class PPEPanel(QFrame):
                 item.widget().deleteLater()
         self.rows.clear()
         for i, klass in enumerate(self.cfg.ppe.classes):
-            row = ClassRow(klass, PALETTE[i % len(PALETTE)], self.cfg.model.conf)
+            row = ClassRow(
+                klass, PALETTE[i % len(PALETTE)], self.cfg.model.conf, self.editable
+            )
             row.changed.connect(self.edited)
             row.removed.connect(self._remove)
             self.rows[klass.name] = row
@@ -390,6 +424,149 @@ class PPEPanel(QFrame):
 # ---------------------------------------------------------------------------
 # Status + latency
 # ---------------------------------------------------------------------------
+
+
+class StatusCard(QFrame):
+    """The station's verdict, big enough to read from across the cell.
+
+    Painted rather than assembled from images: the glyphs are a few vector
+    strokes, so there are no icon files to ship, nothing to go missing, and
+    it stays crisp at any size. Font glyphs were the obvious alternative and
+    are not dependable — this project has already lost a ✕ to a font that
+    did not carry it.
+    """
+
+    def __init__(self, compact: bool = False) -> None:
+        super().__init__()
+        self.setObjectName("card")
+        self.compact = compact
+        self.setMinimumHeight(96 if compact else 230)
+        self._status: Status | None = Status.DEGRADED
+        self._headline = ""
+        self._detail = ""
+        self._color = "#d97706"
+        self.apply(Status.DEGRADED, [], False)
+
+    # -- the StatusBanner interface, kept so callers do not care which it is
+    def text(self) -> str:
+        return f"{self._headline}   {self._detail}".strip()
+
+    def show_loading(self) -> None:
+        self._set(None, "LOADING MODEL…", "", "#475569")
+
+    def show_error(self, message: str) -> None:
+        self._set(None, "MODEL FAILED TO LOAD", message, "#b91c1c")
+
+    def show_waiting_for_frame(self) -> None:
+        self._set(None, "MODEL READY", "waiting for first frame", "#475569")
+
+    def apply(
+        self,
+        status: Status,
+        missing: list[str],
+        tower_ok: bool,
+        unavailable: list[str] | None = None,
+        banned: list[str] | None = None,
+    ) -> None:
+        headline, color = BANNER[status]
+        detail = ""
+        if status is Status.VIOLATION:
+            parts = []
+            if missing:
+                parts.append(f"PPE MISSING: {', '.join(missing)}")
+            if banned:
+                parts.append(f"NOT ALLOWED: {', '.join(banned)}")
+            detail = "   ".join(parts)
+        elif status is Status.DEGRADED and unavailable:
+            headline = "NOT READY"
+            detail = f"model has no class for: {', '.join(unavailable)}"
+        elif status is Status.DEGRADED:
+            detail = "no video signal"
+        if not tower_ok:
+            detail = (detail + "   " if detail else "") + "(tower offline)"
+        self._set(status, headline, detail, color)
+
+    def _set(self, status: Status | None, headline: str, detail: str, color: str) -> None:
+        self._status, self._headline, self._detail, self._color = (
+            status, headline, detail, color,
+        )
+        self.update()
+
+    # -- painting ----------------------------------------------------------
+    def paintEvent(self, _event) -> None:  # noqa: N802 — Qt naming
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#161b22"))
+        p.drawRoundedRect(rect, 10, 10)
+
+        color = QColor(self._color)
+        if self.compact:
+            self._paint_compact(p, rect, color)
+        else:
+            self._paint_full(p, rect, color)
+
+    def _paint_full(self, p: QPainter, rect, color: QColor) -> None:
+        d = 96
+        cx, cy = rect.center().x(), rect.top() + 24 + d / 2
+        p.setBrush(color)
+        p.drawEllipse(QRectF(cx - d / 2, cy - d / 2, d, d))
+        self._paint_glyph(p, cx, cy, d * 0.42)
+
+        p.setPen(color)
+        p.setFont(QFont("Segoe UI", 19, QFont.Bold))
+        p.drawText(
+            QRectF(rect.left() + 12, cy + d / 2 + 12, rect.width() - 24, 34),
+            Qt.AlignHCenter | Qt.AlignVCenter, self._headline,
+        )
+        if self._detail:
+            p.setPen(QColor("#9aa4b2"))
+            p.setFont(QFont("Segoe UI", 10))
+            p.drawText(
+                QRectF(rect.left() + 14, cy + d / 2 + 48, rect.width() - 28, 60),
+                int(Qt.AlignHCenter | Qt.TextWordWrap), self._detail,
+            )
+
+    def _paint_compact(self, p: QPainter, rect, color: QColor) -> None:
+        d = 40
+        cx, cy = rect.left() + 16 + d / 2, rect.center().y()
+        p.setBrush(color)
+        p.drawEllipse(QRectF(cx - d / 2, cy - d / 2, d, d))
+        self._paint_glyph(p, cx, cy, d * 0.40)
+
+        left = rect.left() + 16 + d + 14
+        p.setPen(color)
+        p.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        p.drawText(QRectF(left, rect.top() + 14, rect.width() - left, 22),
+                   Qt.AlignVCenter, self._headline)
+        if self._detail:
+            p.setPen(QColor("#9aa4b2"))
+            p.setFont(QFont("Segoe UI", 9))
+            p.drawText(QRectF(left, rect.top() + 38, rect.width() - left - 10, 40),
+                       int(Qt.AlignTop | Qt.TextWordWrap), self._detail)
+
+    def _paint_glyph(self, p: QPainter, cx: float, cy: float, r: float) -> None:
+        """A tick, a cross, a dash or a bang — drawn, never typed."""
+        pen = QPen(QColor("#0b0e11"), max(3.0, r * 0.30))
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        s = self._status
+        if s is Status.OK:
+            path = QPainterPath()
+            path.moveTo(cx - r * 0.75, cy)
+            path.lineTo(cx - r * 0.20, cy + r * 0.55)
+            path.lineTo(cx + r * 0.80, cy - r * 0.60)
+            p.drawPath(path)
+        elif s is Status.VIOLATION:
+            p.drawLine(QPointF(cx - r * 0.6, cy - r * 0.6), QPointF(cx + r * 0.6, cy + r * 0.6))
+            p.drawLine(QPointF(cx + r * 0.6, cy - r * 0.6), QPointF(cx - r * 0.6, cy + r * 0.6))
+        elif s is Status.STANDBY:
+            p.drawLine(QPointF(cx - r * 0.65, cy), QPointF(cx + r * 0.65, cy))
+        else:  # DEGRADED, or a load state with no status yet
+            p.drawLine(QPointF(cx, cy - r * 0.7), QPointF(cx, cy + r * 0.15))
+            p.drawPoint(QPointF(cx, cy + r * 0.6))
 
 
 class StatusBanner(QLabel):
@@ -505,6 +682,79 @@ class LatencyHUD(QFrame):
         self.rate.setText(f"{infer_fps:.1f} inferences/s   (ms per stage)")
 
 
+class DecisionPanel(QFrame):
+    """Why the lamp says what it says — the debounce, made visible.
+
+    Tuning hold and confirm times by watching the lamp is guesswork. This
+    shows the raw verdict, what is waiting to be confirmed and for how long,
+    and how much hold each class has left before it stops counting as seen.
+    """
+
+    STAGES = ("raw", "candidate", "applied")
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("card")
+        # An explicit floor, so the column's minimum height accounts for this
+        # panel and the scroll area knows the content overflows the viewport.
+        # Without it the layout compresses the panel rather than scrolling.
+        self.setMinimumHeight(230)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(6)
+        heading = QLabel("DECISION")
+        heading.setObjectName("h")
+        outer.addWidget(heading)
+
+        mono = QFont()
+        mono.setStyleHint(QFont.Monospace)
+        mono.setFamily(mono.defaultFamily())
+        mono.setPointSize(9)
+
+        self.summary = QLabel("-")
+        self.summary.setFont(mono)
+        # No wrapping: these are short fixed-width lines, and wordWrap's
+        # heightForWidth does not resolve inside a scroll area — the label
+        # gets squashed to a line and a half instead of its natural height.
+        self.summary.setWordWrap(False)
+        self.summary.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        outer.addWidget(self.summary)
+
+        holds = QLabel("CLASS HOLD REMAINING")
+        holds.setObjectName("h")
+        outer.addWidget(holds)
+        self.holds = QLabel("-")
+        self.holds.setFont(mono)
+        self.holds.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        outer.addWidget(self.holds)
+
+    def apply(self, result: Result) -> None:
+        wait = result.confirm_wait
+        age = result.candidate_age
+        pending = (
+            "confirmed"
+            if result.candidate is result.status
+            else f"in {max(0.0, wait - age):.2f}s"
+        )
+        audio = "-" if result.audio_due is None else f"{result.audio_due:.1f}s"
+        self.summary.setText(
+            f"raw       {result.raw.value}\n"
+            f"candidate {result.candidate.value}  ({age:.2f}s of {wait:.2f}s, {pending})\n"
+            f"applied   {result.status.value}\n"
+            f"audio     muted, next would be {audio}"
+        )
+        rows = []
+        for c in result.classes:
+            left = max(0.0, c.hold - (_clock() - c.counted_at)) if c.counted_at else 0.0
+            rows.append(f"{c.name[:13]:<13} {c.count}/{c.need}  hold {left:4.2f}/{c.hold:.2f}s")
+        self.holds.setText("\n".join(rows) or "-")
+        # A layout short on space will shrink a label below its sizeHint unless
+        # a minimum is set. Pin each to the height its current text needs, so
+        # the scroll area scrolls instead of silently clipping the panel.
+        for label in (self.summary, self.holds):
+            label.setMinimumHeight(label.sizeHint().height())
+
+
 # ---------------------------------------------------------------------------
 # Branding
 # ---------------------------------------------------------------------------
@@ -600,6 +850,7 @@ class MainWindow(QMainWindow):
         self.resize(1500, 880)
         self.setStyleSheet(STYLE)
 
+        self.debug = cfg.ui.mode == "debug"
         self.panes = [VideoPane(c.cfg.name) for c in cameras.cameras]
         video = QSplitter(Qt.Horizontal if len(self.panes) <= 2 else Qt.Vertical)
         for pane in self.panes:
@@ -612,34 +863,88 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon))
         self.brand = BrandStrip(cfg.branding, base, ratio)
 
-        self.banner = StatusBanner()
+        # Status is one widget in both modes; debug just gets the short form,
+        # so the two views can never disagree about what the station thinks.
+        self.banner = StatusCard(compact=self.debug)
         self.banner.show_loading()
-        # The model may take seconds to load; the class picker's entries
-        # depend on it, so start empty and fill in once it is ready. The
-        # checklist itself does not — it is built from cfg.ppe.classes,
-        # which is already known — so it appears immediately either way.
         self._model_loaded = False
-        self.panel = PPEPanel(cfg, [])
+        self.panel = PPEPanel(cfg, [], editable=self.debug)
         self.panel.edited.connect(self._on_edit)
-        self.hud = LatencyHUD()
 
+        # --- left column: identity, verdict, checklist -------------------
         side = QWidget()
-        side.setFixedWidth(360)
+        side.setMinimumWidth(400 if not self.debug else 380)
+        side.setMaximumWidth(400 if not self.debug else 380)
         column = QVBoxLayout(side)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(12)
+        column.addWidget(self.brand)          # logo sits top-left
         column.addWidget(self.banner)
         column.addWidget(self.panel)
-        column.addWidget(self.hud)
-        column.addStretch(1)
-        column.addWidget(self.brand)
+
+        self.hud = LatencyHUD()
+        self.decisions = DecisionPanel()
+        if self.debug:
+            column.addWidget(self.hud)
+            column.addWidget(self.decisions)
+        else:
+            # Built either way so _draw_stats and _on_result stay unconditional,
+            # just never shown to an operator.
+            self.hud.hide()
+            self.decisions.hide()
+        if not self.debug:
+            # Inside the debug scroll area a stretch would make the column try
+            # to fit the viewport, squashing the panels instead of scrolling.
+            column.addStretch(1)
+
+        # --- header: title and the notice the floor is entitled to --------
+        title = QLabel("PPE DETECTION")
+        title.setStyleSheet("font-size:22px; font-weight:700; letter-spacing:2px;")
+        notice = QLabel("This feed is for safety only \u2014 not recording, not surveillance")
+        notice.setObjectName("h")
+        header = QVBoxLayout()
+        header.setSpacing(2)
+        header.addWidget(title)
+        header.addWidget(notice)
+        if self.debug:
+            badge = QLabel("DEBUG \u2014 annunciator muted")
+            badge.setStyleSheet(
+                "background:#7c2d12; color:#fed7aa; border-radius:6px;"
+                " padding:3px 10px; font-weight:700;"
+            )
+            badge.setFixedHeight(24)
+            header.addWidget(badge, alignment=Qt.AlignLeft)
+
+        top = QWidget()
+        top_row = QHBoxLayout(top)
+        top_row.setContentsMargins(4, 0, 4, 0)
+        top_row.addLayout(header, 1)
+
+        # --- assemble: checklist on the left, cameras on the right --------
+        body = QWidget()
+        body_row = QHBoxLayout(body)
+        body_row.setContentsMargins(0, 0, 0, 0)
+        body_row.setSpacing(12)
+        if self.debug:
+            # Debug stacks more than fits on a short screen, and a panel that
+            # is silently cut off is worse than no panel at all.
+            scroll = QScrollArea()
+            scroll.setWidget(side)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setFixedWidth(side.width() + 16)
+            body_row.addWidget(scroll)
+        else:
+            body_row.addWidget(side)
+        body_row.addWidget(video, 1)
 
         root = QWidget()
-        layout = QHBoxLayout(root)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
-        layout.addWidget(video, 1)
-        layout.addWidget(side)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+        layout.addWidget(top)
+        layout.addWidget(body, 1)
         self.setCentralWidget(root)
 
         # Results, and the one-time ready/error signal, arrive on the
@@ -681,6 +986,8 @@ class MainWindow(QMainWindow):
         ):
             pane.show_detections(dets, ignored, subject, colors)
         self.panel.apply(result.classes, result.status in JUDGING)
+        if self.debug:
+            self.decisions.apply(result)
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable, result.banned
         )

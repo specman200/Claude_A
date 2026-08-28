@@ -36,6 +36,13 @@ class Result:
     latency_ms: float = 0.0
     infer_fps: float = 0.0
     tower_ok: bool = False
+    # The decision behind the lamp, for the debug view: what this cycle
+    # actually said, what is waiting to be confirmed, and for how long.
+    raw: Status = Status.DEGRADED
+    candidate: Status = Status.DEGRADED
+    candidate_age: float = 0.0
+    confirm_wait: float = 0.0
+    audio_due: float | None = None
     missing: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
     banned: list[str] = field(default_factory=list)
@@ -71,7 +78,12 @@ class Pipeline(threading.Thread):
         self.monitor: ComplianceMonitor | None = None
         self.tower = None
         self.annunciator = Annunciator(
-            cfg.audio.file, cfg.audio.grace_sec, cfg.audio.repeat_sec, cfg.base_dir
+            cfg.audio.file,
+            cfg.audio.grace_sec,
+            cfg.audio.repeat_sec,
+            cfg.base_dir,
+            # Debugging a station should not mean listening to it nag.
+            mute=cfg.ui.mode == "debug",
         )
         self.ready = threading.Event()
         self.error: Exception | None = None
@@ -227,6 +239,11 @@ class Pipeline(threading.Thread):
             latency_ms=latency_ms,
             infer_fps=self.infer_fps,
             tower_ok=getattr(self.tower, "connected", False),
+            raw=self.monitor.raw,
+            candidate=self.monitor.candidate,
+            candidate_age=self.monitor.candidate_age(),
+            confirm_wait=self.monitor.confirm_wait(),
+            audio_due=self.annunciator.due_in(),
             missing=self.monitor.missing(),
             unavailable=self.monitor.unavailable(),
             banned=self.monitor.banned(),

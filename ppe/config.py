@@ -123,6 +123,19 @@ class TowerCfg:
 
 
 @dataclass
+class UICfg:
+    """Which face the station shows.
+
+    `operator`: what a shop floor needs — status, checklist, video. Nothing
+    adjustable, nothing to misread.
+    `debug`: everything operator shows plus the numbers behind the decision,
+    an editable checklist, and a muted annunciator.
+    """
+
+    mode: str = "operator"   # operator | debug
+
+
+@dataclass
 class AudioCfg:
     """Spoken prompt while a violation stands. Empty `file` = silent."""
 
@@ -165,6 +178,7 @@ class Config:
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
     branding: BrandingCfg = field(default_factory=BrandingCfg)
     audio: AudioCfg = field(default_factory=AudioCfg)
+    ui: UICfg = field(default_factory=UICfg)
     path: Path | None = None
 
     # -- io ----------------------------------------------------------------
@@ -183,6 +197,7 @@ class Config:
             telemetry=_build(TelemetryCfg, raw.get("telemetry") or {}),
             branding=_build(BrandingCfg, raw.get("branding") or {}),
             audio=_build(AudioCfg, raw.get("audio") or {}),
+            ui=_build(UICfg, raw.get("ui") or {}),
             path=path,
         )
 
@@ -208,6 +223,10 @@ class Config:
         if self.model.imgsz % 32:
             raise ValueError(
                 f"config: model.imgsz must be a multiple of 32, got {self.model.imgsz}"
+            )
+        if self.ui.mode not in ("operator", "debug"):
+            raise ValueError(
+                f"config: ui.mode must be 'operator' or 'debug', got {self.ui.mode!r}"
             )
         if self.audio.grace_sec < 0 or self.audio.repeat_sec <= 0:
             raise ValueError(

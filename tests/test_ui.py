@@ -709,7 +709,9 @@ def test_the_banner_blames_the_camera_not_the_model_when_only_the_camera_is_slow
 
     assert pump(app, lambda: window._model_loaded)
     assert "LOADING MODEL" not in window.banner.text()
-    assert "NO VIDEO SIGNAL" in window.banner.text()  # the true, accurate cause
+    # The card shows a headline and a detail line; the cause lives in the
+    # detail, so match without caring which half it landed in.
+    assert "no video signal" in window.banner.text().lower()
 
     window.close()
     pipe.stop()
