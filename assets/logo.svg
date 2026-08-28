@@ -1,0 +1,24 @@
+<!--
+  Placeholder personal mark — swap this file for your own.
+
+  Anything Qt can read works (.svg, .png, .jpg); point `branding.logo` in
+  config.yaml at it. A square-ish mark sits best in the app's side panel.
+  These colours were picked to stay legible on both light and dark
+  backgrounds, since GitHub renders READMEs in either.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Placeholder personal logo">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 8 L112 36 V92 L64 120 L16 92 V36 Z"
+        fill="none" stroke="url(#g)" stroke-width="7" stroke-linejoin="round"/>
+  <g fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round">
+    <path d="M64 40 L88 54"/>
+    <path d="M88 74 L64 88"/>
+    <path d="M40 74 L40 54"/>
+  </g>
+  <circle cx="64" cy="64" r="9" fill="url(#g)"/>
+</svg>

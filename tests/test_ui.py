@@ -4,6 +4,7 @@ Run headless via Qt's offscreen platform, so they work in CI.
 """
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -13,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from ppe.capture import Frame  # noqa: E402
 from ppe.config import ClassCfg, Config, ModelCfg, PPECfg  # noqa: E402
@@ -216,7 +217,7 @@ def station(clip, tmp_path, monkeypatch, app):
     """A live window over synthetic cameras and a stubbed model."""
     import ppe.pipeline as pipeline_mod
     from ppe.capture import CameraSet
-    from ppe.config import CameraCfg, TelemetryCfg, TowerCfg
+    from ppe.config import BrandingCfg, CameraCfg, TelemetryCfg, TowerCfg
     from ppe.ui import MainWindow
 
     monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
@@ -225,6 +226,11 @@ def station(clip, tmp_path, monkeypatch, app):
     cfg.cameras = [CameraCfg("Line A", clip, 320, 240), CameraCfg("Line B", clip, 320, 240)]
     cfg.tower = TowerCfg(enabled=False)
     cfg.telemetry = TelemetryCfg(csv=str(tmp_path / "latency.csv"))
+    cfg.branding = BrandingCfg(
+        name="A. Engineer",
+        tagline="Vision & Automation",
+        logo=str(Path("assets/logo.svg").resolve()),
+    )
 
     cameras = CameraSet(cfg.cameras).start()
     assert cameras.wait_ready(timeout=10.0)
@@ -453,3 +459,104 @@ def test_a_count_rule_shows_the_tally_not_the_confidence(app):
     panel.apply([ClassState("Gloves", "Gloves", True, "present", need=2, count=2, conf=0.8)])
     assert panel.rows["Gloves"].score.text() == "2/2"
     assert PRESENT in panel.rows["Gloves"].dot.styleSheet()
+
+# -- branding --------------------------------------------------------------
+
+
+SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
+    "<rect width='10' height='10' fill='red'/></svg>"
+)
+
+
+def test_loads_an_svg_logo_at_the_requested_size(app, tmp_path):
+    from ppe.ui import load_logo
+
+    path = tmp_path / "logo.svg"
+    path.write_text(SVG)
+    pixmap = load_logo(path, 40)
+    assert pixmap is not None and pixmap.size().width() == 40
+
+
+def test_loads_a_raster_logo_too(app, tmp_path):
+    from ppe.ui import load_logo
+
+    path = tmp_path / "logo.png"
+    QImage(20, 20, QImage.Format_RGB32).save(str(path))
+    assert load_logo(path, 40) is not None
+
+
+def test_a_high_dpi_logo_is_rendered_at_device_resolution(app, tmp_path):
+    from ppe.ui import load_logo
+
+    path = tmp_path / "logo.svg"
+    path.write_text(SVG)
+    pixmap = load_logo(path, 40, ratio=2.0)
+    # Twice the pixels, same layout size — the mark stays crisp when scaled.
+    assert pixmap.width() == 80
+    assert pixmap.devicePixelRatio() == 2.0
+    assert pixmap.deviceIndependentSize().width() == 40
+
+
+@pytest.mark.parametrize(
+    "name,content",
+    [
+        ("missing.svg", None),               # never created
+        ("broken.svg", "not xml at all <<<"),
+        ("empty.svg", ""),
+        ("fake.png", "this is not a png"),
+        ("mystery.xyz", "unsupported format"),
+    ],
+)
+def test_a_bad_logo_is_ignored_rather_than_fatal(app, tmp_path, name, content):
+    """The logo is meant to be swapped, so a bad file must never crash the app."""
+    from ppe.ui import load_logo
+
+    path = tmp_path / name
+    if content is not None:
+        path.write_text(content)
+    assert load_logo(path, 40) is None
+
+
+def test_no_logo_configured_is_not_an_error(app):
+    from ppe.ui import load_logo
+
+    assert load_logo(None, 40) is None
+
+
+def branding(**kw):
+    from ppe.config import BrandingCfg
+
+    return BrandingCfg(**{"name": "A. Engineer", "tagline": "Vision & Automation", **kw})
+
+
+def test_brand_strip_shows_the_logo_name_and_tagline(app, tmp_path):
+    from ppe.ui import BrandStrip
+
+    (tmp_path / "logo.svg").write_text(SVG)
+    strip = BrandStrip(branding(logo="logo.svg"), tmp_path)
+    labels = [w.text() for w in strip.findChildren(QLabel) if w.text()]
+    assert "A. Engineer" in labels and "Vision & Automation" in labels
+    assert any(w.pixmap() and not w.pixmap().isNull() for w in strip.findChildren(QLabel))
+    paint(strip, 340, 60)
+
+
+def test_brand_strip_keeps_the_name_when_the_logo_is_gone(app, tmp_path):
+    from ppe.ui import BrandStrip
+
+    strip = BrandStrip(branding(logo="vanished.svg"), tmp_path)
+    assert "A. Engineer" in [w.text() for w in strip.findChildren(QLabel) if w.text()]
+    assert not any(w.pixmap() and not w.pixmap().isNull() for w in strip.findChildren(QLabel))
+    paint(strip, 340, 60)
+
+
+def test_brand_strip_hides_itself_when_no_name_is_configured(app, tmp_path):
+    from ppe.ui import BrandStrip
+
+    assert BrandStrip(branding(name="", tagline=""), tmp_path).isHidden()
+
+
+def test_the_window_wears_the_logo_as_its_icon(app, station):
+    window, _ = station
+    assert not window.windowIcon().isNull()
+    assert not window.brand.isHidden()

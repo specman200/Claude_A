@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="" width="76" align="right">
+
 # PPE Detection Station
 
 Two camera feeds → YOLOv11s → a Modbus tower light, with a live checklist of the
@@ -66,6 +68,8 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `ppe.confirm_frames` | Agreeing cycles before the lamp changes |
 | `tower.*` | Transport, address, and the coil behind each lamp |
 | `telemetry.csv` | Per-cycle latency log; empty string disables |
+| `branding.name` / `.tagline` | Shown in the app's side panel; empty `name` hides the strip |
+| `branding.logo` | Your mark — `.svg`, `.png` or `.jpg`; relative paths resolve from the config file |
 
 ### Capture size and accuracy
 
@@ -315,15 +319,45 @@ ppe/
   bench.py           `python -m ppe.bench` — measure backends on your machine
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
+assets/logo.svg      placeholder personal mark — swap for your own
 docs/layout.svg      architecture diagram
-tests/               230 tests
+tests/               251 tests
 ```
+
+## About
+
+<!--
+  Replace the placeholder text below with your own background, and swap
+  `assets/logo.svg` for your logo. `branding.name` and `branding.tagline` in
+  config.yaml feed the same details into the running app's side panel, so keep
+  the two in step.
+-->
+
+<img src="assets/logo.svg" alt="" width="60" align="left" hspace="14" vspace="4">
+
+**Your Name** — Computer Vision & Industrial Automation
+
+_Placeholder — replace with a short paragraph on your background: the domains
+you build in, the kind of systems you have shipped, and what led to this
+project._
+
+<br clear="left">
+
+| | |
+| --- | --- |
+| **Focus** | _e.g. real-time vision, industrial automation, edge deployment_ |
+| **Built with** | Python · PyTorch · Ultralytics YOLO · OpenCV · Qt · Modbus |
+| **Links** | _website · GitHub · LinkedIn_ |
+
+The logo above is a placeholder mark. To use your own, drop the file in
+`assets/` and point `branding.logo` at it — nothing in the code needs to
+change, and an unreadable or missing file is ignored rather than fatal.
 
 ## Tests
 
 ```bash
 pip install pytest ruff
-pytest                       # 230 tests
+pytest                       # 251 tests
 ruff check ppe main.py tests
 ```
 
