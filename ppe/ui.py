@@ -45,7 +45,7 @@ from .tower import ClassState, Status
 PALETTE = ["#38bdf8", "#a78bfa", "#f472b6", "#fbbf24", "#34d399", "#fb923c", "#60a5fa", "#f87171"]
 PRESENT = "#22c55e"
 ABSENT = "#ef4444"
-IDLE = "#4b5563"
+IDLE = "#4b4b7a"
 UNAVAILABLE = "#f59e0b"
 
 BANNER = {
@@ -60,14 +60,14 @@ JUDGING = (Status.OK, Status.VIOLATION)
 SUBJECT = "#f8fafc"
 
 STYLE = """
-QWidget       { background:#0f1216; color:#e5e7eb;
+QWidget       { background:#00003D; color:#FFFFFF;
                 font-family:"Segoe UI","Helvetica Neue",sans-serif; font-size:13px; }
-QFrame#card   { background:#161b22; border:1px solid #232a33; border-radius:10px; }
-QLabel#h      { color:#9aa4b2; font-size:11px; font-weight:600; letter-spacing:1.2px; }
-QPushButton   { background:#232a33; border:1px solid #2f3742; border-radius:6px; padding:6px 12px; }
-QPushButton:hover { background:#2b333d; }
+QFrame#card   { background:#0A0A4F; border:1px solid #1E1E66; border-radius:10px; }
+QLabel#h      { color:#A6A6D6; font-size:11px; font-weight:600; letter-spacing:1.2px; }
+QPushButton   { background:#14145A; border:1px solid #2A2A78; border-radius:6px; padding:6px 12px; }
+QPushButton:hover { background:#1E1E70; }
 QCheckBox::indicator { width:15px; height:15px; }
-QComboBox, QDoubleSpinBox { background:#1c222b; border:1px solid #2f3742;
+QComboBox, QDoubleSpinBox { background:#0A0A45; border:1px solid #26266E;
                             border-radius:6px; padding:3px 6px; }
 """
 
@@ -132,7 +132,7 @@ class VideoPane(QWidget):
 
     def paintEvent(self, _event) -> None:  # noqa: N802 — Qt naming
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#0b0e11"))
+        painter.fillRect(self.rect(), QColor("#000029"))
         if self._image is None:
             self._banner(painter, f"{self.name} — waiting for video")
             return
@@ -179,7 +179,7 @@ class VideoPane(QWidget):
         tw, th = metrics.horizontalAdvance(text) + 8, metrics.height() + 2
         ty = rect.top() - th if rect.top() > th else rect.top()
         painter.fillRect(QRectF(rect.left(), ty, tw, th), color)
-        painter.setPen(QColor("#0b0e11"))
+        painter.setPen(QColor("#000029"))
         painter.drawText(QRectF(rect.left() + 4, ty, tw, th), Qt.AlignVCenter, text)
 
     def _draw_subject(
@@ -194,9 +194,9 @@ class VideoPane(QWidget):
                          Qt.AlignVCenter, "SUBJECT")
 
     def _banner(self, painter: QPainter, text: str) -> None:
-        painter.setPen(QColor("#0b0e11"))
+        painter.setPen(QColor("#000029"))
         painter.fillRect(0, 0, self.width(), 24, QColor(0, 0, 0, 150))
-        painter.setPen(QColor("#e5e7eb" if self.online else UNAVAILABLE))
+        painter.setPen(QColor("#FFFFFF" if self.online else UNAVAILABLE))
         painter.setFont(QFont("Segoe UI", 9))
         painter.drawText(QRectF(8, 0, self.width() - 16, 24), Qt.AlignVCenter, text)
 
@@ -262,7 +262,7 @@ class ClassRow(QWidget):
         remove = QPushButton("\u00d7")  # ×
         remove.setFixedSize(24, 24)
         # The shared button padding would leave no room for the glyph here.
-        remove.setStyleSheet("padding:0; color:#9aa4b2; font-size:16px; font-weight:700;")
+        remove.setStyleSheet("padding:0; color:#A6A6D6; font-size:16px; font-weight:700;")
         remove.setToolTip("Remove this class")
         remove.clicked.connect(lambda: self.removed.emit(self.cfg.name))
 
@@ -452,13 +452,13 @@ class StatusCard(QFrame):
         return f"{self._headline}   {self._detail}".strip()
 
     def show_loading(self) -> None:
-        self._set(None, "LOADING MODEL…", "", "#475569")
+        self._set(None, "LOADING MODEL…", "", "#4b4b7a")
 
     def show_error(self, message: str) -> None:
         self._set(None, "MODEL FAILED TO LOAD", message, "#b91c1c")
 
     def show_waiting_for_frame(self) -> None:
-        self._set(None, "MODEL READY", "waiting for first frame", "#475569")
+        self._set(None, "MODEL READY", "waiting for first frame", "#4b4b7a")
 
     def apply(
         self,
@@ -498,7 +498,7 @@ class StatusCard(QFrame):
         p.setRenderHint(QPainter.Antialiasing, True)
         rect = self.rect().adjusted(1, 1, -1, -1)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#161b22"))
+        p.setBrush(QColor("#0A0A4F"))
         p.drawRoundedRect(rect, 10, 10)
 
         color = QColor(self._color)
@@ -521,7 +521,7 @@ class StatusCard(QFrame):
             Qt.AlignHCenter | Qt.AlignVCenter, self._headline,
         )
         if self._detail:
-            p.setPen(QColor("#9aa4b2"))
+            p.setPen(QColor("#A6A6D6"))
             p.setFont(QFont("Segoe UI", 10))
             p.drawText(
                 QRectF(rect.left() + 14, cy + d / 2 + 48, rect.width() - 28, 60),
@@ -541,14 +541,14 @@ class StatusCard(QFrame):
         p.drawText(QRectF(left, rect.top() + 14, rect.width() - left, 22),
                    Qt.AlignVCenter, self._headline)
         if self._detail:
-            p.setPen(QColor("#9aa4b2"))
+            p.setPen(QColor("#A6A6D6"))
             p.setFont(QFont("Segoe UI", 9))
             p.drawText(QRectF(left, rect.top() + 38, rect.width() - left - 10, 40),
                        int(Qt.AlignTop | Qt.TextWordWrap), self._detail)
 
     def _paint_glyph(self, p: QPainter, cx: float, cy: float, r: float) -> None:
         """A tick, a cross, a dash or a bang — drawn, never typed."""
-        pen = QPen(QColor("#0b0e11"), max(3.0, r * 0.30))
+        pen = QPen(QColor("#000029"), max(3.0, r * 0.30))
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
         p.setPen(pen)
@@ -584,7 +584,7 @@ class StatusBanner(QLabel):
         """Distinct from DEGRADED: video may already be live, only the
         model is not — "no video signal" here would be actively wrong."""
         self.setText("LOADING MODEL\u2026")
-        self.setStyleSheet("background:#334155; color:#e5e7eb; border-radius:10px; padding:10px;")
+        self.setStyleSheet("background:#14145A; color:#FFFFFF; border-radius:10px; padding:10px;")
 
     def show_error(self, message: str) -> None:
         self.setText(f"MODEL FAILED TO LOAD: {message}")
@@ -596,7 +596,7 @@ class StatusBanner(QLabel):
         it is often the slower of the two and "loading model" would blame
         the wrong thing."""
         self.setText("MODEL READY \u2014 WAITING FOR FIRST FRAME")
-        self.setStyleSheet("background:#334155; color:#e5e7eb; border-radius:10px; padding:10px;")
+        self.setStyleSheet("background:#14145A; color:#FFFFFF; border-radius:10px; padding:10px;")
 
     def apply(
         self,
@@ -627,7 +627,7 @@ class StatusBanner(QLabel):
             text += "   (tower offline)"
         self.setText(text)
         self.setStyleSheet(
-            f"background:{color}; color:#0b0e11; border-radius:10px; padding:10px;"
+            f"background:{color}; color:#000029; border-radius:10px; padding:10px;"
         )
 
 
@@ -936,8 +936,8 @@ class MainWindow(QMainWindow):
         notice.setAlignment(Qt.AlignCenter)
         notice.setMinimumHeight(46)
         notice.setStyleSheet(
-            "font-size:16px; font-weight:700; letter-spacing:1.5px; color:#dbeafe;"
-            " background:#1e293b; border:1px solid #38bdf8; border-radius:10px;"
+            "font-size:16px; font-weight:700; letter-spacing:1.5px; color:#FFFFFF;"
+            " background:#0A0A4F; border:1px solid #5B8DEF; border-radius:10px;"
             " padding:10px 18px;"
         )
 
