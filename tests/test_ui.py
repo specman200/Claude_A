@@ -477,6 +477,33 @@ def test_loads_an_svg_logo_at_the_requested_size(app, tmp_path):
     assert pixmap is not None and pixmap.size().width() == 40
 
 
+def test_a_rectangular_svg_logo_keeps_its_own_aspect_ratio(app, tmp_path):
+    """A wide mark must come back wide, not squished into a height-square box."""
+    from ppe.ui import load_logo
+
+    wide = (
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'>"
+        "<rect width='40' height='10' fill='red'/></svg>"
+    )
+    path = tmp_path / "wide.svg"
+    path.write_text(wide)
+    pixmap = load_logo(path, 40)
+    assert pixmap is not None
+    assert pixmap.height() == 40
+    assert pixmap.width() == 160  # 4:1 source aspect, preserved
+
+
+def test_a_rectangular_raster_logo_keeps_its_own_aspect_ratio(app, tmp_path):
+    from ppe.ui import load_logo
+
+    path = tmp_path / "wide.png"
+    QImage(80, 20, QImage.Format_RGB32).save(str(path))
+    pixmap = load_logo(path, 40)
+    assert pixmap is not None
+    assert pixmap.height() == 40
+    assert pixmap.width() == 160  # 4:1 source aspect, preserved
+
+
 def test_loads_a_raster_logo_too(app, tmp_path):
     from ppe.ui import load_logo
 
@@ -529,30 +556,28 @@ def branding(**kw):
     return BrandingCfg(**{"name": "A. Engineer", "tagline": "Vision & Automation", **kw})
 
 
-def test_brand_strip_shows_the_logo_name_and_tagline(app, tmp_path):
+def test_brand_strip_shows_only_the_logo(app, tmp_path):
+    """No name or tagline text — just the mark, so it can't be squished by a
+    layout built to share space with a label next to it."""
     from ppe.ui import BrandStrip
 
     (tmp_path / "logo.svg").write_text(SVG)
     strip = BrandStrip(branding(logo="logo.svg"), tmp_path)
-    labels = [w.text() for w in strip.findChildren(QLabel) if w.text()]
-    assert "A. Engineer" in labels and "Vision & Automation" in labels
+    assert not [w.text() for w in strip.findChildren(QLabel) if w.text()]
     assert any(w.pixmap() and not w.pixmap().isNull() for w in strip.findChildren(QLabel))
     paint(strip, 340, 60)
 
 
-def test_brand_strip_keeps_the_name_when_the_logo_is_gone(app, tmp_path):
+def test_brand_strip_hides_itself_when_the_logo_is_missing(app, tmp_path):
     from ppe.ui import BrandStrip
 
-    strip = BrandStrip(branding(logo="vanished.svg"), tmp_path)
-    assert "A. Engineer" in [w.text() for w in strip.findChildren(QLabel) if w.text()]
-    assert not any(w.pixmap() and not w.pixmap().isNull() for w in strip.findChildren(QLabel))
-    paint(strip, 340, 60)
+    assert BrandStrip(branding(logo="vanished.svg"), tmp_path).isHidden()
 
 
-def test_brand_strip_hides_itself_when_no_name_is_configured(app, tmp_path):
+def test_brand_strip_hides_itself_when_no_logo_is_configured(app, tmp_path):
     from ppe.ui import BrandStrip
 
-    assert BrandStrip(branding(name="", tagline=""), tmp_path).isHidden()
+    assert BrandStrip(branding(name="", tagline="", logo=""), tmp_path).isHidden()
 
 
 def test_the_window_wears_the_logo_as_its_icon(app, station):

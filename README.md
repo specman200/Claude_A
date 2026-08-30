@@ -226,8 +226,8 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `audio.repeat_sec` | Gap between repeats while the violation stands |
 | `ui.mode` | `operator` (floor) or `debug` (diagnostics, muted audio) |
 | `telemetry.csv` | Per-cycle latency log; empty string disables |
-| `branding.name` / `.tagline` | Shown in the app's side panel; empty `name` hides the strip |
-| `branding.logo` | Your mark — `.svg`, `.png` or `.jpg`; relative paths resolve from the config file |
+| `branding.name` / `.tagline` | Metadata only — not currently shown in the app |
+| `branding.logo` | Your mark, shown top-left of the app; `.svg`, `.png` or `.jpg`, kept at its own aspect ratio; relative paths resolve from the config file; empty or missing hides the strip |
 
 ### Capture size and accuracy
 
@@ -541,9 +541,9 @@ tests/               319 tests
 
 <!--
   Replace the placeholder text below with your own background, and swap
-  `assets/logo.svg` for your logo. `branding.name` and `branding.tagline` in
-  config.yaml feed the same details into the running app's side panel, so keep
-  the two in step.
+  `assets/logo.svg` for your logo. The app only shows the logo mark itself
+  (top-left, at its own aspect ratio) — `branding.name` and `branding.tagline`
+  in config.yaml are metadata, not currently rendered anywhere in the UI.
 -->
 
 <img src="assets/logo.svg" alt="" width="60" align="left" hspace="14" vspace="4">

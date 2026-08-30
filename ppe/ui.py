@@ -760,16 +760,18 @@ class DecisionPanel(QFrame):
 # ---------------------------------------------------------------------------
 
 
-def load_logo(path: Path | None, size: int, ratio: float = 1.0) -> QPixmap | None:
-    """Render a logo file to a crisp ``size``-square pixmap, or None.
+def load_logo(path: Path | None, height: int, ratio: float = 1.0) -> QPixmap | None:
+    """Render a logo file to a crisp pixmap ``height`` px tall, or None.
 
-    This file is meant to be swapped, so every failure — missing, unreadable,
-    an unsupported format — returns None and the UI simply omits the mark.
-    A logo must never be able to take the station down.
+    The logo keeps its own aspect ratio — a wide mark comes back wide, a
+    square one square — rather than being forced into a ``height``-square
+    box. This file is meant to be swapped, so every failure — missing,
+    unreadable, an unsupported format — returns None and the UI simply
+    omits the mark. A logo must never be able to take the station down.
     """
     if path is None:
         return None
-    px = max(1, int(size * ratio))
+    target_h = max(1, int(height * ratio))
     try:
         if path.suffix.lower() in (".svg", ".svgz"):
             from PySide6.QtSvg import QSvgRenderer
@@ -777,18 +779,25 @@ def load_logo(path: Path | None, size: int, ratio: float = 1.0) -> QPixmap | Non
             renderer = QSvgRenderer(str(path))
             if not renderer.isValid():
                 return None
+            native = renderer.defaultSize()
+            w, h = native.width(), native.height()
+            if w <= 0 or h <= 0:  # no width/height attrs — fall back to viewBox
+                box = renderer.viewBoxF()
+                w, h = box.width(), box.height()
+            aspect = w / h if h > 0 else 1.0
+            target_w = max(1, round(target_h * aspect))
             # Render at device resolution rather than scaling a small raster.
-            pixmap = QPixmap(px, px)
+            pixmap = QPixmap(target_w, target_h)
             pixmap.fill(Qt.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.Antialiasing, True)
-            renderer.render(painter, QRectF(0, 0, px, px))
+            renderer.render(painter, QRectF(0, 0, target_w, target_h))
             painter.end()
         else:
             pixmap = QPixmap(str(path))
             if pixmap.isNull():
                 return None
-            pixmap = pixmap.scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = pixmap.scaledToHeight(target_h, Qt.SmoothTransformation)
     except Exception:  # noqa: BLE001 — a bad logo is cosmetic, never fatal
         return None
     pixmap.setDevicePixelRatio(ratio)
@@ -796,7 +805,7 @@ def load_logo(path: Path | None, size: int, ratio: float = 1.0) -> QPixmap | Non
 
 
 class BrandStrip(QFrame):
-    """Logo, name and tagline. Hidden entirely when no name is configured."""
+    """Just the logo mark. Hidden entirely when no logo file resolves."""
 
     LOGO = 38
 
@@ -805,33 +814,24 @@ class BrandStrip(QFrame):
     ) -> None:
         super().__init__()
         self.setObjectName("card")
-        size = logo_px or self.LOGO
+        height = logo_px or self.LOGO
         row = QHBoxLayout(self)
         row.setContentsMargins(16, 12, 18, 12)
         row.setSpacing(12)
 
-        pixmap = load_logo(cfg.logo_path(base), size, ratio)
+        pixmap = load_logo(cfg.logo_path(base), height, ratio)
         if pixmap is not None:
             mark = QLabel()
             mark.setPixmap(pixmap)
-            mark.setFixedSize(size, size)
-            mark.setScaledContents(True)
+            # Size the label to the pixmap's device-independent size, not its
+            # raw pixel size (inflated by ``ratio``) or a forced square — the
+            # old fixed-square label with setScaledContents(True) is exactly
+            # what squished a non-square logo back out of shape.
+            dpr = pixmap.devicePixelRatio() or 1.0
+            mark.setFixedSize(round(pixmap.width() / dpr), round(pixmap.height() / dpr))
             row.addWidget(mark)
-            row.addSpacing(6)
 
-        text = QVBoxLayout()
-        text.setSpacing(1)
-        name = QLabel(cfg.name)
-        name.setStyleSheet(f"font-size:{max(14, size // 4)}px; font-weight:700;")
-        text.addWidget(name)
-        if cfg.tagline:
-            tagline = QLabel(cfg.tagline)
-            tagline.setObjectName("h")
-            tagline.setWordWrap(True)
-            text.addWidget(tagline)
-        row.addLayout(text, 1)
-
-        if not cfg.name:
+        if pixmap is None:
             self.hide()
 
 
