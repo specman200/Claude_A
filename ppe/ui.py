@@ -813,7 +813,11 @@ class BrandStrip(QFrame):
         self, cfg: BrandingCfg, base: Path, ratio: float = 1.0, logo_px: int | None = None
     ) -> None:
         super().__init__()
-        self.setObjectName("card")
+        # No "card" object name here on purpose: that pulls in the global
+        # card background + border, which read as a boxed frame around the
+        # logo now that there is no text to share the card with. Left
+        # unstyled, it just inherits the plain window background and the
+        # logo sits directly on the header with no outline.
         height = logo_px or self.LOGO
         row = QHBoxLayout(self)
         row.setContentsMargins(16, 12, 18, 12)
