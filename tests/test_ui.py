@@ -22,12 +22,14 @@ from ppe.detector import Detection  # noqa: E402
 from ppe.tower import ClassState, Status  # noqa: E402
 from ppe.ui import (  # noqa: E402
     ABSENT,
+    BANNER,
     IDLE,
     PRESENT,
     UNAVAILABLE,
     MainWindow,
     PPEPanel,
     StatusBanner,
+    StatusCard,
     VideoPane,
 )
 
@@ -189,6 +191,36 @@ def test_banner_renders_every_status(app, status):
     banner.apply(status, ["Vest"], tower_ok=True)
     assert banner.text()
     paint(banner, 360, 64)
+
+
+# The real MainWindow pins the side column to these widths — operator mode
+# at 400px (StatusCard(compact=False)), debug mode at 380px (compact=True).
+STATUS_CARD_WIDTHS = [(False, 400), (True, 380)]
+
+
+@pytest.mark.parametrize("compact,width", STATUS_CARD_WIDTHS)
+@pytest.mark.parametrize("status", list(Status))
+def test_status_card_renders_every_status_at_production_width(app, status, compact, width):
+    card = StatusCard(compact=compact)
+    card.apply(status, ["Vest"], tower_ok=True)
+    paint(card, width, card.minimumHeight())
+
+
+@pytest.mark.parametrize("compact,width", STATUS_CARD_WIDTHS)
+def test_the_standby_headline_needs_wrapping_at_production_width(app, compact, width):
+    """STANDBY's headline is the longest text BANNER carries. Pin that it
+    genuinely overflows a single line at the real column width — if a
+    future edit shrinks the font or widens the column enough that this
+    stops being true, the wrap-vs-clip code path this exercises would go
+    untested."""
+    from PySide6.QtGui import QFont, QFontMetrics
+
+    text = BANNER[Status.STANDBY][0]
+    font = QFont("Segoe UI", 13 if compact else 19, QFont.Bold)
+    # Same left margin the paint code reserves before the headline column.
+    margin = (16 + 40 + 14) if compact else 24
+    available = width - 2 - margin
+    assert QFontMetrics(font).horizontalAdvance(text) > available
 
 
 def test_banner_names_what_is_missing_and_flags_a_dead_bus(app):

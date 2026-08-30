@@ -440,7 +440,10 @@ class StatusCard(QFrame):
         super().__init__()
         self.setObjectName("card")
         self.compact = compact
-        self.setMinimumHeight(96 if compact else 230)
+        # A little taller than the old fixed single-line layout needed, so a
+        # headline that wraps to two lines (STANDBY's) never runs the detail
+        # text past the bottom of the card.
+        self.setMinimumHeight(96 if compact else 246)
         self._status: Status | None = Status.DEGRADED
         self._headline = ""
         self._detail = ""
@@ -516,15 +519,21 @@ class StatusCard(QFrame):
 
         p.setPen(color)
         p.setFont(QFont("Segoe UI", 19, QFont.Bold))
-        p.drawText(
-            QRectF(rect.left() + 12, cy + d / 2 + 12, rect.width() - 24, 34),
-            Qt.AlignHCenter | Qt.AlignVCenter, self._headline,
-        )
+        # Word-wrap rather than clip: STANDBY's headline ("STANDBY — NO
+        # PERSON DETECTED") is wider than this column at 19pt and was being
+        # cut off mid-word. Measure first, then draw into exactly the space
+        # that takes — a short headline keeps the old single-line position,
+        # top-anchored under the circle; a long one grows downward instead
+        # of overflowing sideways or being clipped by a too-short box.
+        flags = int(Qt.AlignHCenter | Qt.TextWordWrap)
+        avail = QRectF(rect.left() + 12, cy + d / 2 + 12, rect.width() - 24, 100)
+        headline_box = p.boundingRect(avail, flags, self._headline)
+        p.drawText(headline_box, flags, self._headline)
         if self._detail:
             p.setPen(QColor("#A6A6D6"))
             p.setFont(QFont("Segoe UI", 10))
             p.drawText(
-                QRectF(rect.left() + 14, cy + d / 2 + 48, rect.width() - 28, 60),
+                QRectF(rect.left() + 14, headline_box.bottom() + 6, rect.width() - 28, 60),
                 int(Qt.AlignHCenter | Qt.TextWordWrap), self._detail,
             )
 
@@ -538,12 +547,18 @@ class StatusCard(QFrame):
         left = rect.left() + 16 + d + 14
         p.setPen(color)
         p.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        p.drawText(QRectF(left, rect.top() + 14, rect.width() - left, 22),
-                   Qt.AlignVCenter, self._headline)
+        # Same reasoning as _paint_full: measure, then draw into exactly the
+        # space that takes, instead of clipping a headline that's too long
+        # for one line at this width.
+        flags = int(Qt.TextWordWrap)
+        avail = QRectF(left, rect.top() + 14, rect.width() - left, 60)
+        headline_box = p.boundingRect(avail, flags, self._headline)
+        p.drawText(headline_box, flags, self._headline)
         if self._detail:
             p.setPen(QColor("#A6A6D6"))
             p.setFont(QFont("Segoe UI", 9))
-            p.drawText(QRectF(left, rect.top() + 38, rect.width() - left - 10, 40),
+            p.drawText(QRectF(left, headline_box.bottom() + 4,
+                               rect.width() - left - 10, 40),
                        int(Qt.AlignTop | Qt.TextWordWrap), self._detail)
 
     def _paint_glyph(self, p: QPainter, cx: float, cy: float, r: float) -> None:
