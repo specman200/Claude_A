@@ -78,8 +78,7 @@ class Detector:
         self._precision = _precision_kwargs(self.half)
 
         self.set_classes(ppe)
-        if self.batches:
-            self._confirm_batching()
+        self._settle_batching()
         log.info(
             "model %s on %s (fp16=%s, threads=%d, batched=%s)",
             cfg.weights, self.device, self.half, self.threads, self.batches,
@@ -107,29 +106,45 @@ class Detector:
         self._conf = min([self.cfg.conf, *self._floors.values()]) if self._floors else self.cfg.conf
         return self.missing
 
-    def _confirm_batching(self) -> None:
-        """Prove a batch of two runs before the station is built on it.
+    def _settle_batching(self) -> None:
+        """Make ``self.batches`` match what this model will actually accept.
 
-        ``batch: true`` is a request, not a capability. An ONNX or OpenVINO
-        export is compiled at the batch it was exported with — 1, for
-        everything `python -m ppe.export` writes — and handing it two frames
-        raises inside the runtime, not at load: during warmup if warmup is on,
-        which surfaces as "the model failed to load", and otherwise mid-shift
-        on the first cycle. Neither is a place to discover it, and a station
-        that runs one camera at a time is strictly better than one that does
-        not start, so ask the model here and believe its answer.
+        An export is compiled for exactly one frame count and refuses every
+        other; only a .pt takes any. So ``batch`` is a request the model can
+        decline in either direction — a batch-1 export asked for two raises,
+        and a batch-2 export asked for one raises just as hard. Both surface
+        inside the runtime rather than at load: during warmup if warmup is on,
+        which reads as "the model failed to load", and otherwise mid-shift on
+        the first cycle. Neither is a place to find out, and a station running
+        at the wrong batch size is strictly better than one that will not
+        start, so ask the model here and take its answer.
+
+        Only a refusal that the *other* count survives is a batch mismatch. If
+        both fail the model is broken, and that error is the real one — it goes
+        through untouched rather than being reported as a batching problem.
         """
         blank = np.zeros((self.cfg.imgsz, self.cfg.imgsz, 3), dtype=np.uint8)
+        wanted = 2 if self.batches else 1
         try:
-            self._predict([blank, blank])
-        except Exception as exc:  # noqa: BLE001 — any refusal means the same thing
-            log.warning(
-                "batch: true, but %s will not take two frames in one call (%s) — "
-                "serving one camera per cycle instead. An export is fixed at the "
-                "batch it was exported with; batch a .pt, or re-export for it.",
-                self.cfg.weights, type(exc).__name__,
-            )
-            self.batches = False
+            self._predict([blank] * wanted)
+            return
+        except Exception as refusal:  # noqa: BLE001 — any refusal means the same
+            try:
+                self._predict([blank] * (1 if self.batches else 2))
+            except Exception:  # noqa: BLE001
+                raise refusal from None
+
+        self.batches = not self.batches
+        log.warning(
+            "%s takes %d frame(s) per call and refuses %d — %s. An export only "
+            "ever accepts the batch it was exported with; set model.batch: %s to "
+            "say so, or re-export with `python -m ppe.export --batch %d`.",
+            self.cfg.weights, 2 if self.batches else 1, wanted,
+            "serving both cameras in one call" if self.batches
+            else "serving one camera per cycle",
+            "true" if self.batches else "auto",
+            2 if self.batches else 1,
+        )
 
     def warmup(self, batch: int = 0) -> None:
         """Pay the first-call cost (kernel autotune, cuDNN plans) up front."""

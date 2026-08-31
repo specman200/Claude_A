@@ -3,6 +3,7 @@
     python -m ppe.export                      # OpenVINO IR, the CPU default
     python -m ppe.export -w runs/best.pt      # a checkpoint you trained yourself
     python -m ppe.export --format onnx
+    python -m ppe.export --batch 2               # both cameras in one call
     python -m ppe.export --int8 --data d.yaml # quantised, needs calibration images
 
 OpenVINO is usually several times faster than PyTorch on an Intel CPU for the
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
 log = logging.getLogger("ppe.export")
@@ -30,6 +32,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="target runtime (default: openvino)",
     )
     p.add_argument("--imgsz", type=int, help="inference size; defaults to the config's")
+    p.add_argument(
+        "--batch", type=int, default=1,
+        help="frames per call to compile for (default 1). An export only ever "
+             "accepts this exact count, so >1 needs model.batch: true and is "
+             "written as a separate _bN_ export",
+    )
     p.add_argument(
         "--int8", action="store_true",
         help="quantise to int8 — roughly 2x again, at some accuracy cost",
@@ -117,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         # a mistake that stays quiet until the station misbehaves on the floor.
         log.info("%s is an export, not a checkpoint — reading %s instead", weights, source)
     weights = str(source)
+    if args.batch < 1:
+        log.error("--batch must be >= 1")
+        return 1
     if args.int8 and not args.data:
         # Calibrating on someone else's images is how int8 quietly loses recall.
         log.error(
@@ -125,13 +136,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    log.info("exporting %s -> %s at imgsz=%d%s", weights, args.format, imgsz,
-             " (int8)" if args.int8 else "")
-    # Batch 1: the station serves one camera per cycle on CPU, which is both
-    # faster than batching and what these exports support.
+    log.info("exporting %s -> %s at imgsz=%d batch=%d%s", weights, args.format, imgsz,
+             args.batch, " (int8)" if args.int8 else "")
+    # An export accepts its compiled batch and nothing else, so a batch-N export
+    # must not land on top of the batch-1 one the shipped config runs — the
+    # station would then fail on every single-frame cycle. Ultralytics names the
+    # output after the checkpoint, so give batch N its own stem to write under.
+    staged = None
+    if args.batch > 1:
+        staged = Path(weights).with_name(f"{Path(weights).stem}_b{args.batch}.pt")
+        shutil.copy2(weights, staged)
+        weights = str(staged)
     try:
         out = YOLO(weights).export(
-            format=args.format, imgsz=imgsz, batch=1, int8=args.int8,
+            format=args.format, imgsz=imgsz, batch=args.batch, int8=args.int8,
             **({"data": args.data} if args.data else {}),
             **({"simplify": True, "dynamic": False} if args.format == "onnx" else {}),
         )
@@ -145,8 +163,19 @@ def main(argv: list[str] | None = None) -> int:
         log.error("  %s", versions())
         log.error("\n%s", exc)
         return 1
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)  # the copy was scaffolding, not output
     log.info("\nwrote %s", out)
     log.info("point model.weights at it in %s, then: python -m ppe.bench", args.config)
+    if args.batch > 1:
+        # Compiled for exactly this count: one frame through it raises just as
+        # two through a batch-1 export does, so the pairing is not optional.
+        log.info(
+            "this export takes %d frames per call and no other count — set "
+            "model.batch: true alongside it, or the station fails on every cycle",
+            args.batch,
+        )
     return 0
 
 

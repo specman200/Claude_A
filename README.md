@@ -7,8 +7,11 @@ PPE each class is or is not wearing.
 
 ![layout](docs/layout.svg)
 
-- **Two cameras, one inference.** Both frames go into a single batched
-  `predict`, so the GPU is launched once per cycle instead of twice.
+- **Two cameras, paced to the device.** On a GPU both frames go into one
+  batched `predict`, launching it once per cycle instead of twice. On a CPU
+  batching costs nearly twice as much and makes each frame wait for the
+  other's, so the cameras take turns instead — same update rate, half the
+  latency.
 - **Smooth video.** Capture, inference and drawing run on separate threads. The
   panes repaint at camera rate no matter how slow the model is, and stale frames
   are dropped rather than queued — the feed stays live instead of drifting
@@ -432,15 +435,37 @@ reference image every box lands within 1.2 px and 0.012 confidence of the
 PyTorch output. `models/ppe-yolo11s_openvino_model/` is committed; regenerate it
 for a different `imgsz` with `python -m ppe.export`.
 
-**One camera per cycle, not two.** A batch of two costs about 2.3x a batch of
-one on a CPU *and* makes each frame wait for the other's result. Serving the
-cameras in turn halves end-to-end latency at the same per-camera update rate —
-and the ONNX/OpenVINO exports are fixed at batch 1 regardless. `model.batch:
-auto` batches on a GPU and takes turns on a CPU; set `true`/`false` to force it.
-`true` is a request, not a capability: the detector proves a batch of two runs
-before the station depends on it, and falls back to taking turns with a warning
-if the model refuses — an export asked to batch would otherwise raise during
-warmup, which reads as "the model failed to load".
+**One camera per cycle, not two.** Batching makes each frame wait for the
+other's result, and buys almost nothing on a CPU to pay for it. Measured on the
+4-core Xeon, OpenVINO at 640:
+
+| | per call | per-camera update | latency per frame |
+| --- | --- | --- | --- |
+| batch 1, taking turns | 64 ms | 129 ms | **64 ms** |
+| batch 2, both at once | 122 ms | **122 ms** | 122 ms |
+
+A batch of two costs 1.89x a single frame — just inside the 2.0x break-even, so
+batching wins the update rate by 6% and loses latency by 89%. On a safety
+station that is the wrong side of the trade, which is why `auto` takes turns on
+a CPU and batches only on a GPU. (An older PyTorch measurement put the cost at
+2.3x, where batching lost outright.)
+
+`model.batch: auto` batches on a GPU and takes turns on a CPU; `true`/`false`
+force it. It is a request, not a capability: an export is compiled for exactly
+one frame count and refuses every other, in both directions — a batch-1 export
+handed two frames raises, and a `--batch 2` export handed one raises just as
+hard. Either way it raises inside the runtime, during warmup ("the model failed
+to load") or mid-shift. So the detector asks the model at startup and settles
+`batches` to whatever it will actually accept, with a warning naming the fix. To
+batch for real, export for it:
+
+```bash
+python -m ppe.export --batch 2     # writes models/<stem>_b2_openvino_model/
+```
+
+That lands beside the batch-1 export rather than on top of it — the shipped
+config runs the batch-1 one, and replacing it with a model that refuses single
+frames would break every cycle.
 
 **Threads that don't fight.** OpenCV defaults to a thread per core *inside each
 camera thread*, so on 4 cores the decoders and the model were fighting over the
@@ -462,6 +487,7 @@ python -m ppe.bench                        # every model in models/
 python -m ppe.bench --image shift.jpg      # on a real frame, with detection counts
 python -m ppe.bench --imgsz 640 512 448    # what a smaller input buys
 python -m ppe.export --format onnx         # if OpenVINO is not an option
+python -m ppe.export --batch 2             # compile for both cameras at once
 ```
 
 `bench` prints the detection count beside each timing, so a backend that is fast
