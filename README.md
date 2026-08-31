@@ -459,13 +459,17 @@ to load") or mid-shift. So the detector asks the model at startup and settles
 `batches` to whatever it will actually accept, with a warning naming the fix. To
 batch for real, export for it:
 
+`models/ppe-yolo11s_b2_openvino_model/` is committed alongside the batch-1 one
+for exactly this; regenerate either with:
+
 ```bash
 python -m ppe.export --batch 2     # writes models/<stem>_b2_openvino_model/
 ```
 
-That lands beside the batch-1 export rather than on top of it — the shipped
-config runs the batch-1 one, and replacing it with a model that refuses single
-frames would break every cycle.
+A batch-N export lands beside the batch-1 one rather than on top of it — the
+shipped config runs the batch-1 one, and replacing it with a model that refuses
+single frames would break every cycle. To run the batch-2 export, point
+`model.weights` at it **and** set `model.batch: true`; the two go together.
 
 **Threads that don't fight.** OpenCV defaults to a thread per core *inside each
 camera thread*, so on 4 cores the decoders and the model were fighting over the

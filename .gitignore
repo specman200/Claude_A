@@ -12,6 +12,7 @@ venv/
 *.engine
 !models/ppe-yolo11s.pt
 !models/ppe-yolo11s_openvino_model/
+!models/ppe-yolo11s_b2_openvino_model/
 
 # Runtime output
 logs/
