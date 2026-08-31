@@ -9,7 +9,7 @@ format it rejects with a TypeError about "not a PyTorch model".
 import pytest
 import yaml
 
-from ppe.export import main, source_weights
+from ppe.export import describe, main, source_weights, versions
 
 
 def test_a_checkpoint_is_used_as_given(tmp_path):
@@ -83,3 +83,44 @@ def test_int8_without_calibration_data_is_refused(tmp_path, caplog):
     cfg = config_at(tmp_path, tmp_path / "best.pt")
     assert main(["-c", cfg, "--int8"]) == 1
     assert "--data" in caplog.text
+
+
+# -- what a refused file tells you -----------------------------------------
+
+
+def test_describe_names_the_resolved_path_and_the_size(tmp_path):
+    pt = tmp_path / "best.pt"
+    pt.write_bytes(b"x" * 2_000_000)
+    said = describe(pt)
+    assert str(pt.resolve()) in said
+    assert "2.0 MB" in said
+
+
+def test_describe_survives_a_file_that_is_not_there(tmp_path):
+    assert "unreadable" in describe(tmp_path / "gone.pt")
+
+
+def test_versions_names_every_runtime_an_export_depends_on():
+    said = versions()
+    assert all(name in said for name in ("ultralytics", "torch", "openvino", "onnx"))
+
+
+def test_a_refused_checkpoint_reports_which_file_and_which_versions(
+    tmp_path, caplog, monkeypatch
+):
+    """Ultralytics raises TypeError for a TorchScript archive, a bare
+    state_dict, a YOLOv5-era checkpoint and a truncated download alike, each
+    time describing the format. Which file was read, and on which versions,
+    is what separates them — and is exactly what a bug report needs."""
+    pt = tmp_path / "best.pt"
+    pt.write_bytes(b"not really a checkpoint")
+
+    def refuse(*_args, **_kwargs):
+        raise TypeError("ERROR is a TorchScript archive, not an Ultralytics PyTorch checkpoint.")
+
+    monkeypatch.setattr("ultralytics.YOLO", refuse)
+    assert main(["-c", config_at(tmp_path, pt)]) == 1
+    assert str(pt.resolve()) in caplog.text
+    assert "ultralytics=" in caplog.text
+    assert "torch=" in caplog.text
+    assert "TorchScript archive" in caplog.text

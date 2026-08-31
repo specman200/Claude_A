@@ -65,6 +65,28 @@ def source_weights(weights: str) -> Path | None:
     beside = path.with_suffix(".pt")
     return beside if beside.is_file() else None
 
+def describe(path: Path) -> str:
+    """The resolved path and size — which file was read is half of any answer."""
+    try:
+        size = f"{path.stat().st_size / 1e6:.1f} MB"
+    except OSError as exc:
+        size = f"unreadable ({exc.strerror})"
+    return f"{path.resolve()}  ({size})"
+
+
+def versions() -> str:
+    """The other half: an export that fails on one machine and not another is
+    almost always a version difference, so never make anyone go and look."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    out = []
+    for name in ("ultralytics", "torch", "openvino", "onnx"):
+        try:
+            out.append(f"{name}={version(name)}")
+        except PackageNotFoundError:
+            out.append(f"{name}=not installed")
+    return "  ".join(out)
+
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
@@ -107,11 +129,22 @@ def main(argv: list[str] | None = None) -> int:
              " (int8)" if args.int8 else "")
     # Batch 1: the station serves one camera per cycle on CPU, which is both
     # faster than batching and what these exports support.
-    out = YOLO(weights).export(
-        format=args.format, imgsz=imgsz, batch=1, int8=args.int8,
-        **({"data": args.data} if args.data else {}),
-        **({"simplify": True, "dynamic": False} if args.format == "onnx" else {}),
-    )
+    try:
+        out = YOLO(weights).export(
+            format=args.format, imgsz=imgsz, batch=1, int8=args.int8,
+            **({"data": args.data} if args.data else {}),
+            **({"simplify": True, "dynamic": False} if args.format == "onnx" else {}),
+        )
+    except TypeError as exc:
+        # Several unrelated conditions all surface as TypeError here, and each
+        # message describes the file rather than the file it describes: a
+        # TorchScript archive, a bare state_dict, a YOLOv5-era checkpoint, a
+        # truncated download. Which file was read, and on which versions, is
+        # what actually separates them — so say that, not just the exception.
+        log.error("ultralytics refused this file:\n  %s", describe(Path(weights)))
+        log.error("  %s", versions())
+        log.error("\n%s", exc)
+        return 1
     log.info("\nwrote %s", out)
     log.info("point model.weights at it in %s, then: python -m ppe.bench", args.config)
     return 0
