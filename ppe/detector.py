@@ -78,6 +78,8 @@ class Detector:
         self._precision = _precision_kwargs(self.half)
 
         self.set_classes(ppe)
+        if self.batches:
+            self._confirm_batching()
         log.info(
             "model %s on %s (fp16=%s, threads=%d, batched=%s)",
             cfg.weights, self.device, self.half, self.threads, self.batches,
@@ -104,6 +106,30 @@ class Detector:
         }
         self._conf = min([self.cfg.conf, *self._floors.values()]) if self._floors else self.cfg.conf
         return self.missing
+
+    def _confirm_batching(self) -> None:
+        """Prove a batch of two runs before the station is built on it.
+
+        ``batch: true`` is a request, not a capability. An ONNX or OpenVINO
+        export is compiled at the batch it was exported with — 1, for
+        everything `python -m ppe.export` writes — and handing it two frames
+        raises inside the runtime, not at load: during warmup if warmup is on,
+        which surfaces as "the model failed to load", and otherwise mid-shift
+        on the first cycle. Neither is a place to discover it, and a station
+        that runs one camera at a time is strictly better than one that does
+        not start, so ask the model here and believe its answer.
+        """
+        blank = np.zeros((self.cfg.imgsz, self.cfg.imgsz, 3), dtype=np.uint8)
+        try:
+            self._predict([blank, blank])
+        except Exception as exc:  # noqa: BLE001 — any refusal means the same thing
+            log.warning(
+                "batch: true, but %s will not take two frames in one call (%s) — "
+                "serving one camera per cycle instead. An export is fixed at the "
+                "batch it was exported with; batch a .pt, or re-export for it.",
+                self.cfg.weights, type(exc).__name__,
+            )
+            self.batches = False
 
     def warmup(self, batch: int = 0) -> None:
         """Pay the first-call cost (kernel autotune, cuDNN plans) up front."""

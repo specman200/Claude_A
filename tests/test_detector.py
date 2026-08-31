@@ -199,3 +199,52 @@ def test_the_shipped_model_returns_boxes_in_source_pixels(scene):
     for d in dets:
         x1, y1, x2, y2 = d.xyxy
         assert 0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h
+
+
+# -- asking a model to batch when it cannot --------------------------------
+
+OPENVINO_IR = "models/ppe-yolo11s_openvino_model/"
+CHECKPOINT = "models/ppe-yolo11s.pt"
+
+
+@pytest.mark.skipif(not Path(OPENVINO_IR).is_dir(), reason="no OpenVINO export in models/")
+def test_an_export_asked_to_batch_falls_back_rather_than_failing_to_load():
+    """`batch: true` is a request, not a capability.
+
+    An export is compiled at the batch it was exported with — 1, for everything
+    `python -m ppe.export` writes — so two frames in one call raise inside the
+    runtime. With warmup on that happens in the constructor, which reads to a
+    user as "the model does not load"; with warmup off it waits and happens
+    mid-shift instead. Either way the station should run on one camera per
+    cycle, not refuse to start.
+    """
+    from ppe.detector import Detector
+
+    ppe = PPECfg(classes=[ClassCfg("person")])
+    det = Detector(ModelCfg(weights=OPENVINO_IR, imgsz=640, batch=True, warmup=True), ppe)
+    assert det.batches is False, "the export cannot batch, so the pipeline must not try"
+    # and it still detects, one frame at a time
+    blank = np.zeros((640, 640, 3), np.uint8)
+    assert len(det.detect([blank])[0]) == 1
+
+
+@pytest.mark.skipif(not Path(CHECKPOINT).is_file(), reason="no .pt in models/")
+def test_a_checkpoint_asked_to_batch_still_batches():
+    """The fallback must not fire on a model that can genuinely take two."""
+    from ppe.detector import Detector
+
+    ppe = PPECfg(classes=[ClassCfg("person")])
+    det = Detector(ModelCfg(weights=CHECKPOINT, imgsz=640, batch=True, warmup=False), ppe)
+    assert det.batches is True
+    blank = np.zeros((640, 640, 3), np.uint8)
+    assert len(det.detect([blank, blank])[0]) == 2
+
+
+@pytest.mark.skipif(not Path(OPENVINO_IR).is_dir(), reason="no OpenVINO export in models/")
+def test_the_fallback_is_not_reached_when_batching_was_never_asked_for():
+    """`batch: false` must not pay for a probe it does not need."""
+    from ppe.detector import Detector
+
+    ppe = PPECfg(classes=[ClassCfg("person")])
+    det = Detector(ModelCfg(weights=OPENVINO_IR, imgsz=640, batch=False, warmup=False), ppe)
+    assert det.batches is False

@@ -16,7 +16,11 @@ model:
   max_det: 100
   warmup: true          # run a dummy batch at startup so frame 1 is not slow
   threads: 0            # inference threads; 0 = every core this process may use
-  batch: auto           # auto | true | false — batch both cameras in one call?
+  # auto | true | false — both cameras in one call, or one per cycle in turn?
+  # Only a .pt can batch: the ONNX and OpenVINO exports are compiled at the
+  # batch they were exported with (1), and `true` against one of those falls
+  # back to taking turns with a warning rather than failing to start.
+  batch: auto
 
 cameras:
   # fourcc: MJPG asks the camera to compress its own output before it hits

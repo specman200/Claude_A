@@ -437,6 +437,10 @@ one on a CPU *and* makes each frame wait for the other's result. Serving the
 cameras in turn halves end-to-end latency at the same per-camera update rate —
 and the ONNX/OpenVINO exports are fixed at batch 1 regardless. `model.batch:
 auto` batches on a GPU and takes turns on a CPU; set `true`/`false` to force it.
+`true` is a request, not a capability: the detector proves a batch of two runs
+before the station depends on it, and falls back to taking turns with a warning
+if the model refuses — an export asked to batch would otherwise raise during
+warmup, which reads as "the model failed to load".
 
 **Threads that don't fight.** OpenCV defaults to a thread per core *inside each
 camera thread*, so on 4 cores the decoders and the model were fighting over the
