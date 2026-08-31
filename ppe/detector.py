@@ -125,26 +125,42 @@ class Detector:
         """
         blank = np.zeros((self.cfg.imgsz, self.cfg.imgsz, 3), dtype=np.uint8)
         wanted = 2 if self.batches else 1
-        try:
-            self._predict([blank] * wanted)
-            return
-        except Exception as refusal:  # noqa: BLE001 — any refusal means the same
-            try:
-                self._predict([blank] * (1 if self.batches else 2))
-            except Exception:  # noqa: BLE001
-                raise refusal from None
+        refusal = self._refuses(blank, wanted)
+        if refusal is not None:
+            if self._refuses(blank, 1 if self.batches else 2) is not None:
+                raise refusal  # not about the count — the model itself is broken
+            self.batches = not self.batches
+            log.warning(
+                "%s takes %d frame(s) per call and refuses %d — %s. An export only "
+                "ever accepts the batch it was exported with; set model.batch: %s to "
+                "say so, or re-export with `python -m ppe.export --batch %d`.",
+                self.cfg.weights, 2 if self.batches else 1, wanted,
+                "serving both cameras in one call" if self.batches
+                else "serving one camera per cycle",
+                "true" if self.batches else "auto",
+                2 if self.batches else 1,
+            )
 
-        self.batches = not self.batches
-        log.warning(
-            "%s takes %d frame(s) per call and refuses %d — %s. An export only "
-            "ever accepts the batch it was exported with; set model.batch: %s to "
-            "say so, or re-export with `python -m ppe.export --batch %d`.",
-            self.cfg.weights, 2 if self.batches else 1, wanted,
-            "serving both cameras in one call" if self.batches
-            else "serving one camera per cycle",
-            "true" if self.batches else "auto",
-            2 if self.batches else 1,
-        )
+        self.batch_size = 2 if self.batches else 1
+        # Two cameras never deliver in lockstep, so a cycle with one fresh frame
+        # is routine, not an error — and a fixed-batch export refuses a short
+        # call as hard as an oversized one. Find out now whether short calls are
+        # allowed; detect() pads them if they are not.
+        self.exact = self.batch_size > 1 and self._refuses(blank, 1) is not None
+        if self.exact:
+            log.info(
+                "%s takes exactly %d frames per call, so cycles with fewer fresh "
+                "frames are padded to that and the padding discarded",
+                self.cfg.weights, self.batch_size,
+            )
+
+    def _refuses(self, blank: np.ndarray, count: int) -> Exception | None:
+        """The error from asking for ``count`` frames, or None if it ran."""
+        try:
+            self._predict([blank] * count)
+        except Exception as exc:  # noqa: BLE001 — any refusal means the same
+            return exc
+        return None
 
     def warmup(self, batch: int = 0) -> None:
         """Pay the first-call cost (kernel autotune, cuDNN plans) up front."""
@@ -166,6 +182,25 @@ class Detector:
             **self._precision,
         )
 
+    def _predict_all(self, canvases: list[np.ndarray]):
+        """Run every canvas, in calls this model will actually accept.
+
+        A fixed-batch export takes exactly ``batch_size`` frames — no more and
+        no fewer — while the number of cameras with a fresh frame this cycle is
+        whatever the cameras happened to deliver. Dropping the odd ones out
+        would mean a station that stops judging because one camera is a frame
+        behind, so short calls are padded to the compiled size and the padding
+        thrown away. A model that takes any count skips all of this.
+        """
+        if not self.exact:
+            return self._predict(canvases)
+        out = []
+        for start in range(0, len(canvases), self.batch_size):
+            chunk = canvases[start : start + self.batch_size]
+            padded = chunk + [chunk[-1]] * (self.batch_size - len(chunk))
+            out.extend(self._predict(padded)[: len(chunk)])
+        return out
+
     def detect(
         self, images: list[np.ndarray]
     ) -> tuple[list[list[Detection]], dict[str, float]]:
@@ -175,7 +210,7 @@ class Detector:
         canvases = [c for c, _ in pairs]
         t1 = now()
 
-        results = self._predict(canvases)
+        results = self._predict_all(canvases)
         t2 = now()
 
         out = [self._decode(r, meta) for r, (_, meta) in zip(results, pairs, strict=True)]

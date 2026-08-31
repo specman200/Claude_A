@@ -7,6 +7,7 @@ warmup, or mid-shift if warmup is off. These pin that the detector settles the
 disagreement at construction instead.
 """
 
+import numpy as np
 import pytest
 
 from ppe.config import ClassCfg, ModelCfg, PPECfg
@@ -34,7 +35,7 @@ class FakeYOLO:
 
     def predict(self, canvases, **_kwargs):
         self.calls.append(len(canvases))
-        if len(canvases) != self.takes:
+        if self.takes is not None and len(canvases) != self.takes:
             raise RuntimeError(
                 f"model input (shape=[{self.takes},3,640,640]) and the tensor "
                 f"(shape=({len(canvases)},3,640,640)) are incompatible"
@@ -157,3 +158,64 @@ def test_export_rejects_a_nonsense_batch(tmp_path, caplog):
 
     assert export_mod.main(["-c", str(cfg), "--batch", "0"]) == 1
     assert "--batch must be >= 1" in caplog.text
+
+
+# -- a cycle with fewer fresh frames than the model was compiled for -------
+
+
+def built(monkeypatch, takes, batch):
+    """A detector plus the fake model under it, so calls can be inspected."""
+    from ppe.detector import Detector
+
+    made = {}
+
+    class Recorded(FakeYOLO):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            made["model"] = self
+
+    Recorded.takes = takes
+    monkeypatch.setattr("ultralytics.YOLO", Recorded)
+    det = Detector(
+        ModelCfg(weights="fake_openvino_model/", imgsz=640, batch=batch, warmup=False),
+        PPECfg(classes=[ClassCfg("person")]),
+    )
+    made["model"].calls.clear()  # drop the startup probe
+    return det, made["model"]
+
+
+def test_one_fresh_frame_is_padded_not_dropped(monkeypatch):
+    """Two cameras never deliver in lockstep, so a one-frame cycle is routine.
+
+    A batch-2 export refuses it outright — this is the "expecting [2,3,640,640],
+    got [1,3,640,640]" crash. Pad to the compiled size and drop the padding
+    rather than dropping the camera.
+    """
+    det, model = built(monkeypatch, takes=2, batch=True)
+    assert det.exact is True and det.batch_size == 2
+
+    dets, _ = det.detect([np.zeros((720, 1280, 3), np.uint8)])
+    assert len(dets) == 1, "one frame in, one result out"
+    assert model.calls == [2], "the model was still handed the two frames it wants"
+
+
+def test_a_full_cycle_is_not_padded(monkeypatch):
+    det, model = built(monkeypatch, takes=2, batch=True)
+    assert len(det.detect([np.zeros((720, 1280, 3), np.uint8)] * 2)[0]) == 2
+    assert model.calls == [2]
+
+
+def test_more_cameras_than_the_batch_are_split_across_calls(monkeypatch):
+    """Three cameras against a batch-2 export: two calls, the second padded."""
+    det, model = built(monkeypatch, takes=2, batch=True)
+    dets, _ = det.detect([np.zeros((720, 1280, 3), np.uint8)] * 3)
+    assert len(dets) == 3
+    assert model.calls == [2, 2]
+
+
+def test_a_model_that_takes_any_count_is_never_padded(monkeypatch):
+    """A .pt is dynamic; padding it would buy nothing and cost a frame."""
+    det, model = built(monkeypatch, takes=None, batch=True)
+    assert det.exact is False
+    assert len(det.detect([np.zeros((720, 1280, 3), np.uint8)])[0]) == 1
+    assert model.calls == [1], "one frame asked for, one frame run"
