@@ -1,6 +1,7 @@
 """Export the model to a faster CPU runtime.
 
     python -m ppe.export                      # OpenVINO IR, the CPU default
+    python -m ppe.export -w runs/best.pt      # a checkpoint you trained yourself
     python -m ppe.export --format onnx
     python -m ppe.export --int8 --data d.yaml # quantised, needs calibration images
 
@@ -39,6 +40,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+# What ultralytics names its exports: `<stem>.pt` becomes `<stem>_openvino_model/`,
+# `<stem>.onnx`, and so on.
+EXPORT_DIRS = ("_openvino_model", "_ncnn_model", "_saved_model", "_paddle_model")
+
+
+def source_weights(weights: str) -> Path | None:
+    """The .pt behind ``weights``, or None if nothing exportable is there.
+
+    Only a PyTorch checkpoint can be exported; ultralytics rejects every other
+    format with a TypeError that names the format rather than the fix. But
+    ``model.weights`` normally points at the *export*, because that is what the
+    station runs — so "regenerate the export" has to mean "go back to the .pt it
+    came from". Resolving that here keeps the documented `python -m ppe.export`
+    working against a config that points at an export, generated or not.
+    """
+    path = Path(weights)
+    if path.suffix.lower() == ".pt":
+        return path
+    for suffix in EXPORT_DIRS:
+        if path.name.endswith(suffix):
+            beside = path.with_name(path.name[: -len(suffix)] + ".pt")
+            return beside if beside.is_file() else None
+    beside = path.with_suffix(".pt")
+    return beside if beside.is_file() else None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -51,9 +78,23 @@ def main(argv: list[str] | None = None) -> int:
     weights = args.weights or cfg.model.weights
     imgsz = args.imgsz or cfg.model.imgsz
 
-    if not Path(weights).exists():
-        log.error("no such weights: %s", weights)
+    source = source_weights(weights)
+    if source is None:
+        log.error(
+            "%s is not a PyTorch model and no .pt sits beside it — only a .pt can "
+            "be exported. Point -w at the checkpoint you trained:\n"
+            "    python -m ppe.export -w path/to/best.pt",
+            weights,
+        )
         return 1
+    if not source.is_file():
+        log.error("no such weights: %s", source)
+        return 1
+    if source != Path(weights):
+        # Say which file is actually being read: exporting the wrong weights is
+        # a mistake that stays quiet until the station misbehaves on the floor.
+        log.info("%s is an export, not a checkpoint — reading %s instead", weights, source)
+    weights = str(source)
     if args.int8 and not args.data:
         # Calibrating on someone else's images is how int8 quietly loses recall.
         log.error(

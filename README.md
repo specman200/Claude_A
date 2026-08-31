@@ -318,6 +318,16 @@ class names in `ppe.classes`. Any name the model does not have is flagged amber
 in the UI and forces the tower to `DEGRADED` rather than silently passing — a
 class that can never be detected must never read as compliant.
 
+To run a checkpoint you trained yourself on a CPU, export it first and point the
+config at what comes out:
+
+```bash
+python -m ppe.export -w runs/detect/train/weights/best.pt
+```
+
+`-w` matters: without it the exporter reads `model.weights` from the config,
+which normally points at an export already — and only a `.pt` can be exported.
+
 ## Audio
 
 A lamp only works on someone facing it. Point `audio.file` at an .mp3 or .wav
