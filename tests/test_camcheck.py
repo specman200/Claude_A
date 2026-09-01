@@ -178,3 +178,84 @@ def test_msmf_and_dshow_are_valid_backend_names():
     from ppe.capture import _APIS
 
     assert "msmf" in _APIS and "dshow" in _APIS
+
+
+# -- mode probing ------------------------------------------------------
+# OpenCV reports what you got, never what was on offer. --modes asks for each
+# size and format in turn and measures the result, so "is this camera slow
+# because it has no compressed mode?" becomes answerable.
+
+
+class FakeCap:
+    """A camera that delivers one fixed mode whatever it is asked for."""
+
+    def __init__(self, width=640, height=480, fps=10.0, opens=True, claims="YUY2"):
+        self.width, self.height, self.fps = width, height, fps
+        self.opens, self.claims = opens, claims
+        self.asked = []
+        self.released = False
+
+    def isOpened(self):  # noqa: N802 — cv2 naming
+        return self.opens
+
+    def set(self, prop, value):
+        self.asked.append((prop, value))
+        return True
+
+    def get(self, prop):
+        if prop == cv2.CAP_PROP_FOURCC:
+            return float(int.from_bytes(self.claims.encode(), "little"))
+        return 0.0
+
+    def read(self):
+        import time as _t
+
+        _t.sleep(1.0 / self.fps)
+        return True, np.zeros((self.height, self.width, 3), np.uint8)
+
+    def release(self):
+        self.released = True
+
+
+def test_mode_probing_reports_the_frame_it_got_not_the_size_it_asked_for(monkeypatch):
+    """A driver will happily report a mode it is not delivering — that is the
+    whole reason this exists — so the size must come from a decoded frame."""
+    import ppe.camcheck as camcheck
+
+    cap = FakeCap(width=640, height=480, fps=60.0)
+    monkeypatch.setattr(camcheck.cv2, "VideoCapture", lambda *a, **k: cap)
+    got = camcheck.measure_mode(0, cv2.CAP_ANY, "MJPG", 1920, 1080, 30, warmup=1, timed=3)
+    assert got["width"] == 640 and got["height"] == 480, "reported the request, not the frame"
+    assert got["fps"] > 0
+    assert cap.released, "every probe must release its handle"
+
+
+def test_a_mode_that_will_not_open_is_a_result_not_a_crash(monkeypatch):
+    import ppe.camcheck as camcheck
+
+    monkeypatch.setattr(camcheck.cv2, "VideoCapture", lambda *a, **k: FakeCap(opens=False))
+    assert camcheck.measure_mode(0, cv2.CAP_ANY, "MJPG", 640, 480, 30) is None
+
+
+def test_mode_probing_skips_files_rather_than_printing_meaningless_numbers(tmp_path, capsys):
+    """A file ignores every mode request and decodes as fast as the CPU allows,
+    which would print a confident table that means nothing."""
+    from ppe.camcheck import probe_modes
+
+    path = clip(tmp_path, "vid.avi", np.full((240, 320, 3), 128, np.uint8))
+    probe_modes(CameraCfg("Cam", path, 320, 240, 30))
+    out = capsys.readouterr().out
+    assert "not a camera" in out
+    assert "fps" not in out, "no measurements should be printed for a file"
+
+
+def test_mode_probing_measures_every_size_and_format(monkeypatch, capsys):
+    import ppe.camcheck as camcheck
+
+    monkeypatch.setattr(camcheck.cv2, "VideoCapture", lambda *a, **k: FakeCap(fps=60.0))
+    monkeypatch.setattr(camcheck, "PROBE_SIZES", ((640, 480), (1280, 720)))
+    camcheck.probe_modes(CameraCfg("Cam", 0, 1280, 720, 30))
+    out = capsys.readouterr().out
+    assert out.count("fps") >= 4, out          # 2 sizes x 2 formats
+    assert "MJPG" in out and "YUY2" in out
+    assert "currently configured" in out

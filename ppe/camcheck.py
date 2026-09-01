@@ -3,6 +3,7 @@
     python -m ppe.camcheck                # probe every source in config.yaml
     python -m ppe.camcheck -c other.yaml
     python -m ppe.camcheck --scan          # also enumerate cameras this machine sees
+    python -m ppe.camcheck --modes         # what each camera will ACTUALLY deliver
     python -m ppe.camcheck --save frame.jpg
 
 Works the same on Windows and Linux; --scan and the printed causes adapt to
@@ -45,6 +46,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-v", "--verbose", action="store_true", help="print OpenCV's own VIDEOIO diagnostics"
     )
     p.add_argument("--timeout", type=float, default=5.0, help="seconds to wait for a frame")
+    p.add_argument(
+        "--modes", action="store_true",
+        help="measure what each camera really delivers at each size and format "
+             "(opens every combination in turn; takes ~20s per camera)",
+    )
     return p.parse_args(argv)
 
 
@@ -71,6 +77,120 @@ def scan_windows_indices(max_index: int = 6) -> list[tuple[int, str]]:
             if ok:
                 found.append((i, name))
     return found
+
+
+# Sizes worth asking a UVC webcam for, smallest first so a bandwidth-starved
+# camera shows its working modes before its stalling ones. Both formats are
+# tried at every size: which one the camera actually honours is the question.
+PROBE_SIZES = ((640, 480), (800, 600), (1280, 720), (1920, 1080))
+PROBE_FORMATS = ("MJPG", "YUY2")
+
+
+def measure_mode(src, api: int, fourcc: str, width: int, height: int, fps: int,
+                 warmup: int = 3, timed: int = 10) -> dict | None:
+    """Open at one mode and measure what actually comes back, or None.
+
+    Every number here is measured rather than asked for. A driver will report
+    a mode it is not delivering — that is the whole reason this exists — so
+    the frame size comes from a decoded frame's own shape and the rate from
+    timing real reads. CAP_PROP_FOURCC is recorded too, but only as a claim:
+    under DirectShow it is frequently wrong, and the measured rate is what
+    actually tells you whether compression is in play.
+    """
+    cap = cv2.VideoCapture(src, api)
+    if not cap.isOpened():
+        cap.release()
+        return None
+    try:
+        # FOURCC before size, same order the app uses: on DirectShow the pixel
+        # format decides which sizes are offered at all.
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        if fps:
+            cap.set(cv2.CAP_PROP_FPS, fps)
+
+        for _ in range(warmup):  # the first frames after a mode switch settle
+            if not cap.read()[0]:
+                return None
+        start = time.monotonic()
+        shape = None
+        for _ in range(timed):
+            ok, frame = cap.read()
+            if not ok:
+                return None
+            shape = frame.shape
+        elapsed = time.monotonic() - start
+
+        tag = int(cap.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little", signed=False)
+        return {
+            "width": shape[1],
+            "height": shape[0],
+            "fps": timed / elapsed if elapsed > 0 else 0.0,
+            "claims": tag.decode("ascii", "replace").strip() or "?",
+        }
+    except Exception:  # noqa: BLE001 — a mode that misbehaves is a result, not a crash
+        return None
+    finally:
+        cap.release()
+
+
+def probe_modes(cfg: CameraCfg) -> None:
+    """Print what this camera really delivers at each size and format.
+
+    OpenCV can say what you got but never what was on offer, which leaves the
+    one question that matters unanswerable: is this camera slow because it has
+    no compressed mode, or because something else is throttling it? Asking for
+    each mode and timing the result answers it directly.
+    """
+    src = cfg.source
+    if isinstance(src, str) and src.isdigit():
+        src = int(src)
+    if not isinstance(src, int):
+        # A file or stream has no mode table to negotiate: it ignores every
+        # size and format request and decodes as fast as the CPU allows, which
+        # would print a confident table of numbers that mean nothing.
+        print(f"\n{cfg.name}  (source={src!r})")
+        print("  not a camera — a file or stream has no modes to probe, skipping")
+        return
+    api = _APIS.get(cfg.api, cv2.CAP_ANY)
+    total = len(PROBE_SIZES) * len(PROBE_FORMATS)
+    print(f"\n{cfg.name}  (source={src!r}, api={cfg.api})")
+    print(f"  measuring {total} modes — each is opened, set and timed for real\n")
+    print("    asked            delivered      claims   measured")
+
+    best: dict[str, tuple[float, int, int]] = {}
+    for fourcc in PROBE_FORMATS:
+        for width, height in PROBE_SIZES:
+            got = measure_mode(src, api, fourcc, width, height, cfg.fps)
+            if got is None:
+                print(f"    {fourcc} {width:>5}x{height:<5}   —  no frames")
+                continue
+            print(f"    {fourcc} {width:>5}x{height:<5}   "
+                  f"{got['width']:>5}x{got['height']:<5}  {got['claims']:<7}"
+                  f"{got['fps']:6.1f} fps")
+            rate = got["fps"]
+            if fourcc not in best or rate * got["width"] > best[fourcc][0] * best[fourcc][1]:
+                best[fourcc] = (rate, got["width"], got["height"])
+
+    if not best:
+        print("\n  nothing delivered a frame at any mode — run without --modes first")
+        return
+    # Whether compression is really in play is answered by the rate, not by the
+    # FOURCC the driver reports back: at the same size, an honoured MJPG
+    # request beats a raw one by more than measurement noise.
+    mjpg, yuy2 = best.get("MJPG"), best.get("YUY2")
+    if mjpg and yuy2 and mjpg[0] > yuy2[0] * 1.3:
+        print(f"\n  MJPG is honoured — {mjpg[0]:.0f} fps at {mjpg[1]}x{mjpg[2]} against "
+              f"{yuy2[0]:.0f} fps raw. Keep fourcc: MJPG.")
+    elif mjpg and yuy2:
+        print("\n  MJPG buys nothing here — the rates match, so the camera is almost "
+              "certainly uncompressed whatever it reports.\n  Resolution is the only "
+              "lever on bandwidth; keep fourcc: MJPG anyway, an ignored request is free.")
+    fastest = max(best.values(), key=lambda b: b[0])
+    print(f"  fastest measured: {fastest[1]}x{fastest[2]} at {fastest[0]:.0f} fps")
+    print(f"  currently configured: {cfg.width}x{cfg.height} @ {cfg.fps} fps, "
+          f"fourcc {cfg.fourcc or 'driver default'}")
 
 
 def probe(cfg: CameraCfg, timeout: float, save: str | None, tag: str) -> bool:
@@ -241,6 +361,11 @@ def main(argv: list[str] | None = None) -> int:
     if not cfg.cameras:
         print(f"\nno cameras configured in {args.config}")
         return 1
+
+    if args.modes:
+        for cam in cfg.cameras:
+            probe_modes(cam)
+        return 0
 
     results = [
         probe(cam, args.timeout, args.save, f"cam{i}")

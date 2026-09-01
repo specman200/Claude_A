@@ -122,6 +122,24 @@ python -m ppe.camcheck            # probes every camera in config.yaml
 python -m ppe.camcheck --scan     # also enumerates cameras this machine sees
 python -m ppe.camcheck -v         # + OpenCV's own diagnostic
 python -m ppe.camcheck --save frame.jpg   # save what each camera actually sees
+python -m ppe.camcheck --modes    # what each camera will ACTUALLY deliver
+```
+
+`--modes` answers the question the others cannot: OpenCV reports what you got,
+never what was on offer, so a camera stuck at 10 fps leaves you guessing whether
+it has no compressed mode or something else is throttling it. It asks for every
+size in both MJPG and YUY2, measures the rate that actually comes back, and
+takes the frame size from a decoded frame rather than the driver's claim —
+drivers report modes they are not delivering, which is the whole problem:
+
+```
+    asked            delivered      claims   measured
+    MJPG   640x480       640x480    YUY2      30.0 fps
+    MJPG  1280x720      1280x720    YUY2      10.0 fps
+
+  MJPG buys nothing here — the rates match, so the camera is almost certainly
+  uncompressed whatever it reports.
+  fastest measured: 640x480 at 30 fps
 ```
 
 It works the same on Windows and Linux — `--scan` and the printed causes adapt
