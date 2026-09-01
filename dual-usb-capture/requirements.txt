@@ -1,0 +1,5 @@
+opencv-python>=4.9      # camera access, JPEG/PNG writing, preview scaling
+numpy>=1.24             # frame buffers (pulled in by OpenCV anyway)
+
+# Tkinter ships with Python on Windows and macOS. On Debian/Ubuntu it is a
+# separate package: sudo apt install python3-tk
