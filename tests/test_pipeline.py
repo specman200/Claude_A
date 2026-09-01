@@ -309,6 +309,34 @@ def test_a_lone_fresh_camera_is_served_immediately(clip, tmp_path, monkeypatch):
         assert pipe._take(frames(1))[0].index == 1
 
 
+def test_a_lone_cycle_still_spends_that_cameras_turn(clip, tmp_path, monkeypatch):
+    """A camera served alone has had its turn, and must not also keep first
+    claim on the next contested cycle.
+
+    Otherwise it runs twice in a row at every transition, and the penalty lands
+    on the *slower* camera exactly when the two are already uneven: one
+    delivering a fresh frame every other cycle was inferred a third as often
+    rather than half, turning a bandwidth problem into a scheduling one.
+    """
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    served = []
+    for _ in range(6):
+        served.append(pipe._take(frames(0))[0].index)       # only camera 0 has a frame
+        served.append(pipe._take(frames(0, 1))[0].index)    # now both do
+    assert served == [0, 1] * 6, "camera 1 must win every cycle it is fresh for"
+
+
+def test_a_slow_camera_is_served_every_time_it_has_a_frame(clip, tmp_path, monkeypatch):
+    """Camera 1 fresh on one cycle in four should be inferred on all four."""
+    pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
+    served = []
+    for _ in range(4):
+        for _ in range(3):
+            served.append(pipe._take(frames(0))[0].index)
+        served.append(pipe._take(frames(0, 1))[0].index)
+    assert served.count(1) == 4, f"camera 1 starved: {served}"
+
+
 def test_batching_still_takes_every_fresh_frame(clip, tmp_path, monkeypatch):
     pipe = bare_pipeline(make_config(clip, tmp_path), monkeypatch)
     pipe.detector.batches = True

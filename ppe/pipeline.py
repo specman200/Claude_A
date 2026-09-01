@@ -179,8 +179,17 @@ class Pipeline(threading.Thread):
         twice one frame *and* make each frame wait for the other's result, so
         serving one camera per cycle halves end-to-end latency at the same
         per-camera update rate. Cameras take turns so neither starves.
+
+        The turn advances past whichever camera was served, including on a
+        cycle where it was the only one with a fresh frame. Skipping the
+        advance there let a camera be served without spending its turn, so it
+        still held first claim on the next contested cycle and ran twice in a
+        row — which penalised the *slower* camera precisely when the two were
+        already uneven. A camera delivering half as often ended up inferred a
+        third as often rather than half, compounding a bandwidth problem into
+        a scheduling one.
         """
-        if self.detector.batches or len(fresh) == 1:
+        if self.detector.batches:
             return fresh
         n = len(self.cameras)
         chosen = min(fresh, key=lambda f: (f.index - self._turn) % n)
