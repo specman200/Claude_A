@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import logging
 import threading
@@ -244,21 +245,34 @@ class TowerLight:
             self._state = dict.fromkeys(self.cfg.coils)  # None = force a resync
         return self.connected
 
-    def _blank(self) -> None:
-        """Drive every channel on the board low before taking control.
+    def _blank(self, why: str = "connect") -> int:
+        """Drive every channel on the board low. Returns how many were written.
 
-        The relay may still be holding coils from a previous run that crashed
-        or was killed, including channels this station does not manage. Taking
-        the board to a known state costs one pass at connect time and removes
-        a class of "why is that lamp still on" that no amount of careful
-        writing afterwards would explain.
+        Every channel, not only the ones this station maps: the relay may be
+        holding coils from a previous run that crashed or was killed, or from
+        another tool entirely. Taking the board to a known state costs one
+        pass and removes a class of "why is that lamp still on" that no amount
+        of careful writing afterwards would explain.
+
+        Written straight to the client rather than through ``write()``, which
+        skips coils it believes are already low — a belief that a crash, a
+        failed write or another writer on the bus is exactly what invalidates.
+        Caller holds the lock, or is the only thread that can be running.
         """
+        done = 0
         for coil in range(self.cfg.channels):
             try:
                 self._client.write_coil(coil, False, **{self._kw: self.cfg.unit})
+                done += 1
             except Exception as exc:  # noqa: BLE001 — best effort, never fatal
-                log.debug("tower: could not blank coil %d: %s", coil, exc)
-                return
+                # One failure means the bus is down; the rest would only add
+                # a timeout each. Say so — a coil left live is worth knowing.
+                log.warning(
+                    "tower: could not blank coil %d at %s (%d of %d cleared): %s",
+                    coil, why, done, self.cfg.channels, exc,
+                )
+                break
+        return done
 
     def _make_client(self):
         if self.cfg.transport == "rtu":
@@ -313,21 +327,32 @@ class TowerLight:
             return True
 
     def close(self) -> None:
+        """Leave the board dark, then drop the connection.
+
+        Blanks directly rather than through ``write()``: write() takes the
+        same non-reentrant lock this method holds, so calling it here hung
+        shutdown forever — and with it went the one chance to put the lamp
+        out. It also clears every channel rather than just the mapped ones,
+        for the same reason connect does.
+        """
         with self._lock:
             if self._client is not None:
-                try:
-                    self.write(dict.fromkeys(self.cfg.coils, False))
+                with contextlib.suppress(Exception):  # nothing left to salvage
+                    self._blank("shutdown")
+                with contextlib.suppress(Exception):
                     self._client.close()
-                except Exception:  # noqa: BLE001
-                    pass
             self._client = None
             self.connected = False
+            self._state = dict.fromkeys(self.cfg.coils, False)
 
 
 class NullTower:
     """Stand-in when the tower is disabled, so the pipeline stays branch-free."""
 
     connected = False
+
+    def connect(self) -> bool:  # interface parity — nothing to take low
+        return False
 
     def apply(self, status: Status) -> bool:  # noqa: ARG002 — interface parity
         return False

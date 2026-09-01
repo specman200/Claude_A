@@ -108,9 +108,16 @@ class Pipeline(threading.Thread):
         take the app down or hang forever looking like it is still busy.
         """
         try:
+            # The board first, and connected rather than left to connect
+            # lazily on the first write: taking every coil low is what makes
+            # a stale lamp from a killed run go out, and that has to happen
+            # even when the model never loads or no camera ever delivers.
+            # Costs one connect timeout at worst, on this thread, so the
+            # window is already up and painting frames regardless.
+            self.tower = make_tower(self.cfg.tower)
+            self.tower.connect()
             self.detector = Detector(self.cfg.model, self.cfg.ppe)
             self.monitor = ComplianceMonitor(self.cfg.ppe, self.detector.missing)
-            self.tower = make_tower(self.cfg.tower)
         except Exception as exc:  # noqa: BLE001 — reported via on_error, never silent
             log.exception("failed to load model %s", self.cfg.model.weights)
             self.error = exc

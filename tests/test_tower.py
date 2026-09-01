@@ -184,6 +184,70 @@ def test_every_channel_is_blanked_before_the_station_takes_control():
     assert all(v is False for _, v in fake.writes)
 
 
+def test_every_channel_is_blanked_on_shutdown():
+    """Closing the app must leave the board dark, mapped coils or not.
+
+    The lamp outlives the process otherwise: a relay holds its last commanded
+    state, so an operator closing the station is left looking at a light that
+    means nothing.
+    """
+    tower, fake = tower_with_fake()
+    tower.cfg.channels = 8
+    tower.connect()
+    tower.apply(Status.VIOLATION)
+    fake.writes.clear()
+
+    tower.close()
+    assert [c for c, _ in fake.writes] == list(range(8))
+    assert all(v is False for _, v in fake.writes)
+    assert fake.closed
+
+
+def test_close_returns_instead_of_deadlocking():
+    """close() took the lock and then called write(), which takes it again.
+
+    threading.Lock is not reentrant, so shutdown hung forever holding the one
+    chance to put the lamp out — and the pipeline thread never got to flush
+    telemetry either. Run it on a thread so a regression fails rather than
+    hanging the suite.
+    """
+    import threading
+
+    tower, _ = tower_with_fake()
+    tower.cfg.channels = 8
+    tower.connect()
+
+    done = threading.Event()
+    threading.Thread(target=lambda: (tower.close(), done.set()), daemon=True).start()
+    assert done.wait(5), "close() deadlocked"
+
+
+def test_shutdown_clears_coils_it_believes_are_already_low():
+    """Shutdown must not trust its own bookkeeping.
+
+    write() skips a coil whose recorded state already matches — but a crash,
+    a failed write or another writer on the bus is exactly what makes that
+    record wrong, and shutdown is when being wrong leaves a lamp on.
+    """
+    tower, fake = tower_with_fake()
+    tower.cfg.channels = 4
+    tower.connect()
+    tower._state = dict.fromkeys(tower.cfg.coils, False)  # "everything is off"
+    fake.writes.clear()
+
+    tower.close()
+    assert [c for c, _ in fake.writes] == [0, 1, 2, 3], "believed-off coils were skipped"
+
+
+def test_a_failed_blank_at_shutdown_is_survived():
+    """A bus that dies mid-shutdown must not take the app down with it."""
+    tower, fake = tower_with_fake()
+    tower.connect()
+    fake.fail = True
+    tower.close()          # must not raise
+    assert tower.connected is False
+
+
 def test_apply_energises_only_the_status_lamp():
     tower, fake = tower_with_fake()
     tower.connect()

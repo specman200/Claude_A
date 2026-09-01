@@ -426,3 +426,62 @@ def test_shutdown_before_the_model_loads_does_not_crash_on_a_missing_tower(
     pipe.start()
     pipe.stop()  # stop immediately; loading may or may not have finished
     cameras.stop()
+
+
+# -- the relay is left in a known state at both ends ------------------------
+
+
+class RecordingTower:
+    """A tower that records the order of what the pipeline asked of it."""
+
+    def __init__(self):
+        self.events = []
+        self.connected = False
+
+    def connect(self):
+        self.events.append("connect")
+        self.connected = True
+        return True
+
+    def apply(self, status):
+        self.events.append(f"apply:{status.value}")
+        return True
+
+    def close(self):
+        self.events.append("close")
+
+
+def test_the_board_is_taken_low_before_the_model_is_loaded(clip, tmp_path, monkeypatch):
+    """Blanking must not wait on the model.
+
+    A relay holds its last commanded state, so coils from a run that crashed
+    are still live at startup. If the board were only connected after the
+    detector, a bad weights path would leave that stale lamp lit for the whole
+    session — and a bad weights path is not a rare event.
+    """
+    tower = RecordingTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("no such weights")
+
+    monkeypatch.setattr(pipeline_mod, "Detector", explode)
+    cfg = make_config(clip, tmp_path)
+    pipe = pipeline_mod.Pipeline(cfg, CameraSet(cfg.cameras))
+
+    assert pipe._load() is False, "the load should still fail"
+    assert tower.events[0] == "connect", f"board not taken low first: {tower.events}"
+
+
+def test_a_failed_load_still_closes_the_board(clip, tmp_path, monkeypatch):
+    """The lamp goes out even on the path where nothing else works."""
+    tower = RecordingTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+    monkeypatch.setattr(
+        pipeline_mod, "Detector",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no such weights")),
+    )
+    cfg = make_config(clip, tmp_path)
+    pipe = pipeline_mod.Pipeline(cfg, CameraSet(cfg.cameras))
+    pipe.run()  # loads, fails, shuts down — all on this thread
+    assert tower.events == ["connect", "close"], tower.events
