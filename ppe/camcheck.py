@@ -24,10 +24,16 @@ import sys
 import time
 from pathlib import Path
 
-import cv2
-
-from .capture import _APIS
-from .config import CameraCfg, Config
+# isort: off
+# Import .capture BEFORE cv2: .capture sets OPENCV_VIDEOIO_MSMF_ENABLE_HW_
+# TRANSFORMS before its own `import cv2`, but that only helps if this is
+# cv2's first import anywhere in the process — if this file imported cv2
+# itself first, that env var would already be too late by the time
+# .capture's own setdefault runs, same bug, independently, here.
+from .capture import _APIS  # noqa: E402
+import cv2  # noqa: E402
+from .config import CameraCfg, Config  # noqa: E402
+# isort: on
 
 ON_WINDOWS = sys.platform.startswith("win")
 

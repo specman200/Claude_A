@@ -14,26 +14,35 @@ import threading
 import time
 from dataclasses import dataclass
 
-import cv2
-import numpy as np
-
-from .config import CameraCfg
-from .latency import now
-
-log = logging.getLogger(__name__)
-
 # MSMF's hardware-transform negotiation can stall opening a UVC webcam for
 # minutes rather than failing outright — indistinguishable from a hang until
 # you have waited long enough to doubt it ever was one. Measured on a
 # Logitech C920: DirectShow opens in under a second but caps at 10 fps at
 # 720p because it never actually applies an MJPG request the driver silently
 # ignores; MSMF with hardware transforms off opens in under a second AND
-# reaches the full 30 fps, on the same camera and port. setdefault so an
-# operator who has already set this — or is relying on the hardware
-# transform on purpose — is never overridden. Read once, lazily, on first
-# MSMF backend use, so setting it here at import time is early enough; it is
-# inert on Linux, where MSMF does not exist.
+# reaches the full 30 fps, on the same camera and port.
+#
+# This MUST run before `import cv2` below, not merely before any camera is
+# opened. An earlier version set it after importing cv2, on the theory that
+# OpenCV reads it lazily on first MSMF use — confirmed wrong by testing on
+# real hardware: os.environ had the value, cv2 was not yet asked to open
+# anything, and the stall still happened. It only went away once the
+# variable existed in the process's environment *before the Python process
+# itself started* (an OS-level User/Machine variable, set before launch).
+# The strongest fix reachable from inside this file is to set it before our
+# own `import cv2` — evidently this build caches it at load time, not at
+# first backend use. setdefault so an operator's own setting, or a deliberate
+# choice to keep hardware transforms on, is never overridden. Inert on
+# Linux, where MSMF does not exist.
 os.environ.setdefault("OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS", "0")
+
+import cv2  # noqa: E402 — must follow the setdefault above, not precede it
+import numpy as np  # noqa: E402
+
+from .config import CameraCfg  # noqa: E402
+from .latency import now  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 _APIS = {
     "any": cv2.CAP_ANY,
