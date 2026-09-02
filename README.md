@@ -178,11 +178,25 @@ Ranked by how often each one is the actual cause:
 2. **Another process already has it open.** Most UVC devices allow only one
    reader. Close Teams/Zoom/the Camera app, and check Task Manager for a
    previous crashed run of this program still holding the device.
-3. **Wrong backend — try `api: dshow` first.** `api: any` normally resolves to
-   MSMF (Media Foundation), but a reference station running these same C920s
-   on Windows opens them with `cv2.CAP_DSHOW` explicitly. That is a working
-   configuration on the same hardware, so it is the first thing to try rather
-   than the third. `--scan` shows which backend answers for which index.
+3. **Wrong backend, in either direction — try the other one.** `api: any`
+   normally resolves to MSMF (Media Foundation); `api: dshow` is DirectShow.
+   Neither is reliably the right answer:
+   - **MSMF can stall opening for minutes** rather than failing outright —
+     indistinguishable from a hang until you have waited long enough to doubt
+     it. This app now sets `OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS=0`
+     automatically before opening any camera, which is what fixes it; you no
+     longer need to set this by hand.
+   - **DirectShow can silently ignore `fourcc: MJPG`** and still report
+     success — `camcheck` (below) will show it claiming a format other than
+     what was asked for. Measured on a Logitech C920: DirectShow opened fast
+     but stayed at 10 fps at 720p because the format request never actually
+     applied; MSMF, once the stall above is fixed, opened just as fast **and**
+     reached the full 30 fps on the same camera and port.
+
+   So if one backend is slow or capped, the fix is usually the other one, not
+   persisting with either. `--scan` shows which backend answers for which
+   index; `camcheck --modes` (below) measures real throughput per backend so
+   you are comparing numbers, not guessing.
 4. **Driver problem.** Device Manager → Cameras (or "Imaging devices") — a
    yellow warning icon means the driver did not install.
 5. **USB power management.** Device Manager → the camera's USB Root Hub →

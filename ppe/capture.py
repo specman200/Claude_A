@@ -9,6 +9,7 @@ further behind real time the longer the app runs.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +21,19 @@ from .config import CameraCfg
 from .latency import now
 
 log = logging.getLogger(__name__)
+
+# MSMF's hardware-transform negotiation can stall opening a UVC webcam for
+# minutes rather than failing outright — indistinguishable from a hang until
+# you have waited long enough to doubt it ever was one. Measured on a
+# Logitech C920: DirectShow opens in under a second but caps at 10 fps at
+# 720p because it never actually applies an MJPG request the driver silently
+# ignores; MSMF with hardware transforms off opens in under a second AND
+# reaches the full 30 fps, on the same camera and port. setdefault so an
+# operator who has already set this — or is relying on the hardware
+# transform on purpose — is never overridden. Read once, lazily, on first
+# MSMF backend use, so setting it here at import time is early enough; it is
+# inert on Linux, where MSMF does not exist.
+os.environ.setdefault("OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS", "0")
 
 _APIS = {
     "any": cv2.CAP_ANY,
