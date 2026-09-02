@@ -223,6 +223,49 @@ def test_the_standby_headline_needs_wrapping_at_production_width(app, compact, w
     assert QFontMetrics(font).horizontalAdvance(text) > available
 
 
+# -- the thumbs-up / thumbs-down glyphs -------------------------------------
+
+
+def test_ok_and_violation_ship_a_real_icon_not_the_vector_fallback(app):
+    """Pin that the shipped assets actually resolve — if a rename or a
+    corrupt SVG ever broke this, the silent fallback to the drawn tick/cross
+    would hide it; a passing paint() alone would not catch that."""
+    from ppe.ui import _glyph_icon
+
+    assert _glyph_icon("thumbs_up", 40, 1.0) is not None
+    assert _glyph_icon("thumbs_down", 40, 1.0) is not None
+
+
+@pytest.mark.parametrize("compact,width", STATUS_CARD_WIDTHS)
+@pytest.mark.parametrize("status", [Status.OK, Status.VIOLATION])
+def test_ok_and_violation_paint_with_the_icon(app, status, compact, width):
+    card = StatusCard(compact=compact)
+    card.apply(status, ["Vest"], tower_ok=True)
+    paint(card, width, card.minimumHeight())
+
+
+def test_a_missing_icon_falls_back_to_the_drawn_glyph_rather_than_going_blank(
+    app, monkeypatch
+):
+    """The verdict glyph is safety-critical: a bad or missing icon file must
+    never leave the card with nothing drawn where the tick/cross used to be."""
+    import ppe.ui as ui_mod
+
+    monkeypatch.setattr(ui_mod, "_glyph_icon", lambda *a, **k: None)
+    card = StatusCard(compact=False)
+    card.apply(Status.OK, [], tower_ok=True)
+    paint(card, 400, card.minimumHeight())  # must not raise
+
+
+@pytest.mark.parametrize("status", [Status.STANDBY, Status.DEGRADED])
+def test_standby_and_degraded_are_unaffected_by_the_icon_change(app, status):
+    """Only OK and VIOLATION got icons; the dash and the bang must still be
+    the drawn vector glyphs, not an icon lookup that silently no-ops."""
+    from ppe.ui import StatusCard
+
+    assert status not in StatusCard._ICON_NAMES
+
+
 def test_banner_names_what_is_missing_and_flags_a_dead_bus(app):
     banner = StatusBanner()
     banner.apply(Status.VIOLATION, ["Vest", "Gloves"], tower_ok=False)

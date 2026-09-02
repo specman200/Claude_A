@@ -561,8 +561,24 @@ class StatusCard(QFrame):
                                rect.width() - left - 10, 40),
                        int(Qt.AlignTop | Qt.TextWordWrap), self._detail)
 
+    _ICON_NAMES = {Status.OK: "thumbs_up", Status.VIOLATION: "thumbs_down"}
+
     def _paint_glyph(self, p: QPainter, cx: float, cy: float, r: float) -> None:
-        """A tick, a cross, a dash or a bang — drawn, never typed."""
+        """An icon where one is shipped for this status, drawn strokes
+        otherwise — and strokes again if the icon fails to load. A glyph on
+        the verdict card must never be able to go blank because an asset
+        file was missing or unreadable, so a load failure falls through to
+        the same vector tick/cross this file always drew, rather than
+        stopping short of drawing anything.
+        """
+        name = self._ICON_NAMES.get(self._status)
+        if name is not None:
+            icon = _glyph_icon(name, int(r * 2), self.devicePixelRatioF() or 1.0)
+            if icon is not None:
+                dpr = icon.devicePixelRatio() or 1.0
+                w, h = icon.width() / dpr, icon.height() / dpr
+                p.drawPixmap(QRectF(cx - w / 2, cy - h / 2, w, h), icon, QRectF(icon.rect()))
+                return
         pen = QPen(QColor("#000029"), max(3.0, r * 0.30))
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
@@ -817,6 +833,22 @@ def load_logo(path: Path | None, height: int, ratio: float = 1.0) -> QPixmap | N
         return None
     pixmap.setDevicePixelRatio(ratio)
     return pixmap
+
+
+# assets/<name>.svg -> pixmap, cached by (name, size, ratio). StatusCard
+# repaints on every result, so reparsing an SVG every frame would be wasted
+# work — the cache holds only the handful of combinations the two display
+# modes actually use. Reuses load_logo(), which already returns None rather
+# than raising on any load failure.
+_GLYPH_ICONS: dict[tuple[str, int, float], QPixmap | None] = {}
+
+
+def _glyph_icon(name: str, height: int, ratio: float) -> QPixmap | None:
+    key = (name, height, ratio)
+    if key not in _GLYPH_ICONS:
+        path = Path(__file__).resolve().parent.parent / "assets" / f"{name}.svg"
+        _GLYPH_ICONS[key] = load_logo(path, height, ratio)
+    return _GLYPH_ICONS[key]
 
 
 class BrandStrip(QFrame):
