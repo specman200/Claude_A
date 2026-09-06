@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -11,6 +12,9 @@ from .config import ModelCfg, PPECfg
 from .latency import now
 from .letterbox import Letterbox, letterbox
 from .runtime import apply_torch, configure
+
+if TYPE_CHECKING:  # a type-only reference — never requires rfdetr installed
+    from .rfdetr_detector import RFDetrDetector
 
 log = logging.getLogger(__name__)
 
@@ -239,3 +243,21 @@ class Detector:
             dets.append(Detection(name, float(conf), (float(box[0]), float(box[1]),
                                                       float(box[2]), float(box[3]))))
         return dets
+
+
+def make_detector(cfg: ModelCfg, ppe: PPECfg) -> Detector | RFDetrDetector:
+    """Which backend Pipeline, bench.py and the UI actually get.
+
+    Both implementations share one contract — .missing, .names, .batches,
+    .detect(), .set_classes(), constructed the same way — so nothing
+    downstream needs to know or care which this returns. The rfdetr backend
+    is imported lazily, here rather than at module load, so a station that
+    only ever runs YOLO never needs the rfdetr package installed at all —
+    the same reasoning ``Detector.__init__`` already applies to importing
+    ultralytics itself.
+    """
+    if cfg.arch == "rfdetr":
+        from .rfdetr_detector import RFDetrDetector
+
+        return RFDetrDetector(cfg, ppe)
+    return Detector(cfg, ppe)

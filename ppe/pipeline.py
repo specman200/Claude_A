@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .annunciator import Annunciator
 from .capture import CameraSet, Frame
@@ -16,6 +17,9 @@ from .detector import Detection, Detector
 from .latency import Cycle, Metrics, Profiler, now
 from .subject import Focus, focus
 from .tower import ClassState, ComplianceMonitor, Status, make_tower
+
+if TYPE_CHECKING:  # a type-only reference — never requires rfdetr installed
+    from .rfdetr_detector import RFDetrDetector
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +78,7 @@ class Pipeline(threading.Thread):
         # including a UI that wants to show a window and live video before
         # the model is ready. So construction is cheap; loading happens in
         # run(), on the pipeline thread, where it belongs.
-        self.detector: Detector | None = None
+        self.detector: Detector | RFDetrDetector | None = None
         self.monitor: ComplianceMonitor | None = None
         self.tower = None
         self.annunciator = Annunciator(
@@ -116,7 +120,16 @@ class Pipeline(threading.Thread):
             # window is already up and painting frames regardless.
             self.tower = make_tower(self.cfg.tower)
             self.tower.connect()
-            self.detector = Detector(self.cfg.model, self.cfg.ppe)
+            # Not make_detector() here: this module's own `Detector` name is
+            # what tests (and anything else) monkeypatch to stub the model
+            # out, and routing every build through detector.make_detector
+            # would call detector.Detector instead, silently un-stubbing it.
+            if self.cfg.model.arch == "rfdetr":
+                from .rfdetr_detector import RFDetrDetector
+
+                self.detector = RFDetrDetector(self.cfg.model, self.cfg.ppe)
+            else:
+                self.detector = Detector(self.cfg.model, self.cfg.ppe)
             self.monitor = ComplianceMonitor(self.cfg.ppe, self.detector.missing)
         except Exception as exc:  # noqa: BLE001 — reported via on_error, never silent
             log.exception("failed to load model %s", self.cfg.model.weights)

@@ -363,6 +363,46 @@ python -m ppe.export -w runs/detect/train/weights/best.pt
 `-w` matters: without it the exporter reads `model.weights` from the config,
 which normally points at an export already — and only a `.pt` can be exported.
 
+### RF-DETR instead of YOLO
+
+Set `model.arch: rfdetr` and point `model.weights` at an RF-DETR checkpoint
+(a `.pth` from `rfdetr`'s own training) to run that backend instead of
+ultralytics. `pip install rfdetr` first — it is not installed by default,
+only listed in `requirements.txt` since not every station needs it.
+
+```yaml
+model:
+  arch: rfdetr
+  weights: runs/rfdetr/checkpoint.pth
+```
+
+Everything else in `config.yaml` means the same thing either way — `conf`,
+`imgsz`, `warmup`, per-class `ppe.classes[].conf` — except `iou` and
+`max_det`, which RF-DETR ignores (it is NMS-free by design), and `batch`,
+which it has no API for at all: every call is one image, regardless of the
+setting.
+
+Two real gaps against the YOLO path, both worth knowing before relying on
+this in production:
+
+- **No OpenVINO export yet.** `python -m ppe.export` is ultralytics-only and
+  refuses an RF-DETR checkpoint with a pointer to `rfdetr`'s own
+  `RFDETRBase.from_checkpoint(...).export()` (ONNX by default) instead of
+  failing on it confusingly. That export is ONNX, not OpenVINO IR — RF-DETR
+  consumes OpenVINO as an ONNX Runtime execution provider, not as a native
+  export target the way ultralytics does, so getting the ~5x CPU speedup
+  the YOLO path has (see "Running on a CPU" below) needs an extra ONNX →
+  OpenVINO IR conversion this repo does not yet do for you. Until then this
+  backend runs on plain PyTorch.
+- **Built and tested against RF-DETR's own documentation and source
+  (github.com/roboflow/rf-detr), not against trained weights** — none exist
+  yet for this station's classes. `ppe/rfdetr_detector.py` says exactly
+  which parts to confirm first once real weights land: RGB vs BGR input,
+  and where the loaded model exposes its class list.
+
+`python -m ppe.bench --arch rfdetr -w your_checkpoint.pth` benchmarks it the
+same way as any YOLO export, once you have weights to point it at.
+
 ## Audio
 
 A lamp only works on someone facing it. Point `audio.file` at an .mp3 or .wav

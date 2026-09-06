@@ -3,6 +3,10 @@ ultralytics>=8.3.0          # YOLOv11 (yolo11s) models
 torch>=2.2.0                # required by ultralytics even when running OpenVINO
 opencv-python>=4.9.0
 
+# Alternative detector backend — only needed if model.arch: rfdetr in
+# config.yaml; not required for the shipped YOLO models.
+rfdetr
+
 # CPU acceleration — ~5x over PyTorch on an Intel CPU (see README, "Running on
 # a CPU"). Needed to export and to run the shipped models/*_openvino_model/.
 openvino>=2025.0

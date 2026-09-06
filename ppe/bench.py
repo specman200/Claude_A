@@ -29,6 +29,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("-c", "--config", default="config.yaml")
     p.add_argument("-w", "--weights", nargs="+", help="models to compare (default: models/*)")
+    p.add_argument(
+        "--arch", default="yolo", choices=("yolo", "rfdetr"),
+        help="backend every -w weights path is loaded with (default: yolo)",
+    )
     p.add_argument("--imgsz", type=int, nargs="+", help="sizes to sweep")
     p.add_argument("-n", "--runs", type=int, default=15, help="timed calls per model")
     p.add_argument("--threads", type=int, default=0, help="inference threads; 0 = every core")
@@ -46,14 +50,14 @@ def discover(root: Path = Path("models")) -> list[str]:
     return found
 
 
-def time_model(weights: str, cfg: Config, imgsz: int, image, runs: int) -> dict:
-    from .detector import Detector
+def time_model(weights: str, cfg: Config, imgsz: int, image, runs: int, arch: str = "yolo") -> dict:
+    from .detector import make_detector
 
     model = ModelCfg(
-        weights=weights, imgsz=imgsz, device="cpu", half=False,
+        weights=weights, arch=arch, imgsz=imgsz, device="cpu", half=False,
         conf=cfg.model.conf, iou=cfg.model.iou, threads=cfg.model.threads, warmup=False,
     )
-    detector = Detector(model, cfg.ppe)
+    detector = make_detector(model, cfg.ppe)
     for _ in range(3):  # let the runtime settle before timing
         detector.detect([image])
 
@@ -106,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     for size in sizes:
         for path in weights:
             try:
-                r = time_model(path, cfg, size, image, args.runs)
+                r = time_model(path, cfg, size, image, args.runs, args.arch)
             except Exception as exc:  # noqa: BLE001 — report and keep going
                 print(f"{Path(path).name:<44}{size:>7}   failed: {str(exc)[:40]}")
                 continue

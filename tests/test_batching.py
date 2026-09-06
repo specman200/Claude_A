@@ -219,3 +219,29 @@ def test_a_model_that_takes_any_count_is_never_padded(monkeypatch):
     assert det.exact is False
     assert len(det.detect([np.zeros((720, 1280, 3), np.uint8)])[0]) == 1
     assert model.calls == [1], "one frame asked for, one frame run"
+
+
+# -- refusing an RF-DETR checkpoint rather than mishandling it -------------
+
+
+def test_export_refuses_an_rfdetr_checkpoint_with_its_own_fix(tmp_path, caplog):
+    """ultralytics.YOLO().export() would fail on a .pth checkpoint anyway,
+    but with a confusing ultralytics-flavoured message about a format it
+    was never going to recognise. This must stop before that, and say what
+    to do instead."""
+    from ppe import export as export_mod
+
+    pt = tmp_path / "checkpoint.pth"
+    pt.write_bytes(b"")
+    import yaml
+
+    with open("config.yaml") as fh:
+        raw = yaml.safe_load(fh)
+    raw["model"]["weights"] = str(pt)
+    raw["model"]["arch"] = "rfdetr"
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.safe_dump(raw))
+
+    assert export_mod.main(["-c", str(cfg)]) == 1
+    assert "rfdetr" in caplog.text
+    assert "from_checkpoint" in caplog.text

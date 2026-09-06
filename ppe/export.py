@@ -108,6 +108,22 @@ def main(argv: list[str] | None = None) -> int:
     weights = args.weights or cfg.model.weights
     imgsz = args.imgsz or cfg.model.imgsz
 
+    if cfg.model.arch == "rfdetr":
+        # A different package with a different export() entirely — sending
+        # its .pth checkpoint through ultralytics.YOLO().export() here would
+        # fail with a confusing ultralytics-flavoured error about a file
+        # format it was never going to recognise, rather than saying what
+        # actually needs to happen.
+        log.error(
+            "model.arch is 'rfdetr' — this tool exports ultralytics/YOLO "
+            "weights only. Export an RF-DETR checkpoint with rfdetr's own "
+            "API instead:\n"
+            "    from rfdetr import RFDETRBase\n"
+            "    RFDETRBase.from_checkpoint(%r).export()  # onnx by default",
+            weights,
+        )
+        return 1
+
     source = source_weights(weights)
     if source is None:
         log.error(

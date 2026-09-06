@@ -18,15 +18,17 @@ def _build(cls, data: dict[str, Any]):
 @dataclass
 class ModelCfg:
     weights: str = "yolo11s.pt"
+    arch: str = "yolo"          # "yolo" (ultralytics) | "rfdetr"
     imgsz: int = 640
     device: str = "auto"
     half: bool = True
     conf: float = 0.35
-    iou: float = 0.50
-    max_det: int = 100
+    iou: float = 0.50           # ignored by rfdetr — it is NMS-free
+    max_det: int = 100          # ignored by rfdetr
     warmup: bool = True
     threads: int = 0            # inference threads; 0 = every core
     batch: bool | str = "auto"  # "auto" | true | false — batch both cameras?
+    # ^ rfdetr has no batch API at all — every call is one image, always.
 
     def batches(self, device: str) -> bool:
         """Should both cameras go through one call?
@@ -234,6 +236,10 @@ class Config:
             )
         if self.model.threads < 0:
             raise ValueError(f"config: model.threads must be >= 0, got {self.model.threads}")
+        if self.model.arch not in ("yolo", "rfdetr"):
+            raise ValueError(
+                f"config: model.arch must be 'yolo' or 'rfdetr', got {self.model.arch!r}"
+            )
         if not isinstance(self.model.batch, bool) and self.model.batch != "auto":
             raise ValueError(
                 f"config: model.batch must be true, false or 'auto', got {self.model.batch!r}"

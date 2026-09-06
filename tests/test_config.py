@@ -65,6 +65,7 @@ def test_save_round_trips(tmp_path):
         (lambda c: c.ppe.classes.append(ClassCfg(c.ppe.classes[0].name)), "duplicate"),
         (lambda c: c.tower.coils.update(strobe=9), "unknown tower coils"),
         (lambda c: setattr(c.ppe.classes[0], "expect", "maybe"), "expect must be one of"),
+        (lambda c: setattr(c.model, "arch", "detectron"), "arch must be"),
     ],
 )
 def test_validate_rejects_broken_configs(mutate, message):
