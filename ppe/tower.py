@@ -229,6 +229,12 @@ class TowerLight:
         self._state: dict[str, bool] = dict.fromkeys(cfg.coils, False)
         self._lock = threading.Lock()
         self._retry_at = 0.0
+        # Belt grinder latch: whether a press has armed it, and what the
+        # button read last cycle so a *new* press can be told from one
+        # still being held. Both start in the state that demands a fresh,
+        # fully observed release-then-press before anything can run.
+        self._grinder_latched = False
+        self._button_was_pressed = True
 
     # -- connection --------------------------------------------------------
     def connect(self) -> bool:
@@ -246,6 +252,7 @@ class TowerLight:
             self._retry_at = now() + self.cfg.reconnect_sec
         else:
             log.info("tower connected (%s)", self.cfg.transport)
+            self._disarm_grinder()
             self._blank()
             self._state = dict.fromkeys(self.cfg.coils)  # None = force a resync
         return self.connected
@@ -354,6 +361,26 @@ class TowerLight:
                 self._retry_at = now() + self.cfg.reconnect_sec
                 return None
 
+    def _disarm_grinder(self) -> None:
+        """Forget the latch and demand a fresh press before running again.
+
+        Used wherever the coil is taken low outside this method's own
+        control — connect, close — because the motor is physically off at
+        that point and must not come back without somebody deciding it
+        should. Assuming the button is currently held is the conservative
+        half of that: it means only a release-then-press this method has
+        actually *seen* can re-arm the latch.
+        """
+        self._grinder_latched = False
+        self._button_was_pressed = True
+
+    def _drop_grinder(self, why: str) -> bool:
+        """Clear the latch and drive the coil low, logging the transition."""
+        if self._grinder_latched:
+            log.info("belt grinder off: %s", why)
+        self._grinder_latched = False
+        return self.write({"belt_grinder": False})
+
     def update_belt_grinder(self, status: Status) -> bool:
         """Drive the belt grinder relay from the e-stop and push-button
         inputs plus this cycle's compliance status.
@@ -364,18 +391,25 @@ class TowerLight:
         why the run condition wants estop True and push_button False, and
         why that is not the typo it looks like.
 
-        A plain AND/NOT chain, evaluated fresh every call — not a latch, so
-        nothing here remembers a past press. Losing the bus, or either read
-        failing, takes the motor with it rather than holding a stale ON:
+        The push button is momentary, so this is a **latch** — the seal-in
+        of a standard motor starter — rather than the hold-to-run a plain
+        AND chain would give:
 
-          off  the instant the e-stop input goes False (pressed, or the
-               circuit broken — an active-wired input fails safe), OR
-               status is anything but Status.OK (PPE missing, nobody
-               confirmed compliant yet, or the station cannot judge)
-          on   only while the e-stop reads True AND status is Status.OK
-               AND the push button reads False (held down) — "then and
-               only then", so every other combination is off, not
-               "unchanged"
+          start  a press (a release-then-press this method actually saw)
+                 while the e-stop reads True and status is Status.OK
+          run    until something drops it; releasing the button does not
+          drop   the e-stop going False, status leaving Status.OK, either
+                 input failing to read, or the board being taken low by a
+                 connect or a close
+
+        Dropping the latch is the point of it. Nothing here restarts on
+        its own: when the e-stop is released, or PPE compliance comes
+        back, or the bus recovers, the coil stays low until an operator
+        presses the button again. That is the restart interlock — a fault
+        that clears must not spin the motor back up under someone's
+        hands — and it is why the button state is tracked as an edge.
+        Holding the button down through a fault therefore starts nothing
+        when the fault clears; the operator has to let go first.
 
         No-op — nothing read, nothing written — on a station that has not
         wired this up: belt_grinder must be in tower.coils and both estop
@@ -387,14 +421,30 @@ class TowerLight:
             return False
         if not {"estop", "push_button"} <= set(self.cfg.inputs):
             return False
+
         estop = self._read_input("estop")
         push_button = self._read_input("push_button")
         if estop is None or push_button is None:
-            # A failed read means this station cannot currently prove the
-            # machine safe to run — the only safe default is off.
-            return self.write({"belt_grinder": False})
-        want = estop and status is Status.OK and not push_button
-        return self.write({"belt_grinder": want})
+            # The button's position is unknown, so the next press cannot be
+            # told from a hold that spanned the outage. Demand one this
+            # method has seen from both sides rather than guessing.
+            self._button_was_pressed = True
+            return self._drop_grinder("input read failed")
+
+        # Track the button every cycle, faults included: a release *during*
+        # a fault is what makes the operator's next press a real edge.
+        pressed = not push_button
+        was_pressed, self._button_was_pressed = self._button_was_pressed, pressed
+
+        if not estop:
+            return self._drop_grinder("e-stop hit")
+        if status is not Status.OK:
+            return self._drop_grinder(f"status is {status.value}")
+
+        if pressed and not was_pressed:
+            log.info("belt grinder on: button pressed")
+            self._grinder_latched = True
+        return self.write({"belt_grinder": self._grinder_latched})
 
     def close(self) -> None:
         """Leave the board dark, then drop the connection.
@@ -406,6 +456,10 @@ class TowerLight:
         for the same reason connect does.
         """
         with self._lock:
+            # Before the blanking, not after: _blank() runs under suppress
+            # because a dead bus must not stop a shutdown, and the latch
+            # must be forgotten on the path where that blanking throws too.
+            self._disarm_grinder()
             if self._client is not None:
                 with contextlib.suppress(Exception):  # nothing left to salvage
                     self._blank("shutdown")

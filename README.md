@@ -472,27 +472,30 @@ That is why the run condition below wants `estop` true and `push_button`
 false — it reads like a typo and is not one. It also fails safe: a cut
 wire on the e-stop line reads the same as the e-stop being hit.
 
-Read and driven every cycle, combinationally — nothing here is a latch, so
-nothing remembers a past press or a past fault:
+The button is momentary, so the output **latches** — the seal-in of a
+standard motor starter, read and driven every cycle:
 
-- **off** the instant `estop` goes false (hit, or the circuit broken), OR
-  the station is not showing `OK` (missing PPE, nobody confirmed compliant
-  yet, or DEGRADED)
-- **on** only while `estop` reads true AND the station shows `OK` AND
-  `push_button` reads false (held down) — every other combination is off,
-  not left unchanged
+- **start** on a press (a release-then-press the station actually saw)
+  while `estop` reads true and the station shows `OK`
+- **run** until something drops it — letting go of the button does not
+- **drop** when `estop` goes false (hit, or the circuit broken), when the
+  station leaves `OK` (missing PPE, STANDBY, DEGRADED), when either input
+  cannot be read, or when the board is taken low by a connect or a close
 
-Because it is combinational rather than latched, a momentary push button
-is **hold-to-run**: the grinder runs while the button is held and stops
-when it is released. A maintained (latching) switch instead runs until it
-is pressed again. Either is fine — the difference is in the switch, not in
-this code.
+**Nothing restarts on its own.** A released e-stop, restored compliance or
+a recovered bus all leave the coil low until an operator presses the
+button again. That restart interlock is the reason to latch at all — a
+fault that clears must not spin the motor back up under someone's hands.
+It is also why the press is tracked as an *edge*: a button taped or wedged
+down cannot turn a cleared fault into a start, because the station has to
+see it released first.
 
-A failed read (bus down, timeout) is treated the same as an e-stop: off.
-Once the bus recovers, the next cycle reads fresh and drives whatever that
-read actually shows — including back on, if the machine was genuinely safe
-the whole time and only the read failed. There is no manual re-arm step;
-add one at the PLC/relay level if your process requires it.
+**This is strict about compliance blips.** Every drop out of `OK` — a
+brief occlusion, a glove the model loses for longer than its `hold_ms` —
+stops the grinder and costs the operator a re-press. If that gets
+annoying on the floor, raise `ppe.confirm_sec.violation` and
+`ppe.confirm_sec.standby` so a momentary miss never reaches the interlock,
+rather than loosening the interlock itself.
 
 All three keys are required together: `tower.coils.belt_grinder`,
 `tower.inputs.estop` and `tower.inputs.push_button`. `config.validate()`
