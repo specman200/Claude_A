@@ -492,6 +492,56 @@ Wiring is `tower.coils`: a Modbus coil address per lamp. Set
 `tcp` with `host`/`port` for an Ethernet one. `tower.enabled: false` runs the
 whole app with no bus at all, which is how the tests and a dev laptop run.
 
+### The belt grinder interlock
+
+A machine relay, gated on two digital inputs plus the compliance status —
+separate from the lamps, on its own coil:
+
+```yaml
+tower:
+  coils:
+    belt_grinder: 4   # Digital Output 5 — channel N is coil N-1, as above
+  inputs:
+    estop: 0          # Digital Input 1 — false = e-stop hit
+    push_button: 1    # Digital Input 2 — false = button pressed
+```
+
+**Switch polarity.** Both switches are wired **active** (normally closed):
+an idle input reads `true`, and pressing the switch takes it to `false`.
+That is why the run condition below wants `estop` true and `push_button`
+false — it reads like a typo and is not one. It also fails safe: a cut
+wire on the e-stop line reads the same as the e-stop being hit.
+
+The button is momentary, so the output **latches** — the seal-in of a
+standard motor starter, read and driven every cycle:
+
+- **start** on a press (a release-then-press the station actually saw)
+  while `estop` reads true and the station shows `OK`
+- **run** until something drops it — letting go of the button does not
+- **drop** when `estop` goes false (hit, or the circuit broken), when the
+  station leaves `OK` (missing PPE, STANDBY, DEGRADED), when either input
+  cannot be read, or when the board is taken low by a connect or a close
+
+**Nothing restarts on its own.** A released e-stop, restored compliance or
+a recovered bus all leave the coil low until an operator presses the
+button again. That restart interlock is the reason to latch at all — a
+fault that clears must not spin the motor back up under someone's hands.
+It is also why the press is tracked as an *edge*: a button taped or wedged
+down cannot turn a cleared fault into a start, because the station has to
+see it released first.
+
+**This is strict about compliance blips.** Every drop out of `OK` — a
+brief occlusion, a glove the model loses for longer than its `hold_ms` —
+stops the grinder and costs the operator a re-press. If that gets
+annoying on the floor, raise `ppe.confirm_sec.violation` and
+`ppe.confirm_sec.standby` so a momentary miss never reaches the interlock,
+rather than loosening the interlock itself.
+
+All three keys are required together: `tower.coils.belt_grinder`,
+`tower.inputs.estop` and `tower.inputs.push_button`. `config.validate()`
+refuses a config with only some of them set, rather than silently reading
+or writing nothing.
+
 ## Running on a CPU
 
 The station is set up for CPU inference out of the box. Four things get it

@@ -151,8 +151,11 @@ class FakeClient:
 
     def __init__(self):
         self.writes = []
+        self.reads = []          # addresses read, in call order
         self.fail = False
+        self.fail_read = False
         self.closed = False
+        self.inputs: dict[int, bool] = {}  # address -> current bit
 
     def connect(self):
         return True
@@ -163,12 +166,30 @@ class FakeClient:
         self.writes.append((address, value))
         return type("Rsp", (), {"isError": lambda _self: False})()
 
+    def read_discrete_inputs(self, address, count=1, slave=None):
+        if self.fail_read:
+            raise OSError("bus down")
+        self.reads.append(address)
+        bits = [self.inputs.get(address + i, False) for i in range(count)]
+        return type("Rsp", (), {"isError": lambda _self: False, "bits": bits})()
+
     def close(self):
         self.closed = True
 
 
 def tower_with_fake():
     tower = TowerLight(TowerCfg(coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3}))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    return tower, fake
+
+
+def tower_with_grinder():
+    """A tower wired for the belt grinder interlock — coil 4, inputs 0 and 1."""
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0, "push_button": 1},
+    ))
     fake = FakeClient()
     tower._make_client = lambda: fake
     return tower, fake
@@ -301,6 +322,252 @@ def test_a_disabled_tower_is_a_no_op():
     tower = make_tower(TowerCfg(enabled=False))
     assert tower.apply(Status.VIOLATION) is False
     tower.close()
+
+
+def test_apply_never_touches_a_coil_it_does_not_manage():
+    """belt_grinder lives in the same coils dict as the lamps, but apply()
+    must never force it low just for being there — that would fight
+    update_belt_grinder()'s own write every single cycle."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.writes.clear()  # discard the connect-time blanking pass
+    tower.apply(Status.OK)
+    assert 4 not in dict(fake.writes)
+
+
+# -- belt grinder interlock -------------------------------------------------
+# Digital Input 1 (estop) and Digital Input 2 (push_button) gate Digital
+# Output 5 (belt_grinder). Both switches are wired ACTIVE (normally
+# closed), so an idle input reads True and pressing takes it to False —
+# hence estop True means "not hit" and push_button False means "held
+# down".
+#
+# The button is momentary, so the output latches: a press while the e-stop
+# is clear and PPE is compliant starts the motor and it keeps running once
+# the button is let go. What these mostly pin is the *other* half of a
+# latch — that nothing restarts on its own. Every fault clears the latch,
+# so a released e-stop, restored compliance or a recovered bus leaves the
+# coil low until somebody presses the button again.
+
+
+def press(tower, fake, status=Status.OK):
+    """A real button push: one cycle released, then one cycle held.
+
+    Two cycles because the latch arms on the edge, not the level — a
+    press that was already held when the last fault happened is not a
+    new press, and must not start anything.
+    """
+    fake.inputs[1] = True   # released — idle is True on an active input
+    tower.update_belt_grinder(status)
+    fake.inputs[1] = False  # pressed
+    return tower.update_belt_grinder(status)
+
+
+def test_belt_grinder_is_a_noop_without_the_coil_configured():
+    tower, fake = tower_with_fake()  # no belt_grinder in coils, no inputs
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.reads == []
+    assert fake.writes == []
+
+
+def test_belt_grinder_is_a_noop_without_both_inputs_configured():
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0},  # push_button missing
+    ))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.reads == []
+    assert fake.writes == []
+
+
+def test_a_press_starts_the_grinder_and_it_keeps_running_once_released():
+    """The whole point of the latch: a momentary button cannot be held for
+    the length of a job, so letting go must not stop the motor."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}  # e-stop clear, button idle
+    fake.writes.clear()
+
+    assert press(tower, fake) is True
+    assert dict(fake.writes) == {4: True}
+
+    fake.writes.clear()
+    fake.inputs[1] = True  # let go
+    assert tower.update_belt_grinder(Status.OK) is False  # still on, nothing to write
+    assert fake.writes == []
+
+
+def test_nothing_starts_without_a_press():
+    """An idle button with everything else healthy is not a start."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.OK)
+    assert dict(fake.writes).get(4) is not True
+
+
+def test_the_estop_stops_it_and_releasing_the_estop_does_not_restart_it():
+    """The restart interlock. A cleared fault must not spin the motor back
+    up under someone's hands — that is what a latch is for."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    fake.writes.clear()
+
+    fake.inputs[0] = False  # e-stop hit — active wiring, so False
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes) == {4: False}
+
+    fake.writes.clear()
+    fake.inputs[0] = True  # e-stop released
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.writes == [], "released e-stop restarted the motor on its own"
+
+    assert press(tower, fake) is True  # a fresh press does start it again
+    assert dict(fake.writes) == {4: True}
+
+
+def test_losing_compliance_stops_it_and_regaining_it_does_not_restart_it():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    fake.writes.clear()
+
+    assert tower.update_belt_grinder(Status.VIOLATION) is True
+    assert dict(fake.writes) == {4: False}
+
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.writes == [], "restored compliance restarted the motor on its own"
+
+
+def test_standby_stops_it_too():
+    """Nobody in view is not compliance — Status.OK is the only run state."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.STANDBY) is True
+    assert dict(fake.writes) == {4: False}
+
+
+def test_a_button_held_through_a_fault_does_not_restart_on_its_own():
+    """The defeat case, and the reason the latch arms on an edge rather
+    than a level: a button taped or wedged down must not turn a cleared
+    fault into a start. The operator has to let go first."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+
+    fake.inputs[0] = False       # e-stop hit while the button stays held
+    tower.update_belt_grinder(Status.OK)
+    fake.inputs[0] = True        # fault clears, button STILL held
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.writes == [], "a held button restarted the motor"
+
+    # Letting go and pressing again is a real start.
+    assert press(tower, fake) is True
+    assert dict(fake.writes) == {4: True}
+
+
+def test_a_press_while_non_compliant_is_not_banked_for_later():
+    """Pressing during a violation must not arm anything that fires the
+    moment PPE comes good — the press has to happen while it is safe."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake, status=Status.VIOLATION)  # pressed and still held
+    fake.writes.clear()
+
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.writes == [], "a press made during a violation started it late"
+
+
+def test_belt_grinder_reads_both_inputs_by_their_configured_address():
+    tower, fake = tower_with_grinder()
+    tower.update_belt_grinder(Status.OK)
+    assert fake.reads == [0, 1]
+
+
+def test_a_failed_input_read_stops_it_and_needs_a_fresh_press():
+    """A read failure marks the bus down the same way a write failure does
+    (test_a_bus_failure_is_survived_and_resynced), so the fallback write to
+    False goes out over the same bus that just failed, and fails with it
+    too — nothing reaches the coil while the bus is down.
+
+    The latch is still dropped, though, and dropping it is what matters:
+    when the bus comes back the motor stays off, because a cycle where the
+    button could not be read cannot be told from one where it was held.
+    """
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    fake.writes.clear()
+
+    fake.fail_read = True
+    assert tower.update_belt_grinder(Status.OK) is False  # bus down — nothing sent
+    assert fake.writes == []
+    assert tower.connected is False
+
+    fake.fail_read = False
+    tower._retry_at = 0.0  # skip the reconnect backoff for the test
+    tower.update_belt_grinder(Status.OK)
+    assert dict(fake.writes).get(4) is not True, "recovered bus restarted the motor"
+
+    fake.writes.clear()
+    assert press(tower, fake) is True
+    assert dict(fake.writes) == {4: True}
+
+
+def test_reconnecting_forgets_the_latch():
+    """connect() blanks the whole board, so the motor is physically off at
+    that point — the latch must not claim otherwise and rewrite it high."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    assert tower._grinder_latched is True
+
+    tower.connected = False  # as a failed write or read would leave it
+    tower._retry_at = 0.0
+    tower.connect()
+    assert tower._grinder_latched is False
+    fake.writes.clear()
+    # A reconnect resyncs every coil from an unknown state, so a write of
+    # False is expected here — a write of True is the regression.
+    tower.update_belt_grinder(Status.OK)
+    assert dict(fake.writes).get(4) is not True
+
+
+def test_closing_forgets_the_latch_even_if_blanking_throws():
+    """close() blanks under suppress because a dead bus must not stop a
+    shutdown; the latch has to be dropped on that path too."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    press(tower, fake)
+    fake.fail = True  # blanking will raise all the way through close()
+
+    tower.close()
+    assert tower._grinder_latched is False
+
+
+def test_belt_grinder_write_is_skipped_once_already_off():
+    tower, fake = tower_with_grinder()
+    fake.inputs = {0: False, 1: True}  # e-stop hit from the start
+    tower.update_belt_grinder(Status.OK)  # first call always writes once, to sync
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is False  # unchanged — no bus write
+    assert fake.writes == []
 
 
 # -- forbidden classes -----------------------------------------------------

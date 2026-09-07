@@ -212,6 +212,11 @@ LAMPS: dict[Status, tuple[str, ...]] = {
     Status.DEGRADED: ("amber",),
 }
 
+# Coils apply() is allowed to touch — every lamp plus the buzzer. Any other
+# coil in tower.coils (belt_grinder, say) belongs to a different write path
+# and must not be forced low here every cycle just for existing in the dict.
+_LAMP_COILS = {lamp for lamps in LAMPS.values() for lamp in lamps} | {"buzzer"}
+
 
 class TowerLight:
     """Modbus coil output. Writes only the coils that actually changed."""
@@ -224,6 +229,12 @@ class TowerLight:
         self._state: dict[str, bool] = dict.fromkeys(cfg.coils, False)
         self._lock = threading.Lock()
         self._retry_at = 0.0
+        # Belt grinder latch: whether a press has armed it, and what the
+        # button read last cycle so a *new* press can be told from one
+        # still being held. Both start in the state that demands a fresh,
+        # fully observed release-then-press before anything can run.
+        self._grinder_latched = False
+        self._button_was_pressed = True
 
     # -- connection --------------------------------------------------------
     def connect(self) -> bool:
@@ -241,6 +252,7 @@ class TowerLight:
             self._retry_at = now() + self.cfg.reconnect_sec
         else:
             log.info("tower connected (%s)", self.cfg.transport)
+            self._disarm_grinder()
             self._blank()
             self._state = dict.fromkeys(self.cfg.coils)  # None = force a resync
         return self.connected
@@ -296,7 +308,7 @@ class TowerLight:
     # -- output ------------------------------------------------------------
     def apply(self, status: Status) -> bool:
         """Drive the lamps for ``status``. Returns True if the bus was written."""
-        wanted = dict.fromkeys(self.cfg.coils, False)
+        wanted = {k: False for k in self.cfg.coils if k in _LAMP_COILS}
         for lamp in LAMPS[status]:
             if lamp in wanted:
                 wanted[lamp] = True
@@ -326,6 +338,114 @@ class TowerLight:
                 return False
             return True
 
+    # -- input -------------------------------------------------------------
+    def _read_input(self, name: str) -> bool | None:
+        """One named discrete input, or None if it could not be read.
+
+        Same lock and connect() gate as write(): this shares the bus with
+        the coil writes and must not run concurrently with them either.
+        """
+        with self._lock:
+            if not self.connect():
+                return None
+            try:
+                rsp = self._client.read_discrete_inputs(
+                    self.cfg.inputs[name], count=1, **{self._kw: self.cfg.unit}
+                )
+                if rsp is None or rsp.isError():
+                    raise OSError(str(rsp))
+                return bool(rsp.bits[0])
+            except Exception as exc:  # noqa: BLE001 — the line is allowed to be down
+                log.warning("tower: could not read input %s: %s", name, exc)
+                self.connected = False
+                self._retry_at = now() + self.cfg.reconnect_sec
+                return None
+
+    def _disarm_grinder(self) -> None:
+        """Forget the latch and demand a fresh press before running again.
+
+        Used wherever the coil is taken low outside this method's own
+        control — connect, close — because the motor is physically off at
+        that point and must not come back without somebody deciding it
+        should. Assuming the button is currently held is the conservative
+        half of that: it means only a release-then-press this method has
+        actually *seen* can re-arm the latch.
+        """
+        self._grinder_latched = False
+        self._button_was_pressed = True
+
+    def _drop_grinder(self, why: str) -> bool:
+        """Clear the latch and drive the coil low, logging the transition."""
+        if self._grinder_latched:
+            log.info("belt grinder off: %s", why)
+        self._grinder_latched = False
+        return self.write({"belt_grinder": False})
+
+    def update_belt_grinder(self, status: Status) -> bool:
+        """Drive the belt grinder relay from the e-stop and push-button
+        inputs plus this cycle's compliance status.
+
+        Both switches are wired **active** (normally closed): an idle input
+        reads True, and pressing the switch takes it to False. So False is
+        "e-stop hit" on one and "button pressed" on the other — which is
+        why the run condition wants estop True and push_button False, and
+        why that is not the typo it looks like.
+
+        The push button is momentary, so this is a **latch** — the seal-in
+        of a standard motor starter — rather than the hold-to-run a plain
+        AND chain would give:
+
+          start  a press (a release-then-press this method actually saw)
+                 while the e-stop reads True and status is Status.OK
+          run    until something drops it; releasing the button does not
+          drop   the e-stop going False, status leaving Status.OK, either
+                 input failing to read, or the board being taken low by a
+                 connect or a close
+
+        Dropping the latch is the point of it. Nothing here restarts on
+        its own: when the e-stop is released, or PPE compliance comes
+        back, or the bus recovers, the coil stays low until an operator
+        presses the button again. That is the restart interlock — a fault
+        that clears must not spin the motor back up under someone's
+        hands — and it is why the button state is tracked as an edge.
+        Holding the button down through a fault therefore starts nothing
+        when the fault clears; the operator has to let go first.
+
+        No-op — nothing read, nothing written — on a station that has not
+        wired this up: belt_grinder must be in tower.coils and both estop
+        and push_button must be in tower.inputs. Config.validate() already
+        refuses a half-configured version of this, so in practice this is
+        either fully wired or entirely absent.
+        """
+        if "belt_grinder" not in self.cfg.coils:
+            return False
+        if not {"estop", "push_button"} <= set(self.cfg.inputs):
+            return False
+
+        estop = self._read_input("estop")
+        push_button = self._read_input("push_button")
+        if estop is None or push_button is None:
+            # The button's position is unknown, so the next press cannot be
+            # told from a hold that spanned the outage. Demand one this
+            # method has seen from both sides rather than guessing.
+            self._button_was_pressed = True
+            return self._drop_grinder("input read failed")
+
+        # Track the button every cycle, faults included: a release *during*
+        # a fault is what makes the operator's next press a real edge.
+        pressed = not push_button
+        was_pressed, self._button_was_pressed = self._button_was_pressed, pressed
+
+        if not estop:
+            return self._drop_grinder("e-stop hit")
+        if status is not Status.OK:
+            return self._drop_grinder(f"status is {status.value}")
+
+        if pressed and not was_pressed:
+            log.info("belt grinder on: button pressed")
+            self._grinder_latched = True
+        return self.write({"belt_grinder": self._grinder_latched})
+
     def close(self) -> None:
         """Leave the board dark, then drop the connection.
 
@@ -336,6 +456,10 @@ class TowerLight:
         for the same reason connect does.
         """
         with self._lock:
+            # Before the blanking, not after: _blank() runs under suppress
+            # because a dead bus must not stop a shutdown, and the latch
+            # must be forgotten on the path where that blanking throws too.
+            self._disarm_grinder()
             if self._client is not None:
                 with contextlib.suppress(Exception):  # nothing left to salvage
                     self._blank("shutdown")
@@ -355,6 +479,9 @@ class NullTower:
         return False
 
     def apply(self, status: Status) -> bool:  # noqa: ARG002 — interface parity
+        return False
+
+    def update_belt_grinder(self, status: Status) -> bool:  # noqa: ARG002
         return False
 
     def close(self) -> None:
