@@ -41,7 +41,7 @@ import cv2
 import numpy as np
 
 from .config import ModelCfg, PPECfg
-from .detector import Detection
+from .detector import Detection, resolve_device
 from .latency import now
 
 log = logging.getLogger(__name__)
@@ -81,8 +81,15 @@ class RFDetrDetector:
         # (errno 22) from deep inside torch.load — normalize it away rather
         # than let that surface.
         weights = os.path.normpath(cfg.weights)
-        log.info("loading RF-DETR checkpoint %s", weights)
-        self.model = RFDETRBase.from_checkpoint(weights)
+        # from_checkpoint() otherwise inherits `device` from whatever the
+        # checkpoint's own training run recorded — a GPU-trained checkpoint
+        # loaded here says "cuda" even on a CPU-only build of torch, and the
+        # model.device config this station is set up with (honored on the
+        # YOLO path via Detector.resolve_device) gets silently ignored.
+        # Passing it explicitly overrides that inherited value instead.
+        self.device = resolve_device(cfg.device)
+        log.info("loading RF-DETR checkpoint %s on %s", weights, self.device)
+        self.model = RFDETRBase.from_checkpoint(weights, device=self.device)
         self.names = self._read_class_names()
         self._floors: dict[str, float] = {}
         self._conf = cfg.conf

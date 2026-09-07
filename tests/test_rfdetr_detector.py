@@ -37,6 +37,7 @@ class FakeModel:
         self.calls: list[np.ndarray] = []
         self.last_threshold: float | None = None
         self.loaded_from: str | None = None
+        self.loaded_kwargs: dict = {}
 
     def predict(self, image, threshold=0.5):
         self.calls.append(image.copy())
@@ -52,8 +53,9 @@ def install_fake_rfdetr(monkeypatch, model: FakeModel) -> None:
 
     class RFDETRBase:
         @staticmethod
-        def from_checkpoint(path):
+        def from_checkpoint(path, **kwargs):
             model.loaded_from = path
+            model.loaded_kwargs = kwargs
             return model
 
     module.RFDETRBase = RFDETRBase
@@ -131,6 +133,32 @@ def test_the_loaded_path_is_the_configured_weights(monkeypatch):
     install_fake_rfdetr(monkeypatch, model)
     RFDetrDetector(cfg(weights="my_checkpoint.pth"), ppe("glove"))
     assert model.loaded_from == "my_checkpoint.pth"
+
+
+def test_device_cpu_is_forced_rather_than_inherited_from_the_checkpoint(monkeypatch):
+    """A checkpoint trained on a GPU records that in its own saved config;
+    from_checkpoint() otherwise inherits it, so a CPU-only build of torch
+    hits "Torch not compiled with CUDA enabled" even though model.device
+    in this station's own config says cpu. The device must be passed
+    explicitly, every time, to override whatever the checkpoint recorded —
+    not left to fall through."""
+    from ppe.rfdetr_detector import RFDetrDetector
+
+    model = FakeModel(["glove"])
+    install_fake_rfdetr(monkeypatch, model)
+    RFDetrDetector(cfg(device="cpu"), ppe("glove"))
+    assert model.loaded_kwargs["device"] == "cpu"
+
+
+def test_device_auto_resolves_the_same_way_the_yolo_path_does(monkeypatch):
+    from ppe.rfdetr_detector import RFDetrDetector
+
+    model = FakeModel(["glove"])
+    install_fake_rfdetr(monkeypatch, model)
+    monkeypatch.setattr("ppe.rfdetr_detector.resolve_device", lambda want: "resolved!")
+    det = RFDetrDetector(cfg(device="auto"), ppe("glove"))
+    assert model.loaded_kwargs["device"] == "resolved!"
+    assert det.device == "resolved!"
 
 
 def test_a_trailing_slash_on_the_weights_path_is_stripped_before_loading(monkeypatch):
