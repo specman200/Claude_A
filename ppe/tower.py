@@ -212,6 +212,11 @@ LAMPS: dict[Status, tuple[str, ...]] = {
     Status.DEGRADED: ("amber",),
 }
 
+# Coils apply() is allowed to touch — every lamp plus the buzzer. Any other
+# coil in tower.coils (belt_grinder, say) belongs to a different write path
+# and must not be forced low here every cycle just for existing in the dict.
+_LAMP_COILS = {lamp for lamps in LAMPS.values() for lamp in lamps} | {"buzzer"}
+
 
 class TowerLight:
     """Modbus coil output. Writes only the coils that actually changed."""
@@ -296,7 +301,7 @@ class TowerLight:
     # -- output ------------------------------------------------------------
     def apply(self, status: Status) -> bool:
         """Drive the lamps for ``status``. Returns True if the bus was written."""
-        wanted = dict.fromkeys(self.cfg.coils, False)
+        wanted = {k: False for k in self.cfg.coils if k in _LAMP_COILS}
         for lamp in LAMPS[status]:
             if lamp in wanted:
                 wanted[lamp] = True
@@ -325,6 +330,63 @@ class TowerLight:
                 self._retry_at = now() + self.cfg.reconnect_sec
                 return False
             return True
+
+    # -- input -------------------------------------------------------------
+    def _read_input(self, name: str) -> bool | None:
+        """One named discrete input, or None if it could not be read.
+
+        Same lock and connect() gate as write(): this shares the bus with
+        the coil writes and must not run concurrently with them either.
+        """
+        with self._lock:
+            if not self.connect():
+                return None
+            try:
+                rsp = self._client.read_discrete_inputs(
+                    self.cfg.inputs[name], count=1, **{self._kw: self.cfg.unit}
+                )
+                if rsp is None or rsp.isError():
+                    raise OSError(str(rsp))
+                return bool(rsp.bits[0])
+            except Exception as exc:  # noqa: BLE001 — the line is allowed to be down
+                log.warning("tower: could not read input %s: %s", name, exc)
+                self.connected = False
+                self._retry_at = now() + self.cfg.reconnect_sec
+                return None
+
+    def update_belt_grinder(self, status: Status) -> bool:
+        """Drive the belt grinder relay from the e-stop and push-button
+        inputs plus this cycle's compliance status.
+
+        A plain AND/NOT chain, evaluated fresh every call — not a latch, so
+        nothing here remembers a past press. Losing the bus, or either read
+        failing, takes the motor with it rather than holding a stale ON:
+
+          off  the instant the e-stop input reads unhealthy, OR status is
+               anything but Status.OK (PPE missing, nobody confirmed
+               compliant yet, or the station cannot currently judge)
+          on   only when the e-stop reads healthy AND status is Status.OK
+               AND the push button input is not asserted — "then and only
+               then", so every other combination is off, not "unchanged"
+
+        No-op — nothing read, nothing written — on a station that has not
+        wired this up: belt_grinder must be in tower.coils and both estop
+        and push_button must be in tower.inputs. Config.validate() already
+        refuses a half-configured version of this, so in practice this is
+        either fully wired or entirely absent.
+        """
+        if "belt_grinder" not in self.cfg.coils:
+            return False
+        if not {"estop", "push_button"} <= set(self.cfg.inputs):
+            return False
+        estop = self._read_input("estop")
+        push_button = self._read_input("push_button")
+        if estop is None or push_button is None:
+            # A failed read means this station cannot currently prove the
+            # machine safe to run — the only safe default is off.
+            return self.write({"belt_grinder": False})
+        want = estop and status is Status.OK and not push_button
+        return self.write({"belt_grinder": want})
 
     def close(self) -> None:
         """Leave the board dark, then drop the connection.
@@ -355,6 +417,9 @@ class NullTower:
         return False
 
     def apply(self, status: Status) -> bool:  # noqa: ARG002 — interface parity
+        return False
+
+    def update_belt_grinder(self, status: Status) -> bool:  # noqa: ARG002
         return False
 
     def close(self) -> None:

@@ -447,6 +447,10 @@ class RecordingTower:
         self.events.append(f"apply:{status.value}")
         return True
 
+    def update_belt_grinder(self, status):
+        self.events.append(f"grinder:{status.value}")
+        return True
+
     def close(self):
         self.events.append("close")
 

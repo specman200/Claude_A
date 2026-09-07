@@ -174,10 +174,17 @@ class Pipeline(threading.Thread):
         """No camera is delivering: clear the overlays and hold the lamp amber.
 
         Boxes from the last good frame would otherwise sit on a dead feed,
-        which reads as a live detection.
+        which reads as a live detection. The belt grinder interlock is
+        driven here too, not just from _cycle(): DEGRADED is not
+        Status.OK, so update_belt_grinder() already turns it off — but
+        only if something keeps calling it while no camera is delivering.
+        Without this, a grinder left running when the cameras died would
+        stay on indefinitely with nobody watching it on either feed.
         """
         self._focus = [Focus() for _ in self._focus]
-        self._publish(self.monitor.degrade())
+        status = self.monitor.degrade()
+        self.tower.update_belt_grinder(status)
+        self._publish(status)
 
     def _take(self, fresh: list[Frame]) -> list[Frame]:
         """Which fresh frames to run this cycle.
@@ -233,6 +240,7 @@ class Pipeline(threading.Thread):
             cyc.stamp("logic")
 
         self.tower.apply(status)
+        self.tower.update_belt_grinder(status)
         self.annunciator.update(status)
         for cyc in cycles.values():
             cyc.stamp("relay")

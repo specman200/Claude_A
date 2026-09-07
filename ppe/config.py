@@ -119,6 +119,13 @@ class TowerCfg:
     coils: dict[str, int] = field(
         default_factory=lambda: {"green": 0, "amber": 1, "red": 2, "buzzer": 3}
     )
+    # "belt_grinder" is a coil like any other above — add it here with its
+    # address to wire the interlock in TowerLight.update_belt_grinder().
+    # Digital inputs this station reads back, named the same way coils are.
+    # Empty by default: a feature that reads real inputs needs the real
+    # wired addresses, never a guessed default. "estop" and "push_button"
+    # are the only names update_belt_grinder() looks for.
+    inputs: dict[str, int] = field(default_factory=dict)
     buzzer_on_violation: bool = False
 
 
@@ -285,6 +292,23 @@ class Config:
                     f"config: {klass.name} is expect:absent, so count must be 1, "
                     f"got {klass.count}"
                 )
-        missing = set(self.tower.coils) - {"green", "amber", "red", "buzzer"}
+        missing = set(self.tower.coils) - {"green", "amber", "red", "buzzer", "belt_grinder"}
         if missing:
             raise ValueError(f"config: unknown tower coils {sorted(missing)}")
+        unknown_inputs = set(self.tower.inputs) - {"estop", "push_button"}
+        if unknown_inputs:
+            raise ValueError(f"config: unknown tower inputs {sorted(unknown_inputs)}")
+        # All three or none: a belt_grinder coil with no inputs to gate it, or
+        # inputs with no coil to drive, is read (or written) for nothing —
+        # exactly the kind of half-wired config that would look set up and
+        # silently do nothing on the floor.
+        wants_grinder = "belt_grinder" in self.tower.coils or set(self.tower.inputs)
+        fully_wired = "belt_grinder" in self.tower.coils and {
+            "estop", "push_button",
+        } <= set(self.tower.inputs)
+        if wants_grinder and not fully_wired:
+            raise ValueError(
+                "config: the belt grinder interlock needs all three of "
+                "tower.coils.belt_grinder, tower.inputs.estop and "
+                "tower.inputs.push_button set together — only some are set"
+            )

@@ -452,6 +452,40 @@ Wiring is `tower.coils`: a Modbus coil address per lamp. Set
 `tcp` with `host`/`port` for an Ethernet one. `tower.enabled: false` runs the
 whole app with no bus at all, which is how the tests and a dev laptop run.
 
+### The belt grinder interlock
+
+A machine relay, gated on two digital inputs plus the compliance status —
+separate from the lamps, on its own coil:
+
+```yaml
+tower:
+  coils:
+    belt_grinder: 4   # Digital Output 5 — channel N is coil N-1, as above
+  inputs:
+    estop: 0          # Digital Input 1
+    push_button: 1    # Digital Input 2
+```
+
+Read and driven every cycle, combinationally — nothing here is a latch, so
+nothing remembers a past press or a past fault:
+
+- **off** the instant `estop` reads unhealthy, OR the station is not showing
+  `OK` (missing PPE, nobody confirmed compliant yet, or DEGRADED)
+- **on** only when `estop` reads healthy AND the station shows `OK` AND
+  `push_button` is not asserted — every other combination is off, not left
+  unchanged
+
+A failed read (bus down, timeout) is treated the same as an unhealthy
+input: off. Once the bus recovers, the next cycle reads fresh and drives
+whatever that read actually shows — including back on, if the machine was
+genuinely safe the whole time and only the read failed. There is no manual
+re-arm step; add one at the PLC/relay level if your process requires it.
+
+All three keys are required together: `tower.coils.belt_grinder`,
+`tower.inputs.estop` and `tower.inputs.push_button`. `config.validate()`
+refuses a config with only some of them set, rather than silently reading
+or writing nothing.
+
 ## Running on a CPU
 
 The station is set up for CPU inference out of the box. Four things get it

@@ -99,7 +99,20 @@ tower:
     amber: 1
     red: 2
     buzzer: 3
+    # Belt Grinder motor relay — driven by TowerLight.update_belt_grinder(),
+    # not by PPE status directly. "Digital Output 5" on the board, and this
+    # station's other coils number DO1..DO4 as addresses 0..3, so DO5 is
+    # address 4 — check that assumption against your board's own manual if
+    # its addressing does not start at 0 the same way.
+    belt_grinder: 4
   buzzer_on_violation: false
+  inputs:               # discrete input address of each sensor this reads
+    # Both read every cycle to drive belt_grinder: on only while estop
+    # reads healthy AND PPE is compliant AND push_button is not asserted;
+    # off the instant any of those is not true. See
+    # TowerLight.update_belt_grinder() for the exact logic.
+    estop: 0             # Digital Input 1
+    push_button: 1        # Digital Input 2
 
 ui:
   # operator: what the floor sees — status, checklist, video, nothing to touch.

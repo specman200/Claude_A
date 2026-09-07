@@ -151,8 +151,11 @@ class FakeClient:
 
     def __init__(self):
         self.writes = []
+        self.reads = []          # addresses read, in call order
         self.fail = False
+        self.fail_read = False
         self.closed = False
+        self.inputs: dict[int, bool] = {}  # address -> current bit
 
     def connect(self):
         return True
@@ -163,12 +166,30 @@ class FakeClient:
         self.writes.append((address, value))
         return type("Rsp", (), {"isError": lambda _self: False})()
 
+    def read_discrete_inputs(self, address, count=1, slave=None):
+        if self.fail_read:
+            raise OSError("bus down")
+        self.reads.append(address)
+        bits = [self.inputs.get(address + i, False) for i in range(count)]
+        return type("Rsp", (), {"isError": lambda _self: False, "bits": bits})()
+
     def close(self):
         self.closed = True
 
 
 def tower_with_fake():
     tower = TowerLight(TowerCfg(coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3}))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    return tower, fake
+
+
+def tower_with_grinder():
+    """A tower wired for the belt grinder interlock — coil 4, inputs 0 and 1."""
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0, "push_button": 1},
+    ))
     fake = FakeClient()
     tower._make_client = lambda: fake
     return tower, fake
@@ -301,6 +322,130 @@ def test_a_disabled_tower_is_a_no_op():
     tower = make_tower(TowerCfg(enabled=False))
     assert tower.apply(Status.VIOLATION) is False
     tower.close()
+
+
+def test_apply_never_touches_a_coil_it_does_not_manage():
+    """belt_grinder lives in the same coils dict as the lamps, but apply()
+    must never force it low just for being there — that would fight
+    update_belt_grinder()'s own write every single cycle."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.writes.clear()  # discard the connect-time blanking pass
+    tower.apply(Status.OK)
+    assert 4 not in dict(fake.writes)
+
+
+# -- belt grinder interlock -------------------------------------------------
+# Digital Input 1 (estop) and Digital Input 2 (push_button) gate Digital
+# Output 5 (belt_grinder): off the instant estop is unhealthy or PPE is not
+# compliant; on only when estop is healthy AND compliant AND the push
+# button is not asserted — "then and only then", so every other
+# combination is off, not left unchanged.
+
+
+def test_belt_grinder_is_a_noop_without_the_coil_configured():
+    tower, fake = tower_with_fake()  # no belt_grinder in coils, no inputs
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.reads == []
+    assert fake.writes == []
+
+
+def test_belt_grinder_is_a_noop_without_both_inputs_configured():
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0},  # push_button missing
+    ))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    assert tower.update_belt_grinder(Status.OK) is False
+    assert fake.reads == []
+    assert fake.writes == []
+
+
+def test_belt_grinder_turns_on_when_estop_healthy_compliant_and_button_clear():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: False}  # estop healthy, push_button not pressed
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes) == {4: True}
+
+
+def test_belt_grinder_is_off_when_estop_is_unhealthy():
+    tower, fake = tower_with_grinder()
+    fake.inputs = {0: True, 1: False}
+    tower.update_belt_grinder(Status.OK)  # on first
+    fake.inputs[0] = False               # estop trips
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes) == {4: False}
+
+
+def test_belt_grinder_is_off_when_ppe_is_not_compliant():
+    tower, fake = tower_with_grinder()
+    fake.inputs = {0: True, 1: False}
+    tower.update_belt_grinder(Status.OK)
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.VIOLATION) is True
+    assert dict(fake.writes) == {4: False}
+
+
+def test_belt_grinder_is_off_when_the_push_button_is_asserted():
+    """Off, not "unchanged" — the on-condition is stated as the sole path
+    to True, so this combination (estop healthy, compliant, button
+    asserted) must be driven off, exactly like the two explicit off rules."""
+    tower, fake = tower_with_grinder()
+    fake.inputs = {0: True, 1: False}
+    tower.update_belt_grinder(Status.OK)
+    fake.inputs[1] = True  # push_button asserted
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes) == {4: False}
+
+
+def test_belt_grinder_reads_both_inputs_by_their_configured_address():
+    tower, fake = tower_with_grinder()
+    tower.update_belt_grinder(Status.OK)
+    assert fake.reads == [0, 1]
+
+
+def test_a_failed_input_read_defaults_the_grinder_off_and_recovers():
+    """A read failure marks the bus down the same way a write failure does
+    (test_a_bus_failure_is_survived_and_resynced), so the fallback write to
+    False goes out over the same bus that just failed, and fails with it
+    too — nothing reaches the coil while the bus is down.
+
+    This is not a latch, though: once the bus recovers, the next call reads
+    fresh rather than replaying a remembered "should be off". Since the
+    inputs never actually changed underneath the failed read, that fresh
+    read finds the machine exactly as safe as before and drives the
+    grinder straight back on — no manual re-arm, because nothing in the
+    two rules this implements asked for one.
+    """
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: False}
+    tower.update_belt_grinder(Status.OK)  # on first
+    fake.writes.clear()
+
+    fake.fail_read = True
+    assert tower.update_belt_grinder(Status.OK) is False  # bus down — nothing sent
+    assert fake.writes == []
+    assert tower.connected is False
+
+    fake.fail_read = False
+    tower._retry_at = 0.0  # skip the reconnect backoff for the test
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes)[4] is True  # inputs never actually changed
+
+
+def test_belt_grinder_write_is_skipped_once_already_off():
+    tower, fake = tower_with_grinder()
+    fake.inputs = {0: False, 1: False}  # estop unhealthy from the start
+    tower.update_belt_grinder(Status.OK)  # first call always writes once, to sync
+    fake.writes.clear()
+    assert tower.update_belt_grinder(Status.OK) is False  # unchanged — no bus write
+    assert fake.writes == []
 
 
 # -- forbidden classes -----------------------------------------------------

@@ -16,6 +16,12 @@ def test_loads_the_shipped_config():
     assert Path(cfg.model.weights).exists(), "config points at weights that are not there"
 
 
+def test_the_shipped_config_wires_the_belt_grinder_interlock():
+    cfg = Config.load("config.yaml")
+    assert cfg.tower.coils["belt_grinder"] == 4       # Digital Output 5
+    assert cfg.tower.inputs == {"estop": 0, "push_button": 1}  # DI1, DI2
+
+
 def test_the_shipped_classes_match_the_fine_tuned_model():
     """Guards the config against drifting from the weights it points at."""
     cfg = Config.load("config.yaml")
@@ -64,6 +70,9 @@ def test_save_round_trips(tmp_path):
         (lambda c: c.ppe.classes.clear(), "empty"),
         (lambda c: c.ppe.classes.append(ClassCfg(c.ppe.classes[0].name)), "duplicate"),
         (lambda c: c.tower.coils.update(strobe=9), "unknown tower coils"),
+        (lambda c: c.tower.inputs.update(foot_pedal=9), "unknown tower inputs"),
+        (lambda c: c.tower.inputs.pop("push_button"), "belt grinder interlock needs"),
+        (lambda c: c.tower.coils.pop("belt_grinder"), "belt grinder interlock needs"),
         (lambda c: setattr(c.ppe.classes[0], "expect", "maybe"), "expect must be one of"),
     ],
 )
