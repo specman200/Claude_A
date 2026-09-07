@@ -4,6 +4,10 @@
 # ---------------------------------------------------------------------------
 
 model:
+  # yolo | rfdetr — which detector backend loads `weights` below. rfdetr
+  # needs `pip install rfdetr` and a checkpoint from its own training; see
+  # "RF-DETR instead of YOLO" in README.md before switching this.
+  arch: yolo
   # OpenVINO IR — about 5x faster than the .pt on an Intel CPU for the same
   # detections. Regenerate for a different imgsz with `python -m ppe.export`,
   # or point this at models/ppe-yolo11s.pt to run PyTorch directly.
