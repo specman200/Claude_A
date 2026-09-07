@@ -337,10 +337,12 @@ def test_apply_never_touches_a_coil_it_does_not_manage():
 
 # -- belt grinder interlock -------------------------------------------------
 # Digital Input 1 (estop) and Digital Input 2 (push_button) gate Digital
-# Output 5 (belt_grinder): off the instant estop is unhealthy or PPE is not
-# compliant; on only when estop is healthy AND compliant AND the push
-# button is not asserted — "then and only then", so every other
-# combination is off, not left unchanged.
+# Output 5 (belt_grinder). Both switches are wired ACTIVE (normally
+# closed), so an idle input reads True and pressing takes it to False —
+# hence estop True means "not hit" and push_button False means "held
+# down". Off the instant estop goes False or PPE is not compliant; on only
+# while estop is True AND compliant AND push_button is False — "then and
+# only then", so every other combination is off, not left unchanged.
 
 
 def test_belt_grinder_is_a_noop_without_the_coil_configured():
@@ -362,20 +364,20 @@ def test_belt_grinder_is_a_noop_without_both_inputs_configured():
     assert fake.writes == []
 
 
-def test_belt_grinder_turns_on_when_estop_healthy_compliant_and_button_clear():
+def test_belt_grinder_turns_on_when_estop_clear_compliant_and_button_held():
     tower, fake = tower_with_grinder()
     tower.connect()
-    fake.inputs = {0: True, 1: False}  # estop healthy, push_button not pressed
+    fake.inputs = {0: True, 1: False}  # e-stop not hit, button held down
     fake.writes.clear()
     assert tower.update_belt_grinder(Status.OK) is True
     assert dict(fake.writes) == {4: True}
 
 
-def test_belt_grinder_is_off_when_estop_is_unhealthy():
+def test_belt_grinder_is_off_when_the_estop_is_hit():
     tower, fake = tower_with_grinder()
     fake.inputs = {0: True, 1: False}
     tower.update_belt_grinder(Status.OK)  # on first
-    fake.inputs[0] = False               # estop trips
+    fake.inputs[0] = False               # e-stop hit — active wiring, so False
     fake.writes.clear()
     assert tower.update_belt_grinder(Status.OK) is True
     assert dict(fake.writes) == {4: False}
@@ -390,14 +392,15 @@ def test_belt_grinder_is_off_when_ppe_is_not_compliant():
     assert dict(fake.writes) == {4: False}
 
 
-def test_belt_grinder_is_off_when_the_push_button_is_asserted():
-    """Off, not "unchanged" — the on-condition is stated as the sole path
-    to True, so this combination (estop healthy, compliant, button
-    asserted) must be driven off, exactly like the two explicit off rules."""
+def test_belt_grinder_is_off_when_the_push_button_is_released():
+    """Off, not "unchanged" — the on-condition is the sole path to True, so
+    releasing the button (idle, so True on an active-wired input) must
+    drive the coil off exactly like the two explicit off rules do. This is
+    what makes a momentary button hold-to-run rather than a start latch."""
     tower, fake = tower_with_grinder()
     fake.inputs = {0: True, 1: False}
     tower.update_belt_grinder(Status.OK)
-    fake.inputs[1] = True  # push_button asserted
+    fake.inputs[1] = True  # button released — back to its idle True
     fake.writes.clear()
     assert tower.update_belt_grinder(Status.OK) is True
     assert dict(fake.writes) == {4: False}
@@ -441,7 +444,7 @@ def test_a_failed_input_read_defaults_the_grinder_off_and_recovers():
 
 def test_belt_grinder_write_is_skipped_once_already_off():
     tower, fake = tower_with_grinder()
-    fake.inputs = {0: False, 1: False}  # estop unhealthy from the start
+    fake.inputs = {0: False, 1: False}  # e-stop hit from the start
     tower.update_belt_grinder(Status.OK)  # first call always writes once, to sync
     fake.writes.clear()
     assert tower.update_belt_grinder(Status.OK) is False  # unchanged — no bus write

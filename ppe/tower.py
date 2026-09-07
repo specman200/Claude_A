@@ -358,16 +358,24 @@ class TowerLight:
         """Drive the belt grinder relay from the e-stop and push-button
         inputs plus this cycle's compliance status.
 
+        Both switches are wired **active** (normally closed): an idle input
+        reads True, and pressing the switch takes it to False. So False is
+        "e-stop hit" on one and "button pressed" on the other — which is
+        why the run condition wants estop True and push_button False, and
+        why that is not the typo it looks like.
+
         A plain AND/NOT chain, evaluated fresh every call — not a latch, so
         nothing here remembers a past press. Losing the bus, or either read
         failing, takes the motor with it rather than holding a stale ON:
 
-          off  the instant the e-stop input reads unhealthy, OR status is
-               anything but Status.OK (PPE missing, nobody confirmed
-               compliant yet, or the station cannot currently judge)
-          on   only when the e-stop reads healthy AND status is Status.OK
-               AND the push button input is not asserted — "then and only
-               then", so every other combination is off, not "unchanged"
+          off  the instant the e-stop input goes False (pressed, or the
+               circuit broken — an active-wired input fails safe), OR
+               status is anything but Status.OK (PPE missing, nobody
+               confirmed compliant yet, or the station cannot judge)
+          on   only while the e-stop reads True AND status is Status.OK
+               AND the push button reads False (held down) — "then and
+               only then", so every other combination is off, not
+               "unchanged"
 
         No-op — nothing read, nothing written — on a station that has not
         wired this up: belt_grinder must be in tower.coils and both estop
