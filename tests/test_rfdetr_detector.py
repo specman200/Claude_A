@@ -7,6 +7,7 @@ bench.py and the UI need no changes to run either backend.
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 
@@ -130,6 +131,20 @@ def test_the_loaded_path_is_the_configured_weights(monkeypatch):
     install_fake_rfdetr(monkeypatch, model)
     RFDetrDetector(cfg(weights="my_checkpoint.pth"), ppe("glove"))
     assert model.loaded_from == "my_checkpoint.pth"
+
+
+def test_a_trailing_slash_on_the_weights_path_is_stripped_before_loading(monkeypatch):
+    """A checkpoint is a single .pth file, not a directory — but the YOLO
+    path's OpenVINO IR weights are directories, written with a trailing
+    slash by this config's own convention (see config.yaml). Carrying that
+    habit over here must not surface as a raw OSError from torch.load."""
+    from ppe.rfdetr_detector import RFDetrDetector
+
+    model = FakeModel(["glove"])
+    install_fake_rfdetr(monkeypatch, model)
+    RFDetrDetector(cfg(weights="models/checkpoint_best_ema.pth/"), ppe("glove"))
+    assert model.loaded_from == os.path.normpath("models/checkpoint_best_ema.pth/")
+    assert not model.loaded_from.endswith(("/", "\\"))
 
 
 def test_batches_is_always_false_there_is_no_batch_api(monkeypatch):

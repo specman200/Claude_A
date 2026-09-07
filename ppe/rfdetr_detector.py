@@ -35,6 +35,7 @@ the UI) needs to know or care which backend it was handed.
 from __future__ import annotations
 
 import logging
+import os
 
 import cv2
 import numpy as np
@@ -71,8 +72,17 @@ class RFDetrDetector:
         self.batch_size = 1
         self.exact = False
 
-        log.info("loading RF-DETR checkpoint %s", cfg.weights)
-        self.model = RFDETRBase.from_checkpoint(cfg.weights)
+        # A checkpoint is a single .pth file, not a directory — unlike the
+        # OpenVINO IR weights the YOLO path normally points at, which *are*
+        # directories and, by this config's own convention, written with a
+        # trailing slash (see config.yaml). Carrying that habit over to an
+        # rfdetr checkpoint tells the OS this path names a directory, and
+        # opening a file that way fails with a bare, confusing OSError
+        # (errno 22) from deep inside torch.load — normalize it away rather
+        # than let that surface.
+        weights = os.path.normpath(cfg.weights)
+        log.info("loading RF-DETR checkpoint %s", weights)
+        self.model = RFDETRBase.from_checkpoint(weights)
         self.names = self._read_class_names()
         self._floors: dict[str, float] = {}
         self._conf = cfg.conf
