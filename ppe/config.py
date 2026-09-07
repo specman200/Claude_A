@@ -8,6 +8,10 @@ from typing import Any
 
 import yaml
 
+# Weights that are an exported graph, run by OpenVINO/ONNX Runtime,
+# rather than a checkpoint needing a deep-learning framework.
+GRAPH_SUFFIXES = frozenset({".onnx", ".xml"})
+
 
 def _build(cls, data: dict[str, Any]):
     """Instantiate a dataclass from a dict, ignoring unknown keys."""
@@ -29,6 +33,21 @@ class ModelCfg:
     threads: int = 0            # inference threads; 0 = every core
     batch: bool | str = "auto"  # "auto" | true | false — batch both cameras?
     # ^ rfdetr has no batch API at all — every call is one image, always.
+    # Class names in class-id order, for an rfdetr .onnx/.xml only: an
+    # exported graph carries no name metadata the way an ultralytics one
+    # does, and guessing would mislabel every detection. The .pth backend
+    # reads them from the checkpoint and ignores this.
+    class_names: list[str] = field(default_factory=list)
+
+    @property
+    def is_graph(self) -> bool:
+        """Are the weights an exported graph, not a torch checkpoint?
+
+        Which rfdetr backend runs is this and nothing else: the file
+        already says what it is, and a second config key that had to agree
+        with it would be one key too many.
+        """
+        return Path(self.weights).suffix.lower() in GRAPH_SUFFIXES
 
     def batches(self, device: str) -> bool:
         """Should both cameras go through one call?
@@ -123,6 +142,7 @@ class TowerCfg:
     )
     # "belt_grinder" is a coil like any other above — add it here with its
     # address to wire the interlock in TowerLight.update_belt_grinder().
+
     # Digital inputs this station reads back, named the same way coils are.
     # Empty by default: a feature that reads real inputs needs the real
     # wired addresses, never a guessed default. "estop" and "push_button"

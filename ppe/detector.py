@@ -13,8 +13,9 @@ from .latency import now
 from .letterbox import Letterbox, letterbox
 from .runtime import apply_torch, configure
 
-if TYPE_CHECKING:  # a type-only reference — never requires rfdetr installed
+if TYPE_CHECKING:  # type-only references — never require rfdetr installed
     from .rfdetr_detector import RFDetrDetector
+    from .rfdetr_onnx import RFDetrOnnx
 
 log = logging.getLogger(__name__)
 
@@ -245,19 +246,34 @@ class Detector:
         return dets
 
 
-def make_detector(cfg: ModelCfg, ppe: PPECfg) -> Detector | RFDetrDetector:
+def rfdetr_backend(cfg: ModelCfg, ppe: PPECfg) -> RFDetrDetector | RFDetrOnnx:
+    """Which RF-DETR backend the configured weights call for.
+
+    An exported graph (.onnx, OpenVINO .xml) runs through numpy plus
+    OpenVINO/ONNX Runtime; a .pth needs torch and the rfdetr package. The
+    choice is the file extension rather than another config key, because
+    the file already says which it is and two settings that must agree is
+    one setting too many.
+
+    Both imports are lazy and inside the branch: a station running YOLO,
+    or running a graph, never needs rfdetr and torch installed at all.
+    """
+    if cfg.is_graph:
+        from .rfdetr_onnx import RFDetrOnnx
+
+        return RFDetrOnnx(cfg, ppe)
+    from .rfdetr_detector import RFDetrDetector
+
+    return RFDetrDetector(cfg, ppe)
+
+
+def make_detector(cfg: ModelCfg, ppe: PPECfg) -> Detector | RFDetrDetector | RFDetrOnnx:
     """Which backend Pipeline, bench.py and the UI actually get.
 
-    Both implementations share one contract — .missing, .names, .batches,
+    Every implementation shares one contract — .missing, .names, .batches,
     .detect(), .set_classes(), constructed the same way — so nothing
-    downstream needs to know or care which this returns. The rfdetr backend
-    is imported lazily, here rather than at module load, so a station that
-    only ever runs YOLO never needs the rfdetr package installed at all —
-    the same reasoning ``Detector.__init__`` already applies to importing
-    ultralytics itself.
+    downstream needs to know or care which this returns.
     """
     if cfg.arch == "rfdetr":
-        from .rfdetr_detector import RFDetrDetector
-
-        return RFDetrDetector(cfg, ppe)
+        return rfdetr_backend(cfg, ppe)
     return Detector(cfg, ppe)

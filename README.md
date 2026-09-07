@@ -382,23 +382,76 @@ Everything else in `config.yaml` means the same thing either way — `conf`,
 which it has no API for at all: every call is one image, regardless of the
 setting.
 
-Two real gaps against the YOLO path, both worth knowing before relying on
-this in production:
+There are two ways to run it, chosen by what `model.weights` points at:
 
-- **No OpenVINO export yet.** `python -m ppe.export` is ultralytics-only and
-  refuses an RF-DETR checkpoint with a pointer to `rfdetr`'s own
-  `RFDETRBase.from_checkpoint(...).export()` (ONNX by default) instead of
-  failing on it confusingly. That export is ONNX, not OpenVINO IR — RF-DETR
-  consumes OpenVINO as an ONNX Runtime execution provider, not as a native
-  export target the way ultralytics does, so getting the ~5x CPU speedup
-  the YOLO path has (see "Running on a CPU" below) needs an extra ONNX →
-  OpenVINO IR conversion this repo does not yet do for you. Until then this
-  backend runs on plain PyTorch.
-- **Built and tested against RF-DETR's own documentation and source
-  (github.com/roboflow/rf-detr), not against trained weights** — none exist
-  yet for this station's classes. `ppe/rfdetr_detector.py` says exactly
-  which parts to confirm first once real weights land: RGB vs BGR input,
-  and where the loaded model exposes its class list.
+| weights | backend | needs installed |
+| --- | --- | --- |
+| `.pth` | `RFDetrDetector` — rfdetr's own `predict()` | `rfdetr`, torch |
+| `.onnx` / `.xml` | `RFDetrOnnx` — OpenVINO, or ONNX Runtime | neither |
+
+The extension decides, not a second config key. A graph is the one to
+prefer on a CPU station: it is what gets the OpenVINO speedup the YOLO
+path has (see "Running on a CPU"), and it needs no deep-learning framework
+on the machine at all.
+
+#### Exporting the graph
+
+`python -m ppe.export` is ultralytics-only and refuses an RF-DETR
+checkpoint — use rfdetr's own exporter, then convert. `device="cpu"`
+matters: `from_checkpoint()` otherwise inherits the `cuda` your training
+run recorded, and `export()` moves the model onto that device, so it fails
+on a machine without a GPU.
+
+```python
+from rfdetr import RFDETRBase
+m = RFDETRBase.from_checkpoint("checkpoint_best_ema.pth", device="cpu")
+m.export(output_dir="models/rfdetr_onnx", opset_version=17, batch_size=1)
+```
+
+```bash
+ovc models/rfdetr_onnx/*.onnx --output_model models/rfdetr_openvino_model/
+```
+
+OpenVINO reads `.onnx` directly too, so the `ovc` step is optional — IR
+mainly buys faster loading. If OpenVINO cannot compile the graph (a DETR
+carries some unusual ops), a `.onnx` falls back to ONNX Runtime with a
+warning rather than leaving the station dead; an `.xml` has nowhere to
+fall back to.
+
+#### `model.class_names` is required for a graph
+
+An rfdetr export carries **no class-name metadata**, so the graph cannot
+say what its class ids mean:
+
+```yaml
+model:
+  arch: rfdetr
+  weights: models/rfdetr_openvino_model/model.xml
+  class_names: [person, glove, helmet]   # class-id order
+```
+
+The list length is checked against the graph's real logits width at load,
+so a stale or short list stops the station at startup instead of
+mislabelling every detection. Get the names from the checkpoint with
+`RFDETRBase.from_checkpoint("best.pth", device="cpu").class_names`.
+
+This is also why pointing **`arch: yolo`** at an RF-DETR ONNX does not
+work, even though ultralytics will happily load the file: with no
+metadata it invents `class0 … class998`, every configured class reads as
+unavailable, and the station goes `DEGRADED`/NOT READY. Worse, ultralytics
+would then decode the graph as YOLO output — one `[1, 4+nc, anchors]`
+tensor plus its own NMS — where RF-DETR emits two raw tensors and has no
+NMS at all. That mismatch produces wrong boxes rather than an error.
+
+#### Still true of both backends
+
+**Built against RF-DETR's documentation and source
+(github.com/roboflow/rf-detr), not against trained weights** — none exist
+yet for this station's classes. The graph backend's decode is verified
+against a synthetic ONNX with RF-DETR's signature (`tests/test_rfdetr_onnx.py`),
+run through real OpenVINO and real ONNX Runtime, so the maths is checked;
+what is not checked is that a real export matches that signature.
+`ppe/rfdetr_onnx.py` names what to confirm first.
 
 `python -m ppe.bench --arch rfdetr -w your_checkpoint.pth` benchmarks it the
 same way as any YOLO export, once you have weights to point it at.

@@ -13,13 +13,14 @@ from typing import TYPE_CHECKING
 from .annunciator import Annunciator
 from .capture import CameraSet, Frame
 from .config import Config
-from .detector import Detection, Detector
+from .detector import Detection, Detector, rfdetr_backend
 from .latency import Cycle, Metrics, Profiler, now
 from .subject import Focus, focus
 from .tower import ClassState, ComplianceMonitor, Status, make_tower
 
-if TYPE_CHECKING:  # a type-only reference — never requires rfdetr installed
+if TYPE_CHECKING:  # type-only references — never require rfdetr installed
     from .rfdetr_detector import RFDetrDetector
+    from .rfdetr_onnx import RFDetrOnnx
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class Pipeline(threading.Thread):
         # including a UI that wants to show a window and live video before
         # the model is ready. So construction is cheap; loading happens in
         # run(), on the pipeline thread, where it belongs.
-        self.detector: Detector | RFDetrDetector | None = None
+        self.detector: Detector | RFDetrDetector | RFDetrOnnx | None = None
         self.monitor: ComplianceMonitor | None = None
         self.tower = None
         self.annunciator = Annunciator(
@@ -125,9 +126,9 @@ class Pipeline(threading.Thread):
             # out, and routing every build through detector.make_detector
             # would call detector.Detector instead, silently un-stubbing it.
             if self.cfg.model.arch == "rfdetr":
-                from .rfdetr_detector import RFDetrDetector
-
-                self.detector = RFDetrDetector(self.cfg.model, self.cfg.ppe)
+                # rfdetr_backend() picks the .pth or the graph runtime; only
+                # the YOLO branch below needs to stay a bare `Detector` call.
+                self.detector = rfdetr_backend(self.cfg.model, self.cfg.ppe)
             else:
                 self.detector = Detector(self.cfg.model, self.cfg.ppe)
             self.monitor = ComplianceMonitor(self.cfg.ppe, self.detector.missing)

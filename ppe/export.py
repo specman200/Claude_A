@@ -117,9 +117,15 @@ def main(argv: list[str] | None = None) -> int:
         log.error(
             "model.arch is 'rfdetr' — this tool exports ultralytics/YOLO "
             "weights only. Export an RF-DETR checkpoint with rfdetr's own "
-            "API instead:\n"
+            "API instead. device='cpu' is not optional on a machine without "
+            "a GPU: from_checkpoint() otherwise inherits the 'cuda' the "
+            "training run recorded, and export() moves the model onto it.\n"
             "    from rfdetr import RFDETRBase\n"
-            "    RFDETRBase.from_checkpoint(%r).export()  # onnx by default",
+            "    m = RFDETRBase.from_checkpoint(%r, device='cpu')\n"
+            "    m.export(output_dir='models/rfdetr_onnx', opset_version=17)\n"
+            "then, for OpenVINO IR:\n"
+            "    ovc models/rfdetr_onnx/*.onnx "
+            "--output_model models/rfdetr_openvino_model/",
             weights,
         )
         return 1

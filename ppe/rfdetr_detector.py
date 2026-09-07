@@ -8,10 +8,11 @@ tensorrt/executorch/coreml, not native OpenVINO IR the way ultralytics'
 export does; OpenVINO there is an ONNX Runtime execution provider, a
 separate conversion step this file does not attempt. Until that exists,
 this runs on plain PyTorch — correct, but without the ~5x CPU speedup the
-YOLO path gets from OpenVINO. That parity is a follow-up, not a blocker:
-this project's own YOLO path started on a bare .pt too (see the README's
-"Running on a CPU" section) and got its OpenVINO export later, once the
-model itself was proven.
+YOLO path gets from OpenVINO. ``RFDetrOnnx`` in ppe/rfdetr_onnx.py closes
+that gap: export the checkpoint to ONNX (or convert on to IR) and point
+model.weights at the graph instead, and this backend is not used at all.
+Keep this one for a station that would rather carry torch than an export
+step, and for checking the graph backend's decode against a reference.
 
 Two differences from the YOLO path are load-bearing, not incidental:
 
