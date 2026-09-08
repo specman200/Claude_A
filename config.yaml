@@ -53,6 +53,12 @@ ppe:
   #   expect: absent   -> detecting it IS the violation
   #   count: N         -> N of them must be on the subject (default 1)
   #   conf / hold_ms   -> per-class overrides of model.conf and ppe.hold_ms
+  #   occluded_ms: N   -> how long a PARTLY visible set keeps credit for the
+  #                       full count (one glove seen, the other behind the
+  #                       body). Longer than hold_ms on purpose: hold_ms
+  #                       covers seeing NOTHING, which may mean the item is
+  #                       off, so it stays short. Defaults to hold_ms.
+  #   containment: F   -> per-class override of ppe.containment
   #
   # The conf and hold_ms values below come from a station running this same
   # model on real hardware. Note the shape of them: `person` has a low floor
@@ -63,8 +69,10 @@ ppe:
     - {name: headnet,       label: Head Net,       required: true, conf: 0.50, hold_ms: 800}
     - {name: Safetyglasses, label: Safety Glasses, required: true, conf: 0.60, hold_ms: 1100}
     - {name: Mask,          label: Face Mask,      required: true, conf: 0.60, hold_ms: 700}
-    - {name: Gloves,        label: Gloves,         required: true, conf: 0.60, hold_ms: 1000, count: 2}
-    - {name: sleeves,       label: Sleeves,        required: true, conf: 0.75, hold_ms: 1200, count: 2}
+    - {name: Gloves,        label: Gloves,         required: true, conf: 0.60, hold_ms: 1000, count: 2,
+       occluded_ms: 5000, containment: 0.1}
+    - {name: sleeves,       label: Sleeves,        required: true, conf: 0.75, hold_ms: 1200, count: 2,
+       occluded_ms: 5000, containment: 0.3}
     - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, conf: 0.90, hold_ms: 400, expect: absent}
     - {name: person,        label: Person in Cell, required: false, conf: 0.25, hold_ms: 1000}
 

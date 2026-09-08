@@ -1077,3 +1077,77 @@ def test_a_station_with_no_estop_wired_never_shows_estop_red():
     fake.writes.clear()
     tower.apply(Status.OK)
     assert dict(fake.writes)[0] is True   # plain green, as before
+
+
+# -- occlusion vs dropout --------------------------------------------------
+# A pair only one of which is ever visible is the shape of this station's
+# real geometry: the side camera sees one glove, the front sees none. The
+# question a single hold window cannot answer is whether the other glove is
+# behind the worker's body or off their hand, so there are two windows.
+
+
+def paired_occluded(hold_ms=1000, occluded_ms=5000, count=2):
+    cfg = PPECfg(
+        classes=[ClassCfg("Gloves", count=count, hold_ms=hold_ms, occluded_ms=occluded_ms)],
+        confirm_sec=confirm_all(0.0),
+    )
+    return ComplianceMonitor(cfg)
+
+
+def gloves(n):
+    return [[det("Gloves") for _ in range(n)]]
+
+
+def test_one_glove_keeps_the_pair_credited_for_the_occlusion_window():
+    m = paired_occluded()
+    assert m.update(gloves(2), t=0.0) is Status.OK
+    assert m.update(gloves(1), t=2.0) is Status.OK, "one visible is not one worn"
+    assert m.update(gloves(1), t=4.9) is Status.OK
+    assert m.update(gloves(1), t=5.1) is Status.VIOLATION, "the evidence went stale"
+
+
+def test_seeing_nothing_falls_back_to_the_short_hold():
+    """The safety half. A long occlusion window must not also buy a worker
+    who shows no gloves at all the same span of credit."""
+    m = paired_occluded(hold_ms=1000, occluded_ms=5000)
+    m.update(gloves(2), t=0.0)
+    assert m.update(gloves(0), t=0.5) is Status.OK          # bridged, as before
+    assert m.update(gloves(0), t=1.5) is Status.VIOLATION   # 1.0s, not 5.0s
+
+
+def test_the_pair_must_have_been_seen_to_be_credited():
+    """The window extends evidence, it does not invent it: a worker who
+    only ever shows one glove never passes."""
+    m = paired_occluded()
+    for t in (0.0, 1.0, 2.0, 3.0):
+        assert m.update(gloves(1), t=t) is Status.VIOLATION
+
+
+def test_occluded_defaults_to_hold_so_nothing_changes_unasked():
+    m = paired_occluded(hold_ms=1000, occluded_ms=None)
+    assert m.classes[0].occluded == m.classes[0].hold == 1.0
+    m.update(gloves(2), t=0.0)
+    assert m.update(gloves(1), t=0.5) is Status.OK
+    assert m.update(gloves(1), t=1.5) is Status.VIOLATION
+
+
+def test_a_single_count_class_is_unaffected_by_the_occlusion_window():
+    """count: 1 has no partial state — it is seen or it is not, so only the
+    dropout window can ever apply to it."""
+    cfg = PPECfg(
+        classes=[ClassCfg("helmet", hold_ms=500, occluded_ms=9000)],
+        confirm_sec=confirm_all(0.0),
+    )
+    m = ComplianceMonitor(cfg)
+    m.update([[det("helmet")]], t=0.0)
+    assert m.update([[]], t=0.4) is Status.OK
+    assert m.update([[]], t=0.6) is Status.VIOLATION, "the 9s window must not apply"
+
+
+def test_regaining_the_pair_restarts_the_occlusion_window():
+    m = paired_occluded()
+    m.update(gloves(2), t=0.0)
+    m.update(gloves(1), t=4.0)
+    m.update(gloves(2), t=4.5)                              # both seen again
+    assert m.update(gloves(1), t=9.0) is Status.OK          # 4.5s since, under 5
+    assert m.update(gloves(1), t=9.6) is Status.VIOLATION

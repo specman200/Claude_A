@@ -467,6 +467,45 @@ might not be. Those are not equally weighty claims and should not take equally
 long. `standby: 1.0` matters for the same reason: slow to conclude the cell is
 empty, so a blinked `person` detection cannot quietly drop the alarm.
 
+### Occlusion is not a dropout
+
+Counts are the **best single camera's** view, never the sum — both cameras
+see the same two gloves, so adding them would report four and pass a
+one-gloved worker. The consequence is that `count: 2` needs *one* camera
+to see both gloves in one frame, and with a side view that catches one
+hand and a front view that catches neither, that never happens.
+
+`occluded_ms` is the lever for it. Two windows, because "I can see one
+glove" and "I can see no gloves" are different claims:
+
+```yaml
+- {name: Gloves, count: 2, hold_ms: 1000, occluded_ms: 5000, containment: 0.1}
+```
+
+| what the cameras see | window | why |
+| --- | --- | --- |
+| none of them | `hold_ms` (1 s) | it may be off the worker — stay short |
+| some but not all | `occluded_ms` (5 s) | one glove plainly on the hand is evidence the pair is worn |
+| all of them | — | credited outright, and the clock restarts |
+
+So one glove visible keeps the pair credited for 5 s, while **no** gloves
+visible still expires in 1 s. That split is what makes a long tolerance
+safe to set: a single window long enough for the occlusion would also let
+a bare-handed worker coast for the same span. `occluded_ms` defaults to
+`hold_ms`, so leaving it out is exactly the old behaviour, and it can
+never invent evidence — a worker who only ever shows one glove never
+passes.
+
+It does not fix a camera that can never see the second glove at all.
+Check the debug decision panel first: if the row never reaches `2/2`,
+no window helps and the camera needs moving.
+
+**Per-class `containment`** is the other half. One global threshold has to
+be loose enough for the worst case, which then lets a bystander's gear
+count for everything else. Gloves and sleeves ride the ends of
+outstretched arms and routinely fall outside the person box, so they take
+a looser threshold while a mask or headnet keeps the strict global one.
+
 Hold windows are per class, because detection stability is not uniform —
 `sleeves` are large and viewpoint-dependent (1.2 s), a `Mask` is reliably seen
 head-on (0.7 s), and `Wrong Sleeve` is short (0.4 s) so a violation clears

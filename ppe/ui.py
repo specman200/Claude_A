@@ -799,8 +799,16 @@ class DecisionPanel(QFrame):
         )
         rows = []
         for c in result.classes:
-            left = max(0.0, c.hold - (_clock() - c.counted_at)) if c.counted_at else 0.0
-            rows.append(f"{c.name[:13]:<13} {c.count}/{c.need}  hold {left:4.2f}/{c.hold:.2f}s")
+            # Whichever window is actually running: a partly visible set is
+            # on the occlusion window, so showing the dropout one would have
+            # the countdown disagree with what the station is doing — and
+            # that countdown is the whole reason to tune by watching this.
+            window = c.hold if c.count == 0 else c.occluded
+            tag = "hold" if window == c.hold else "occl"
+            left = max(0.0, window - (_clock() - c.counted_at)) if c.counted_at else 0.0
+            rows.append(
+                f"{c.name[:13]:<13} {c.count}/{c.need}  {tag} {left:4.2f}/{window:.2f}s"
+            )
         self.holds.setText("\n".join(rows) or "-")
         # A layout short on space will shrink a label below its sizeHint unless
         # a minimum is set. Pin each to the height its current text needs, so

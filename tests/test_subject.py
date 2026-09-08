@@ -113,3 +113,64 @@ def test_nothing_is_lost_between_accepted_and_rejected():
     dets = [PERSON_NEAR, PERSON_FAR, det("Gloves", (200.0, 400.0, 260.0, 460.0))]
     result = focus(dets, "person", 0.5)
     assert len(result.accepted) + len(result.rejected) == len(dets)
+
+
+# -- per-class containment -------------------------------------------------
+# One threshold for every class has to be loose enough for the worst case.
+# Gloves ride the ends of outstretched arms and fall outside the person box;
+# a mask never does. Loosening globally to admit the glove also admits a
+# bystander's mask, which is the trade this removes.
+
+
+PERSON_BOX = Detection("person", 0.9, (100.0, 100.0, 300.0, 500.0))
+
+
+def half_out(name):
+    """A box straddling the person's right edge — half in, half out."""
+    return Detection(name, 0.9, (250.0, 200.0, 350.0, 240.0))
+
+
+def mostly_out(name):
+    """A box with only a fifth of itself on the person."""
+    return Detection(name, 0.9, (280.0, 200.0, 380.0, 240.0))
+
+
+def test_a_class_override_admits_what_the_global_threshold_rejects():
+    dets = [PERSON_BOX, mostly_out("Gloves")]
+    strict = focus(dets, "person", 0.5)
+    assert [d.name for d in strict.accepted] == ["person"]
+
+    loose = focus(dets, "person", 0.5, {"Gloves": 0.1})
+    assert "Gloves" in [d.name for d in loose.accepted]
+
+
+def test_the_override_applies_only_to_the_class_that_names_one():
+    """Loosening gloves must not also loosen the mask."""
+    dets = [PERSON_BOX, mostly_out("Gloves"), mostly_out("Mask")]
+    got = focus(dets, "person", 0.5, {"Gloves": 0.1})
+    assert sorted(d.name for d in got.accepted) == ["Gloves", "person"]
+    assert [d.name for d in got.rejected] == ["Mask"]
+
+
+def test_an_override_can_be_stricter_than_the_global_one():
+    dets = [PERSON_BOX, half_out("Mask")]
+    assert "Mask" in [d.name for d in focus(dets, "person", 0.5).accepted]
+    tight = focus(dets, "person", 0.5, {"Mask": 0.9})
+    assert [d.name for d in tight.accepted] == ["person"]
+
+
+def test_no_overrides_behaves_exactly_as_before():
+    dets = [PERSON_BOX, half_out("Gloves")]
+    assert (
+        [d.name for d in focus(dets, "person", 0.5).accepted]
+        == [d.name for d in focus(dets, "person", 0.5, {}).accepted]
+        == [d.name for d in focus(dets, "person", 0.5, None).accepted]
+    )
+
+
+def test_an_override_never_promotes_a_bystander_to_the_subject():
+    """A second person is a bystander whatever threshold their class has."""
+    other = Detection("person", 0.9, (120.0, 120.0, 200.0, 300.0))
+    got = focus([PERSON_BOX, other], "person", 0.5, {"person": 0.0})
+    assert got.subject is PERSON_BOX
+    assert got.rejected == [other]

@@ -236,7 +236,10 @@ class Pipeline(threading.Thread):
         for f, d in zip(fresh, dets, strict=True):
             # Each camera picks its own subject: with two views of one cell,
             # a single global "largest" would silently discard the other view.
-            self._focus[f.index] = focus(d, self.cfg.ppe.subject, self.cfg.ppe.containment)
+            self._focus[f.index] = focus(
+                d, self.cfg.ppe.subject, self.cfg.ppe.containment,
+                self.cfg.ppe.containment_map(),
+            )
             self._seqs[f.index] = f.seq
 
         # Per camera, not flattened: counts are the best single view, since

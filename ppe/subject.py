@@ -55,11 +55,23 @@ class Focus:
         return self.subject is not None
 
 
-def focus(detections: list[Detection], subject: str, containment: float = 0.5) -> Focus:
+def focus(
+    detections: list[Detection],
+    subject: str,
+    containment: float = 0.5,
+    per_class: dict[str, float] | None = None,
+) -> Focus:
     """Split ``detections`` into the subject's equipment and everything else.
 
     With no ``subject`` class configured, every detection is accepted and the
     station behaves as it did before — the gating is opt-in.
+
+    ``per_class`` overrides ``containment`` for the classes that name one.
+    Not every item sits on the body the same way: a mask is squarely inside
+    the person box, while gloves and sleeves ride the ends of outstretched
+    arms and routinely fall outside it. One global threshold has to be
+    loose enough for the worst case, which then lets a bystander's gear
+    count for everything else.
     """
     if not subject:
         return Focus(None, list(detections), [])
@@ -74,7 +86,8 @@ def focus(detections: list[Detection], subject: str, containment: float = 0.5) -
         if det is chosen:
             continue
         # Other people are bystanders, not the subject, whatever they wear.
-        if det.name == subject or overlap(det.xyxy, chosen.xyxy) < containment:
+        need = per_class.get(det.name, containment) if per_class else containment
+        if det.name == subject or overlap(det.xyxy, chosen.xyxy) < need:
             rejected.append(det)
         else:
             accepted.append(det)

@@ -66,6 +66,18 @@ class ClassCfg:
     count: int = 1                 # how many must be on the subject (2 gloves, 2 sleeves)
     conf: float | None = None      # per-class confidence override
     hold_ms: int | None = None     # per-class hold override; None uses ppe.hold_ms
+    # How long a *partly* visible set keeps credit for the full count — the
+    # case where one of two gloves is behind the worker's body rather than
+    # off their hand. Separate from hold_ms on purpose: hold_ms bridges the
+    # item vanishing entirely, and wanting to tolerate a long occlusion is
+    # not the same as wanting to tolerate seeing nothing at all. None uses
+    # hold_ms, which is exactly the old behaviour.
+    occluded_ms: int | None = None
+    # Fraction of this class's box that must lie on the subject. None uses
+    # ppe.containment. Gloves and sleeves sit at the ends of outstretched
+    # arms and routinely fall outside the person box, so they often want a
+    # looser threshold than a mask or a headnet does.
+    containment: float | None = None
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -102,6 +114,10 @@ class PPECfg:
     @property
     def required(self) -> list[ClassCfg]:
         return [c for c in self.classes if c.required]
+
+    def containment_map(self) -> dict[str, float]:
+        """Per-class containment thresholds, for the classes that set one."""
+        return {c.name: c.containment for c in self.classes if c.containment is not None}
 
 
 @dataclass
@@ -274,6 +290,15 @@ class Config:
             if klass.hold_ms is not None and klass.hold_ms < 0:
                 raise ValueError(
                     f"config: {klass.name}.hold_ms must be >= 0, got {klass.hold_ms}"
+                )
+            if klass.occluded_ms is not None and klass.occluded_ms < 0:
+                raise ValueError(
+                    f"config: {klass.name}.occluded_ms must be >= 0, got {klass.occluded_ms}"
+                )
+            if klass.containment is not None and not 0.0 <= klass.containment <= 1.0:
+                raise ValueError(
+                    f"config: {klass.name}.containment must be between 0 and 1, "
+                    f"got {klass.containment}"
                 )
         if not 0.0 <= self.ppe.containment <= 1.0:
             raise ValueError(

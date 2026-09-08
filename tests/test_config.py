@@ -74,6 +74,9 @@ def test_save_round_trips(tmp_path):
         (lambda c: c.tower.inputs.pop("push_button"), "belt grinder interlock needs"),
         (lambda c: c.tower.coils.pop("belt_grinder"), "belt grinder interlock needs"),
         (lambda c: setattr(c.ppe.classes[0], "expect", "maybe"), "expect must be one of"),
+        (lambda c: setattr(c.ppe.classes[0], "occluded_ms", -1), "occluded_ms must be >= 0"),
+        (lambda c: setattr(c.ppe.classes[0], "containment", 1.5), "containment must be between"),
+        (lambda c: setattr(c.ppe.classes[0], "containment", -0.1), "containment must be between"),
     ],
 )
 def test_validate_rejects_broken_configs(mutate, message):
@@ -105,6 +108,26 @@ def test_validate_rejects_a_broken_subject_setup(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+def test_the_paired_classes_tolerate_occlusion_more_than_a_dropout():
+    """The side camera sees one glove and the front sees none, so a partly
+    visible pair has to stay credited for longer than a vanished one."""
+    cfg = Config.load("config.yaml")
+    by_name = {c.name: c for c in cfg.ppe.classes}
+    for name in ("Gloves", "sleeves"):
+        assert by_name[name].occluded_ms > by_name[name].hold_ms, name
+    # And the classes that cannot be partly visible leave it alone.
+    assert by_name["Mask"].occluded_ms is None
+
+
+def test_the_classes_that_ride_the_arms_have_a_looser_containment():
+    cfg = Config.load("config.yaml")
+    by_name = {c.name: c for c in cfg.ppe.classes}
+    assert by_name["Gloves"].containment < cfg.ppe.containment
+    assert by_name["sleeves"].containment < cfg.ppe.containment
+    assert by_name["Mask"].containment is None      # squarely on the body
+    assert set(cfg.ppe.containment_map()) == {"Gloves", "sleeves"}
 
 
 def test_the_shipped_config_requires_two_gloves_and_two_sleeves():

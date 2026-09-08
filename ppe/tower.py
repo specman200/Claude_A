@@ -33,6 +33,7 @@ class ClassState:
     expect: str = "present"  # "absent" for a class whose presence is the fault
     need: int = 1            # how many the subject must be wearing
     hold: float = 1.5        # seconds this class stays "seen" after its last sighting
+    occluded: float = 1.5    # ...and how long a PARTLY visible set keeps full credit
     count: int = 0           # how many are on them right now
     conf: float = 0.0
     last_seen: float = 0.0
@@ -77,6 +78,11 @@ class ComplianceMonitor:
             ClassState(
                 c.name, c.label, c.required, c.expect, c.count,
                 hold=(c.hold_ms if c.hold_ms is not None else cfg.hold_ms) / 1000.0,
+                occluded=(
+                    c.occluded_ms
+                    if c.occluded_ms is not None
+                    else (c.hold_ms if c.hold_ms is not None else cfg.hold_ms)
+                ) / 1000.0,
                 available=c.name not in missing,
             )
             for c in cfg.classes
@@ -110,9 +116,18 @@ class ComplianceMonitor:
                     seen = len(found)
                 best_conf = max(best_conf, *(d.conf for d in found)) if found else best_conf
 
-            # The hold window keeps the best recent count, so a glove the model
-            # loses for a frame does not read as a bare hand.
-            if seen >= state.count or (t - state.counted_at) > state.hold:
+            # Two different windows, because they answer two different
+            # questions. Seeing NOTHING is a dropout: `hold` bridges it, and
+            # it stays short — an item that has vanished entirely may well be
+            # off the worker. Seeing SOME but not all is an occlusion: one
+            # glove behind the body while the other is plainly on the hand,
+            # which is evidence the pair is still worn, so `occluded` may be
+            # much longer without ever crediting a worker who shows nothing.
+            # That split is what makes a long tolerance safe to configure;
+            # one window for both would buy the occlusion by also letting a
+            # bare-handed worker coast for the same span.
+            window = state.hold if seen == 0 else state.occluded
+            if seen >= state.count or (t - state.counted_at) > window:
                 state.count = seen
                 state.counted_at = t
             if seen:
