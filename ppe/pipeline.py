@@ -36,6 +36,7 @@ class Result:
     latency_ms: float = 0.0
     infer_fps: float = 0.0
     tower_ok: bool = False
+    estop: bool = False   # the e-stop is pressed, per the last board reading
     # The decision behind the lamp, for the debug view: what this cycle
     # actually said, what is waiting to be confirmed, and for how long.
     raw: Status = Status.DEGRADED
@@ -272,6 +273,7 @@ class Pipeline(threading.Thread):
             latency_ms=latency_ms,
             infer_fps=self.infer_fps,
             tower_ok=getattr(self.tower, "connected", False),
+            estop=getattr(self.tower, "estop_hit", False),
             raw=self.monitor.raw,
             candidate=self.monitor.candidate,
             candidate_age=self.monitor.candidate_age(),

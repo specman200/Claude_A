@@ -873,3 +873,64 @@ def test_model_ready_with_a_result_already_published_applies_it_immediately(
     assert "ALL PPE PRESENT" in window.banner.text()
     assert "MODEL READY" not in window.banner.text()
     assert "LOADING" not in window.banner.text()
+
+
+# -- the e-stop banner -----------------------------------------------------
+# The tower goes red on a pressed e-stop ahead of any compliance verdict.
+# The screen has to say the same thing, and say *why* — a station showing
+# ALL PPE PRESENT beside a dead machine is the disagreement worth avoiding.
+
+
+@pytest.mark.parametrize("status", list(Status))
+def test_the_card_announces_a_pressed_estop_over_any_status(app, status):
+    from ppe.ui import ESTOP_TEXT
+
+    card = StatusCard()
+    card.apply(status, ["Vest"], tower_ok=True, estop=True)
+    assert ESTOP_TEXT in card.text()
+    paint(card, 400, card.minimumHeight())
+
+
+@pytest.mark.parametrize("status", list(Status))
+def test_the_banner_announces_a_pressed_estop_over_any_status(app, status):
+    from ppe.ui import ESTOP_TEXT
+
+    banner = StatusBanner()
+    banner.apply(status, ["Vest"], tower_ok=True, estop=True)
+    assert ESTOP_TEXT in banner.text()
+    paint(banner, 360, 64)
+
+
+def test_the_estop_headline_outranks_all_ppe_present(app):
+    """The case that would otherwise read as a contradiction."""
+    from ppe.ui import ESTOP_TEXT
+
+    card = StatusCard()
+    card.apply(Status.OK, [], tower_ok=True, estop=True)
+    assert card._headline == ESTOP_TEXT
+    # The verdict is still true and still shown, just demoted to the detail.
+    assert "ALL PPE PRESENT" in card.text()
+
+
+def test_an_estop_is_never_painted_under_a_thumbs_up(app):
+    """The glyph follows _status, so passing the real OK through would put
+    a thumbs-up beside the e-stop headline."""
+    card = StatusCard()
+    card.apply(Status.OK, [], tower_ok=True, estop=True)
+    assert card._status is Status.VIOLATION
+
+
+def test_the_estop_keeps_the_ppe_detail_readable(app):
+    card = StatusCard()
+    card.apply(Status.VIOLATION, ["Gloves"], tower_ok=True, estop=True)
+    assert "Gloves" in card.text()
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_no_estop_leaves_the_status_text_alone(app, widget):
+    from ppe.ui import ESTOP_TEXT
+
+    w = widget()
+    w.apply(Status.OK, [], tower_ok=True)
+    assert ESTOP_TEXT not in w.text()
+    assert "ALL PPE PRESENT" in w.text()

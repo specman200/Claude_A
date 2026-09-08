@@ -489,3 +489,23 @@ def test_a_failed_load_still_closes_the_board(clip, tmp_path, monkeypatch):
     pipe = pipeline_mod.Pipeline(cfg, CameraSet(cfg.cameras))
     pipe.run()  # loads, fails, shuts down — all on this thread
     assert tower.events == ["connect", "close"], tower.events
+
+
+def test_a_pressed_estop_reaches_the_ui_on_the_result(clip, tmp_path, monkeypatch):
+    """The UI can only announce the e-stop if the pipeline carries it out
+    of the tower on every cycle."""
+    cfg = make_config(clip, tmp_path)
+
+    class EstoppedTower(RecordingTower):
+        estop_hit = True
+
+    tower = EstoppedTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+    _pipe, seen = run(cfg, monkeypatch, cycles=2)
+    assert seen[-1].estop is True
+
+
+def test_no_estop_reads_false_rather_than_missing(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)          # tower disabled -> NullTower
+    _pipe, seen = run(cfg, monkeypatch, cycles=2)
+    assert seen[-1].estop is False

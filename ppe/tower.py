@@ -390,6 +390,16 @@ class TowerLight:
                 return False
             return True
 
+    @property
+    def estop_hit(self) -> bool:
+        """Is the e-stop currently observed as pressed?
+
+        False also covers "no reading yet" and "the read failed" — an
+        unknown e-stop is not an asserted one, the same rule the lamp
+        follows. Read by the pipeline so the screen can say so too.
+        """
+        return self._estop_ok is False
+
     # -- input -------------------------------------------------------------
     def _read_input(self, name: str) -> bool | None:
         """One named discrete input, or None if it could not be read.
@@ -543,6 +553,7 @@ class NullTower:
     """Stand-in when the tower is disabled, so the pipeline stays branch-free."""
 
     connected = False
+    estop_hit = False   # no board, no e-stop to read
 
     def connect(self) -> bool:  # interface parity — nothing to take low
         return False

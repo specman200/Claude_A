@@ -55,6 +55,12 @@ BANNER = {
     Status.DEGRADED: ("NOT READY", "#d97706"),
 }
 
+# Shown over any compliance verdict while the e-stop is pressed. It is the
+# reason the machine will not start, so it is the thing to say first —
+# matching the tower, which goes red on the e-stop ahead of everything.
+ESTOP_TEXT = "EMERGENCY STOP IS PRESSED"
+ESTOP_COLOR = "#dc2626"
+
 # Statuses in which the station is actually judging PPE.
 JUDGING = (Status.OK, Status.VIOLATION)
 SUBJECT = "#f8fafc"
@@ -470,6 +476,7 @@ class StatusCard(QFrame):
         tower_ok: bool,
         unavailable: list[str] | None = None,
         banned: list[str] | None = None,
+        estop: bool = False,
     ) -> None:
         headline, color = BANNER[status]
         detail = ""
@@ -485,9 +492,22 @@ class StatusCard(QFrame):
             detail = f"model has no class for: {', '.join(unavailable)}"
         elif status is Status.DEGRADED:
             detail = "no video signal"
+        if estop:
+            # The PPE verdict is still true and still worth reading, it is
+            # just no longer the reason the machine is stopped — so it
+            # moves to the detail line. Whichever of the two says more:
+            # the specific detail if there is one ("PPE MISSING: Gloves"),
+            # otherwise the headline it would have had. Prepending the
+            # generic headline to a specific detail only says it twice.
+            detail = detail or headline
+            headline, color = ESTOP_TEXT, ESTOP_COLOR
+        # After the e-stop swap, so it stays pinned to the end of the line.
         if not tower_ok:
             detail = (detail + "   " if detail else "") + "(tower offline)"
-        self._set(status, headline, detail, color)
+        # VIOLATION drives the glyph so an e-stop cannot be painted under a
+        # thumbs-up, which is what passing the real status would do here
+        # whenever the PPE happened to be fine.
+        self._set(Status.VIOLATION if estop else status, headline, detail, color)
 
     def _set(self, status: Status | None, headline: str, detail: str, color: str) -> None:
         self._status, self._headline, self._detail, self._color = (
@@ -636,6 +656,7 @@ class StatusBanner(QLabel):
         tower_ok: bool,
         unavailable: list[str] | None = None,
         banned: list[str] | None = None,
+        estop: bool = False,
     ) -> None:
         text, color = BANNER[status]
         if status is Status.STANDBY:
@@ -656,6 +677,8 @@ class StatusBanner(QLabel):
             )
         if not tower_ok:
             text += "   (tower offline)"
+        if estop:
+            text, color = f"{ESTOP_TEXT}   {text}".strip(), ESTOP_COLOR
         self.setText(text)
         self.setStyleSheet(
             f"background:{color}; color:#000029; border-radius:10px; padding:10px;"
@@ -1062,7 +1085,8 @@ class MainWindow(QMainWindow):
         if self.debug:
             self.decisions.apply(result)
         self.banner.apply(
-            result.status, result.missing, result.tower_ok, result.unavailable, result.banned
+            result.status, result.missing, result.tower_ok, result.unavailable,
+            result.banned, result.estop,
         )
 
     def _draw_stats(self) -> None:
