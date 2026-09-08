@@ -126,7 +126,11 @@ class TowerCfg:
     # wired addresses, never a guessed default. "estop" and "push_button"
     # are the only names update_belt_grinder() looks for.
     inputs: dict[str, int] = field(default_factory=dict)
+    # The buzzer sounds as a fixed pulse when a violation cuts the
+    # grinder, not for as long as the violation stands. 0 disables it as
+    # surely as buzzer_on_violation: false does.
     buzzer_on_violation: bool = False
+    buzzer_sec: float = 3.0
 
 
 @dataclass
@@ -295,6 +299,10 @@ class Config:
         missing = set(self.tower.coils) - {"green", "amber", "red", "buzzer", "belt_grinder"}
         if missing:
             raise ValueError(f"config: unknown tower coils {sorted(missing)}")
+        if self.tower.buzzer_sec < 0:
+            raise ValueError(
+                f"config: tower.buzzer_sec must be >= 0, got {self.tower.buzzer_sec}"
+            )
         unknown_inputs = set(self.tower.inputs) - {"estop", "push_button"}
         if unknown_inputs:
             raise ValueError(f"config: unknown tower inputs {sorted(unknown_inputs)}")

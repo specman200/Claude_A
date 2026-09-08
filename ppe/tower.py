@@ -201,16 +201,38 @@ class ComplianceMonitor:
 # Modbus output
 # --------------------------------------------------------------------------
 
-# Which lamps are energised in each status.
+# Which lamps are energised in each status. OK is conditional — see
+# lamps_for(), which is what actually decides.
 LAMPS: dict[Status, tuple[str, ...]] = {
     Status.OK: ("green",),
     Status.VIOLATION: ("red",),
     # Standby is dark: nobody is there to read the lamp, and an unlit tower
-    # cannot be confused with a compliance verdict. Amber stays reserved for
-    # "the station cannot judge", which is a fault and needs to look like one.
+    # cannot be confused with a compliance verdict.
     Status.STANDBY: (),
     Status.DEGRADED: ("amber",),
 }
+
+
+def lamps_for(status: Status, grinder_on: bool) -> tuple[str, ...]:
+    """Which lamps are lit, given compliance *and* whether the machine runs.
+
+    The tower reports the machine, not only the verdict on the worker:
+
+      green   compliant AND the grinder is actually running
+      amber   compliant but the grinder is idle — nothing is wrong, the
+              operator just has not pressed the button yet; also DEGRADED
+      red     a violation
+      dark    nobody in the cell
+
+    Splitting OK across green and amber costs the one thing amber used to
+    say on its own. It now covers both "cannot judge" (a fault) and "all
+    good, press the button" (not a fault), which a lamp alone can no
+    longer distinguish — the UI still names which, and the alternative
+    was a green lamp on a machine that is not running.
+    """
+    if status is Status.OK:
+        return ("green",) if grinder_on else ("amber",)
+    return LAMPS[status]
 
 # Coils apply() is allowed to touch — every lamp plus the buzzer. Any other
 # coil in tower.coils (belt_grinder, say) belongs to a different write path
@@ -235,6 +257,11 @@ class TowerLight:
         # fully observed release-then-press before anything can run.
         self._grinder_latched = False
         self._button_was_pressed = True
+        # Buzzer: sounded as a fixed-length pulse when a violation cuts the
+        # grinder, not held for as long as the violation stands. It marks
+        # the moment the machine was taken away, which is the thing an
+        # operator needs to connect to what they just did.
+        self._buzz_until = 0.0
 
     # -- connection --------------------------------------------------------
     def connect(self) -> bool:
@@ -307,13 +334,24 @@ class TowerLight:
 
     # -- output ------------------------------------------------------------
     def apply(self, status: Status) -> bool:
-        """Drive the lamps for ``status``. Returns True if the bus was written."""
+        """Drive the lamps and buzzer. Returns True if the bus was written.
+
+        Reads this object's own grinder latch rather than taking it as an
+        argument, which means **call update_belt_grinder() first** in a
+        cycle: run the other way round, the lamp shows last cycle's
+        machine state. Pipeline._cycle() and _go_offline() both do.
+        """
         wanted = {k: False for k in self.cfg.coils if k in _LAMP_COILS}
-        for lamp in LAMPS[status]:
+        # A station with no grinder wired has nothing for green to wait on,
+        # so it keeps the old meaning: compliant is green, full stop.
+        running = self._grinder_latched or "belt_grinder" not in self.cfg.coils
+        for lamp in lamps_for(status, running):
             if lamp in wanted:
                 wanted[lamp] = True
         if "buzzer" in wanted:
-            wanted["buzzer"] = self.cfg.buzzer_on_violation and status is Status.VIOLATION
+            # A window, not a level: set when a violation cut the grinder,
+            # and it expires on its own however long the violation lasts.
+            wanted["buzzer"] = now() < self._buzz_until
         return self.write(wanted)
 
     def write(self, wanted: dict[str, bool]) -> bool:
@@ -373,6 +411,7 @@ class TowerLight:
         """
         self._grinder_latched = False
         self._button_was_pressed = True
+        self._buzz_until = 0.0  # a blanked board is not mid-annunciation
 
     def _drop_grinder(self, why: str) -> bool:
         """Clear the latch and drive the coil low, logging the transition."""
@@ -439,6 +478,19 @@ class TowerLight:
         if not estop:
             return self._drop_grinder("e-stop hit")
         if status is not Status.OK:
+            # Only a violation sounds the buzzer, and only if it actually
+            # took a running machine away: STANDBY (the operator stepped
+            # out) and DEGRADED (the station cannot judge) stop the
+            # grinder just as hard, but neither is the worker doing
+            # something the buzzer is there to call out.
+            if (
+                self._grinder_latched
+                and status is Status.VIOLATION
+                and self.cfg.buzzer_on_violation
+            ):
+                self._buzz_until = now() + self.cfg.buzzer_sec
+                log.info("buzzer on for %.1fs: a violation stopped the grinder",
+                         self.cfg.buzzer_sec)
             return self._drop_grinder(f"status is {status.value}")
 
         if pressed and not was_pressed:

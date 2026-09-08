@@ -382,12 +382,17 @@ empty for a silent station — nothing else changes.
 
 ## The tower light
 
-| Status | Lamp | Meaning |
-| --- | --- | --- |
-| `OK` | green | The subject is wearing everything required |
-| `VIOLATION` | red | A required class is missing, or a forbidden one appeared |
-| `STANDBY` | dark | No subject in view — nothing to judge |
-| `DEGRADED` | amber | No usable video, or a required class the model lacks |
+| Status | Grinder | Lamp | Meaning |
+| --- | --- | --- | --- |
+| `OK` | running | green | Compliant, and the machine is actually running |
+| `OK` | idle | amber | Compliant — press the button to start |
+| `VIOLATION` | — | red | A required class is missing, or a forbidden one appeared |
+| `STANDBY` | — | dark | No subject in view — nothing to judge |
+| `DEGRADED` | — | amber | No usable video, or a required class the model lacks |
+
+Green reports the **machine**, not just the verdict on the worker: it
+means the grinder is turning. A station with no `belt_grinder` coil wired
+has nothing for green to wait on, so there compliant is green as before.
 
 Detections are unioned across cameras: an item seen by either camera counts as
 present. That is what you want for two views of one cell — a front camera sees
@@ -401,9 +406,10 @@ exactly right. With two people in view the cameras can pick different subjects
 and the union would blend them — resolving that needs cross-camera identity,
 which this does not attempt.
 
-Standby leaves the tower dark. Amber stays reserved for `DEGRADED`, which is a
-fault and needs to look like one; an unlit tower cannot be mistaken for a
-compliance verdict.
+Standby leaves the tower dark: an unlit tower cannot be mistaken for a
+compliance verdict. Amber is the one lamp that carries two meanings —
+`DEGRADED` (a fault) and compliant-but-idle (not a fault). A lamp alone
+cannot tell those apart; the screen names which it is.
 
 Two guards keep the relay from chattering: `hold_ms` bridges a class that
 flickers out for a frame or two, and `confirm_sec` requires a status to stand
@@ -413,6 +419,30 @@ Both are timed in **seconds, not frames**. Inference rate moves with CPU load,
 so a frame count is a different amount of real time from one minute to the
 next — the same setting would debounce for 0.1 s under light load and 1.5 s
 under heavy load.
+
+### The buzzer
+
+A pulse, not a tone held for the duration: it sounds for `buzzer_sec`
+(default 3 s) at the moment a **PPE violation cuts a running grinder**.
+
+```yaml
+tower:
+  buzzer_on_violation: true
+  buzzer_sec: 3.0
+```
+
+What it deliberately does *not* do:
+
+- A violation that finds the grinder already idle is **silent** — nothing
+  was taken away, so there is nothing to announce.
+- An e-stop, a camera loss (`DEGRADED`) or the worker stepping out of view
+  (`STANDBY`) all stop the grinder just as hard, and all stay silent. Only
+  a violation sounds it.
+- It does not re-sound while the violation stands. One stop, one pulse.
+- A station with no `belt_grinder` coil never sounds it at all, since
+  there is no grinder for a violation to cut.
+
+Set `buzzer_on_violation: false`, or `buzzer_sec: 0`, to disable.
 
 `confirm_sec` is asymmetric on purpose:
 

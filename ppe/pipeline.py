@@ -184,6 +184,12 @@ class Pipeline(threading.Thread):
         self._focus = [Focus() for _ in self._focus]
         status = self.monitor.degrade()
         self.tower.update_belt_grinder(status)
+        # And the lamps, in the same order as a real cycle. Green asserts
+        # the grinder is running, so leaving it lit while the feed is dead
+        # and the grinder has just been cut would be an outright lie —
+        # this is also what lets the buzzer pulse expire on its own when
+        # no camera is delivering.
+        self.tower.apply(status)
         self._publish(status)
 
     def _take(self, fresh: list[Frame]) -> list[Frame]:
@@ -239,8 +245,11 @@ class Pipeline(threading.Thread):
         for cyc in cycles.values():
             cyc.stamp("logic")
 
-        self.tower.apply(status)
+        # Grinder first, then the lamps: green now means "the machine is
+        # actually running", so apply() reads the latch update_belt_grinder()
+        # just settled. The other order shows last cycle's machine state.
         self.tower.update_belt_grinder(status)
+        self.tower.apply(status)
         self.annunciator.update(status)
         for cyc in cycles.values():
             cyc.stamp("relay")

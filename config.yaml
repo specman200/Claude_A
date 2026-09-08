@@ -105,7 +105,12 @@ tower:
     # address 4 — check that assumption against your board's own manual if
     # its addressing does not start at 0 the same way.
     belt_grinder: 4
-  buzzer_on_violation: false
+  # Sounds for buzzer_sec whenever a PPE violation cuts the belt grinder
+  # — a pulse marking the moment the machine was taken away, not a tone
+  # held for as long as the violation stands. A violation that finds the
+  # grinder already idle is silent, as are e-stop and camera-loss stops.
+  buzzer_on_violation: true
+  buzzer_sec: 3.0
   inputs:               # discrete input address of each switch this reads
     # Both switches are wired ACTIVE (normally closed): an idle input reads
     # true, and pressing the switch takes it to false. Both are read every

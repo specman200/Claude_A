@@ -143,6 +143,23 @@ def test_every_status_maps_to_a_lamp_pattern():
         assert len(lamps) == (0 if status is Status.STANDBY else 1)
 
 
+@pytest.mark.parametrize(
+    "status,grinder_on,expected",
+    [
+        (Status.OK, True, ("green",)),    # compliant and running
+        (Status.OK, False, ("amber",)),   # compliant but nobody pressed start
+        (Status.VIOLATION, True, ("red",)),
+        (Status.VIOLATION, False, ("red",)),
+        (Status.STANDBY, False, ()),
+        (Status.DEGRADED, False, ("amber",)),
+    ],
+)
+def test_green_means_running_not_merely_compliant(status, grinder_on, expected):
+    from ppe.tower import lamps_for
+
+    assert lamps_for(status, grinder_on) == expected
+
+
 # -- Modbus output ---------------------------------------------------------
 
 
@@ -293,14 +310,14 @@ def test_a_status_change_writes_only_the_changed_coils():
     assert dict(fake.writes) == {0: False, 2: True}
 
 
-def test_buzzer_only_sounds_on_violation_when_enabled():
+def test_a_violation_alone_no_longer_sounds_the_buzzer():
+    """It used to be a level output held for as long as the violation
+    stood. It is now a pulse tied to the grinder being cut, so a station
+    with no grinder at all never sounds it."""
     tower, fake = tower_with_fake()
     tower.cfg.buzzer_on_violation = True
     tower.apply(Status.VIOLATION)
-    assert dict(fake.writes)[3] is True
-    fake.writes.clear()
-    tower.apply(Status.OK)
-    assert dict(fake.writes)[3] is False
+    assert dict(fake.writes).get(3) is not True
 
 
 def test_a_bus_failure_is_survived_and_resynced():
@@ -825,3 +842,156 @@ def test_confidence_is_still_the_best_seen():
     m = paired()
     m.update([[PERSON, glove(10, 0.4), glove(200, 0.85)]], t=1.0)
     assert m.classes[0].conf == pytest.approx(0.85)
+
+
+# -- the lamp follows the machine, and the buzzer marks it being cut -------
+# Green now asserts the grinder is actually running, so it is decided by
+# the latch rather than by compliance alone; and the buzzer is a fixed
+# pulse fired when a violation takes a running machine away, rather than a
+# tone held for as long as the violation stands.
+
+
+def clock(monkeypatch, start=1000.0):
+    """A hand-cranked clock, so a 3-second pulse costs no wall time."""
+    t = {"now": start}
+    monkeypatch.setattr("ppe.tower.now", lambda: t["now"])
+    return t
+
+
+def running_grinder(fake, tower, status=Status.OK):
+    """Press the button and leave the grinder latched on."""
+    fake.inputs = {0: True, 1: True}
+    tower.update_belt_grinder(status)
+    fake.inputs[1] = False
+    tower.update_belt_grinder(status)
+    fake.inputs[1] = True
+    assert tower._grinder_latched is True
+
+
+def test_compliant_but_idle_shows_amber_not_green():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}   # e-stop clear, nobody pressed start
+    tower.update_belt_grinder(Status.OK)
+    fake.writes.clear()
+
+    tower.apply(Status.OK)
+    assert dict(fake.writes) == {0: False, 1: True, 2: False, 3: False}
+
+
+def test_compliant_and_running_shows_green():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    running_grinder(fake, tower)
+    fake.writes.clear()
+
+    tower.apply(Status.OK)
+    assert dict(fake.writes)[0] is True    # green
+    assert dict(fake.writes)[1] is False   # amber off
+
+
+def test_a_station_with_no_grinder_keeps_the_old_green(monkeypatch):
+    """Nothing for green to wait on, so compliant is green as before."""
+    tower, fake = tower_with_fake()        # no belt_grinder coil
+    tower.connect()
+    fake.writes.clear()
+    tower.apply(Status.OK)
+    assert dict(fake.writes)[0] is True
+
+
+def test_a_violation_that_stops_a_running_grinder_sounds_the_buzzer(monkeypatch):
+    clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = True
+    tower.connect()
+    running_grinder(fake, tower)
+    fake.writes.clear()
+
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert dict(fake.writes)[4] is False   # grinder cut
+    assert dict(fake.writes)[3] is True    # buzzer sounding
+    assert dict(fake.writes)[2] is True    # red
+
+
+def test_the_buzzer_stops_after_buzzer_sec(monkeypatch):
+    t = clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = True
+    tower.cfg.buzzer_sec = 3.0
+    tower.connect()
+    running_grinder(fake, tower)
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert tower._state["buzzer"] is True
+
+    t["now"] += 2.9                       # still inside the window
+    tower.apply(Status.VIOLATION)
+    assert tower._state["buzzer"] is True
+
+    t["now"] += 0.2                       # 3.1 s — expired
+    fake.writes.clear()
+    tower.apply(Status.VIOLATION)
+    assert dict(fake.writes) == {3: False}, "the pulse must expire on its own"
+
+
+def test_the_buzzer_does_not_re_sound_while_the_violation_stands(monkeypatch):
+    """One pulse per stop, not one per cycle — the grinder is already off,
+    so there is nothing further to announce."""
+    t = clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = True
+    tower.connect()
+    running_grinder(fake, tower)
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+
+    t["now"] += 5.0
+    for _ in range(3):
+        tower.update_belt_grinder(Status.VIOLATION)
+        tower.apply(Status.VIOLATION)
+    assert tower._state["buzzer"] is False
+
+
+def test_a_violation_with_the_grinder_already_idle_is_silent(monkeypatch):
+    clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = True
+    tower.connect()
+    fake.inputs = {0: True, 1: True}      # never pressed
+    tower.update_belt_grinder(Status.OK)
+    fake.writes.clear()
+
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert dict(fake.writes).get(3) is not True
+
+
+@pytest.mark.parametrize("status", [Status.STANDBY, Status.DEGRADED])
+def test_only_a_violation_sounds_it_not_every_stop(monkeypatch, status):
+    """Stepping out of view or losing the cameras cuts the grinder just as
+    hard, but neither is the worker doing the thing this calls out."""
+    clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = True
+    tower.connect()
+    running_grinder(fake, tower)
+    fake.writes.clear()
+
+    tower.update_belt_grinder(status)
+    tower.apply(status)
+    assert dict(fake.writes)[4] is False              # still stopped
+    assert dict(fake.writes).get(3) is not True       # but silently
+
+
+def test_buzzer_on_violation_false_keeps_it_silent(monkeypatch):
+    clock(monkeypatch)
+    tower, fake = tower_with_grinder()
+    tower.cfg.buzzer_on_violation = False
+    tower.connect()
+    running_grinder(fake, tower)
+    fake.writes.clear()
+
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert dict(fake.writes).get(3) is not True
