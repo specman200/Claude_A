@@ -160,6 +160,16 @@ def test_green_means_running_not_merely_compliant(status, grinder_on, expected):
     assert lamps_for(status, grinder_on) == expected
 
 
+@pytest.mark.parametrize("status", list(Status))
+@pytest.mark.parametrize("grinder_on", [True, False])
+def test_a_hit_estop_is_red_whatever_else_is_true(status, grinder_on):
+    """It outranks everything, an empty cell included: a dark tower over an
+    e-stopped machine says nothing about why it will not start."""
+    from ppe.tower import lamps_for
+
+    assert lamps_for(status, grinder_on, estop_hit=True) == ("red",)
+
+
 # -- Modbus output ---------------------------------------------------------
 
 
@@ -995,3 +1005,75 @@ def test_buzzer_on_violation_false_keeps_it_silent(monkeypatch):
     tower.update_belt_grinder(Status.VIOLATION)
     tower.apply(Status.VIOLATION)
     assert dict(fake.writes).get(3) is not True
+
+
+def test_the_lamp_goes_red_when_the_estop_is_hit():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    running_grinder(fake, tower)
+    tower.apply(Status.OK)
+    assert tower._state["green"] is True
+
+    fake.inputs[0] = False            # e-stop hit — active wiring, so False
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.OK)
+    tower.apply(Status.OK)
+    assert dict(fake.writes)[2] is True     # red
+    assert dict(fake.writes)[0] is False    # green off
+    assert dict(fake.writes)[4] is False    # and the grinder is cut
+
+
+def test_an_estop_over_an_empty_cell_is_red_not_dark():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: False, 1: True}       # e-stop hit, nobody in the cell
+    tower.update_belt_grinder(Status.STANDBY)
+    fake.writes.clear()
+    tower.apply(Status.STANDBY)
+    assert dict(fake.writes)[2] is True
+
+
+def test_releasing_the_estop_returns_the_lamp_to_the_status():
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: False, 1: True}
+    tower.update_belt_grinder(Status.OK)
+    tower.apply(Status.OK)
+    assert tower._state["red"] is True
+
+    fake.inputs[0] = True                   # released
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.OK)
+    tower.apply(Status.OK)
+    # Compliant but idle — the latch stayed dropped, so amber, not green.
+    assert dict(fake.writes)[1] is True
+    assert dict(fake.writes)[2] is False
+
+
+def test_an_unreadable_estop_does_not_claim_an_emergency():
+    """A failed read is unknown, not hit. Asserting red on a bus glitch
+    would cry wolf on the one colour that has to mean something."""
+    tower, fake = tower_with_grinder()
+    tower.connect()
+    fake.inputs = {0: True, 1: True}
+    tower.update_belt_grinder(Status.OK)
+    fake.fail_read = True
+    tower.update_belt_grinder(Status.OK)
+    assert tower._estop_ok is None
+
+    fake.fail_read = False
+    tower._retry_at = 0.0
+    fake.writes.clear()
+    tower.apply(Status.VIOLATION)
+    assert dict(fake.writes)[2] is True   # red, but because of the violation
+    tower.apply(Status.OK)
+    assert tower._state["red"] is False   # not a lingering fake e-stop
+
+
+def test_a_station_with_no_estop_wired_never_shows_estop_red():
+    tower, fake = tower_with_fake()       # no inputs configured at all
+    tower.connect()
+    tower.update_belt_grinder(Status.OK)  # no-ops
+    fake.writes.clear()
+    tower.apply(Status.OK)
+    assert dict(fake.writes)[0] is True   # plain green, as before

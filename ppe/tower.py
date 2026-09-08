@@ -213,16 +213,22 @@ LAMPS: dict[Status, tuple[str, ...]] = {
 }
 
 
-def lamps_for(status: Status, grinder_on: bool) -> tuple[str, ...]:
-    """Which lamps are lit, given compliance *and* whether the machine runs.
+def lamps_for(status: Status, grinder_on: bool, estop_hit: bool = False) -> tuple[str, ...]:
+    """Which lamps are lit, given compliance *and* the state of the machine.
 
     The tower reports the machine, not only the verdict on the worker:
 
+      red     the e-stop is hit, or a violation
       green   compliant AND the grinder is actually running
       amber   compliant but the grinder is idle — nothing is wrong, the
               operator just has not pressed the button yet; also DEGRADED
-      red     a violation
       dark    nobody in the cell
+
+    The e-stop outranks everything, compliance and an empty cell included.
+    Somebody hit it, the machine is down, and that is worth a red lamp
+    whether or not anyone is standing in front of the cameras — a dark
+    tower over an e-stopped cell says nothing at all about why the
+    machine will not start.
 
     Splitting OK across green and amber costs the one thing amber used to
     say on its own. It now covers both "cannot judge" (a fault) and "all
@@ -230,6 +236,8 @@ def lamps_for(status: Status, grinder_on: bool) -> tuple[str, ...]:
     longer distinguish — the UI still names which, and the alternative
     was a green lamp on a machine that is not running.
     """
+    if estop_hit:
+        return ("red",)
     if status is Status.OK:
         return ("green",) if grinder_on else ("amber",)
     return LAMPS[status]
@@ -262,6 +270,10 @@ class TowerLight:
         # the moment the machine was taken away, which is the thing an
         # operator needs to connect to what they just did.
         self._buzz_until = 0.0
+        # The last e-stop reading, for the lamp. None until one has been
+        # taken (or after one fails): unknown is not the same as hit, and
+        # claiming an emergency nobody observed would be its own lie.
+        self._estop_ok: bool | None = None
 
     # -- connection --------------------------------------------------------
     def connect(self) -> bool:
@@ -345,7 +357,9 @@ class TowerLight:
         # A station with no grinder wired has nothing for green to wait on,
         # so it keeps the old meaning: compliant is green, full stop.
         running = self._grinder_latched or "belt_grinder" not in self.cfg.coils
-        for lamp in lamps_for(status, running):
+        # `is False` on purpose: None means no reading has been taken, which
+        # is not an e-stop.
+        for lamp in lamps_for(status, running, estop_hit=self._estop_ok is False):
             if lamp in wanted:
                 wanted[lamp] = True
         if "buzzer" in wanted:
@@ -412,6 +426,7 @@ class TowerLight:
         self._grinder_latched = False
         self._button_was_pressed = True
         self._buzz_until = 0.0  # a blanked board is not mid-annunciation
+        self._estop_ok = None
 
     def _drop_grinder(self, why: str) -> bool:
         """Clear the latch and drive the coil low, logging the transition."""
@@ -468,12 +483,14 @@ class TowerLight:
             # told from a hold that spanned the outage. Demand one this
             # method has seen from both sides rather than guessing.
             self._button_was_pressed = True
+            self._estop_ok = None  # unknown, so the lamp falls back to status
             return self._drop_grinder("input read failed")
 
         # Track the button every cycle, faults included: a release *during*
         # a fault is what makes the operator's next press a real edge.
         pressed = not push_button
         was_pressed, self._button_was_pressed = self._button_was_pressed, pressed
+        self._estop_ok = bool(estop)
 
         if not estop:
             return self._drop_grinder("e-stop hit")

@@ -382,8 +382,9 @@ empty for a silent station — nothing else changes.
 
 ## The tower light
 
-| Status | Grinder | Lamp | Meaning |
+| Condition | Grinder | Lamp | Meaning |
 | --- | --- | --- | --- |
+| e-stop hit | — | red | Somebody hit the e-stop; outranks everything below |
 | `OK` | running | green | Compliant, and the machine is actually running |
 | `OK` | idle | amber | Compliant — press the button to start |
 | `VIOLATION` | — | red | A required class is missing, or a forbidden one appeared |
@@ -393,6 +394,13 @@ empty for a silent station — nothing else changes.
 Green reports the **machine**, not just the verdict on the worker: it
 means the grinder is turning. A station with no `belt_grinder` coil wired
 has nothing for green to wait on, so there compliant is green as before.
+
+A hit e-stop is red over any status, an empty cell included — a dark
+tower above an e-stopped machine says nothing about why it will not
+start. An e-stop that cannot be *read* (bus down) is treated as unknown
+rather than hit: the lamp falls back to the compliance status instead of
+crying wolf on the one colour that has to mean something. A station with
+no `estop` input configured never shows it.
 
 Detections are unioned across cameras: an item seen by either camera counts as
 present. That is what you want for two views of one cell — a front camera sees
