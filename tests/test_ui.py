@@ -314,7 +314,17 @@ def station(clip, tmp_path, monkeypatch, app):
     try:
         yield window, pipe
     finally:
+        # close() stops the threads, but a cycle already past its check can
+        # still be mid-publish, and its result reaches the window as a QUEUED
+        # signal. Dropping the window with a delivery still in the loop left
+        # Qt destroying an object Python was also about to collect — which
+        # surfaced as a segfault inside an unrelated later test's pump(),
+        # during garbage collection, with nothing on the stack to place it.
         window.close()
+        pipe.stop()
+        pipe.join(timeout=5.0)
+        cameras.stop()
+        app.processEvents()   # drain, while the window is still alive to receive
 
 
 def pump(app, until, timeout=10.0):
@@ -934,3 +944,56 @@ def test_no_estop_leaves_the_status_text_alone(app, widget):
     w.apply(Status.OK, [], tower_ok=True)
     assert ESTOP_TEXT not in w.text()
     assert "ALL PPE PRESENT" in w.text()
+
+
+# -- a red the operator can account for --------------------------------------
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_a_fault_that_has_cleared_but_is_still_shown_says_so(app, widget):
+    """The checklist beside this is live, so it goes green the moment the
+    fault leaves view. Without a word here the red has nothing to account
+    for it — which is exactly how this looked on the station."""
+    w = widget()
+    w.apply(Status.VIOLATION, [], tower_ok=True, banned=["Wrong Sleeve"],
+            intermittent=True)
+    assert "NOT ALLOWED: Wrong Sleeve" in w.text()
+    assert "INTERMITTENT" in w.text()
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_a_standing_fault_is_not_labelled_intermittent(app, widget):
+    w = widget()
+    w.apply(Status.VIOLATION, ["Gloves"], tower_ok=True)
+    assert "MISSING: Gloves" in w.text()
+    assert "INTERMITTENT" not in w.text()
+
+
+@pytest.mark.parametrize("status", [Status.OK, Status.STANDBY, Status.DEGRADED])
+def test_only_a_violation_is_ever_called_intermittent(app, status):
+    """The flag rides on Result every cycle; it must not leak into a status
+    where it would mean nothing."""
+    card = StatusCard()
+    card.apply(status, [], tower_ok=True, intermittent=True)
+    assert "INTERMITTENT" not in card.text()
+    paint(card, 400, card.minimumHeight())
+
+
+def test_the_window_carries_the_intermittent_flag_to_the_banner(app, station):
+    """The wiring, not the wording: a flag that stops at _on_result would
+    leave the station exactly as it was."""
+    from ppe.pipeline import Result
+
+    window, pipe = station
+    states = [ClassState(c.name, c.label, c.required, count=1) for c in pipe.cfg.ppe.classes]
+    # Delivered directly rather than through the signal, so the live pipeline
+    # cannot repaint over it between the call and the assertions below.
+    window._on_result(Result(
+        status=Status.VIOLATION, classes=states, detections=[[], []],
+        ignored=[[], []], subjects=[None, None],
+        banned=["Wrong Sleeve"], intermittent=True,
+    ))
+    assert "INTERMITTENT" in window.banner.text()
+    # ...and the checklist keeps showing what is true right now, which is the
+    # whole point: live rows beside a headline that explains itself.
+    assert all(PRESENT in dot_color(row) for row in window.panel.rows.values())

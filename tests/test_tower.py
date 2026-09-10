@@ -1151,3 +1151,80 @@ def test_regaining_the_pair_restarts_the_occlusion_window():
     m.update(gloves(2), t=4.5)                              # both seen again
     assert m.update(gloves(1), t=9.0) is Status.OK          # 4.5s since, under 5
     assert m.update(gloves(1), t=9.6) is Status.VIOLATION
+
+
+# -- the reason behind the status actually on screen -------------------------
+
+
+def test_a_cleared_fault_keeps_its_reason_while_the_lamp_still_shows_it():
+    """The card reads the debounced status but used to read a LIVE reason.
+
+    In the confirm window the two describe different instants, which put a
+    red on screen with nothing named against it while the checklist beside
+    it went fully green — the operator's report that started this.
+    """
+    m = monitor(hold_ms=0, confirm=1.0)
+    m.update([[det("helmet")]], t=0.0)
+    m.update([[det("helmet")]], t=1.0)
+    assert m.status is Status.VIOLATION
+    assert m.shown_faults() == (["Vest"], [])
+
+    # Vest is back. The rows go green at once; the lamp has a second to wait.
+    m.update([[det("helmet"), det("vest")]], t=1.1)
+    assert m.status is Status.VIOLATION        # still red...
+    assert m.missing() == []                   # ...though nothing is missing now
+    assert m.shown_faults() == (["Vest"], [])  # and the red still says why
+    assert m.intermittent
+
+    m.update([[det("helmet"), det("vest")]], t=2.2)
+    assert m.status is Status.OK
+    assert m.shown_faults() == ([], [])        # no stale reason once it clears
+    assert not m.intermittent
+
+
+def test_a_standing_fault_is_not_reported_as_intermittent():
+    m = monitor(hold_ms=0, confirm=0.0)
+    m.update([[det("helmet")]], t=0.0)
+    assert m.status is Status.VIOLATION
+    assert not m.intermittent, "the fault is right there in this cycle"
+
+
+def test_a_class_flapping_faster_than_the_confirm_window_pins_the_lamp():
+    """The persistent form of the same bug: every disagreeing cycle restarts
+    the wait, so the station never settles and the checklist is green for
+    most of the frames anyone looks at."""
+    m = monitor(hold_ms=0, confirm=1.0, forbidden=["wrong_sleeve"])
+    worn = [det("helmet"), det("vest")]
+    m.update([worn + [det("wrong_sleeve")]], t=0.0)   # the fault that started it
+    m.update([worn + [det("wrong_sleeve")]], t=1.0)
+    assert m.status is Status.VIOLATION
+
+    t = 1.1
+    for step in range(40):                     # 4 s at 10 Hz
+        bad = [det("wrong_sleeve")] if step % 8 == 0 else []   # one frame in 8
+        m.update([worn + bad], t)
+        t += 0.1
+
+    assert m.status is Status.VIOLATION, "never gets a clear second to settle"
+    assert m.flaps > 1, "the raw verdict is flapping, and the panel says so"
+    # Whichever frame the operator happens to look at, the red is accounted for.
+    assert m.shown_faults() == ([], ["Wrong Sleeve"])
+
+
+def test_the_flap_count_resets_once_the_lamp_follows_the_verdict():
+    m = monitor(hold_ms=0, confirm=0.0)
+    m.update([[det("helmet")]], t=0.0)         # -> violation, applied at once
+    assert m.flaps == 0
+    m.update([[det("helmet"), det("vest")]], t=0.1)
+    assert m.flaps == 0                        # -> ok, applied at once
+
+
+def test_the_live_lists_stay_live():
+    """shown_faults() is the latched one; missing()/banned() must not become
+    latched too, or the debug panel and the annunciator start lying."""
+    m = monitor(hold_ms=0, confirm=1.0)
+    m.update([[det("helmet")]], t=0.0)
+    m.update([[det("helmet")]], t=1.0)         # violation now on the lamp
+    m.update([[det("helmet"), det("vest")]], t=1.1)
+    assert m.missing() == []
+    assert m.shown_faults() == (["Vest"], [])

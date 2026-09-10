@@ -95,6 +95,16 @@ class ComplianceMonitor:
         self.raw = Status.DEGRADED        # this cycle's verdict, before debounce
         self.candidate = Status.DEGRADED  # what is waiting to be confirmed
         self.candidate_since = 0.0
+        # How many times the raw verdict has changed since the lamp last
+        # followed it. A stuck lamp with a high count is a flapping class,
+        # not a standing fault — see `intermittent`.
+        self.flaps = 0
+        # The reason behind the status being SHOWN, latched. The live
+        # missing()/banned() describe this instant, which is not the same
+        # instant the debounced status came from; reporting the live pair
+        # against the shown status is what let the card display a red with
+        # nothing named on it.
+        self._fault: tuple[list[str], list[str]] = ([], [])
 
     def update(
         self, per_camera: list[list[Detection]], t: float | None = None
@@ -154,7 +164,15 @@ class ComplianceMonitor:
         asymmetric — going green is a safety claim and should be slow, going
         red is an alarm and should be quick.
         """
+        if candidate is not self.raw:
+            self.flaps += 1
         self.raw = candidate
+        # Captured on every cycle that reads as a fault, so the reason on
+        # file always belongs to the most recent one — including the fault
+        # that is holding a flapping station red long after this instant's
+        # detections have gone clean again.
+        if candidate is Status.VIOLATION:
+            self._fault = (self.missing(), self.banned())
         if candidate != self.candidate:
             self.candidate = candidate
             self.candidate_since = t
@@ -163,6 +181,7 @@ class ComplianceMonitor:
         if candidate != self.status and (t - self.candidate_since) >= self._wait(candidate):
             log.info("status %s -> %s", self.status.value, candidate.value)
             self.status = candidate
+            self.flaps = 0
         return self.status
 
     def _wait(self, status: Status) -> float:
@@ -202,6 +221,32 @@ class ComplianceMonitor:
     def faults(self) -> list[str]:
         """Everything currently keeping the station out of compliance."""
         return self.missing() + self.banned()
+
+    def shown_faults(self) -> tuple[list[str], list[str]]:
+        """Why the station is showing what it is showing, as (missing, banned).
+
+        Not the same question as missing()/banned(), which answer for this
+        instant. The lamp and the card show the *debounced* status, which can
+        be a fault the current cycle no longer sees — so pairing them with
+        the live lists produced a VIOLATION with nothing named against it,
+        while the checklist beside it sat fully green. This returns the
+        reason that belongs to the status actually on screen.
+        """
+        if self.status is not Status.VIOLATION:
+            return [], []
+        return list(self._fault[0]), list(self._fault[1])
+
+    @property
+    def intermittent(self) -> bool:
+        """Is the fault on screen one the live verdict has already cleared?
+
+        True while a class is flapping faster than the confirm window: every
+        disagreeing cycle restarts the wait, so the station never gets to
+        settle and the operator is left looking at a red they cannot account
+        for. Worth saying out loud on the card — 'gone but still counting'
+        is a different instruction to the operator than a standing fault.
+        """
+        return self.status is Status.VIOLATION and self.raw is not Status.VIOLATION
 
     def unavailable(self) -> list[str]:
         """Required items the loaded model has no class for."""

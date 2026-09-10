@@ -43,7 +43,14 @@ class Result:
     candidate: Status = Status.DEGRADED
     candidate_age: float = 0.0
     confirm_wait: float = 0.0
+    # How many times the raw verdict changed since the lamp last followed it,
+    # and whether the fault being shown is one this cycle no longer sees.
+    flaps: int = 0
+    intermittent: bool = False
     audio_due: float | None = None
+    # The reason behind `status`, not the reason at this instant — see
+    # ComplianceMonitor.shown_faults(). The checklist keeps showing live
+    # state; only the headline's explanation is latched to match it.
     missing: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
     banned: list[str] = field(default_factory=list)
@@ -266,6 +273,7 @@ class Pipeline(threading.Thread):
         self._publish(status, worst.total)
 
     def _publish(self, status: Status, latency_ms: float = 0.0) -> None:
+        shown_missing, shown_banned = self.monitor.shown_faults()
         result = Result(
             status=status,
             classes=[copy.copy(c) for c in self.monitor.classes],
@@ -281,10 +289,12 @@ class Pipeline(threading.Thread):
             candidate=self.monitor.candidate,
             candidate_age=self.monitor.candidate_age(),
             confirm_wait=self.monitor.confirm_wait(),
+            flaps=self.monitor.flaps,
+            intermittent=self.monitor.intermittent,
             audio_due=self.annunciator.due_in(),
-            missing=self.monitor.missing(),
+            missing=shown_missing,
             unavailable=self.monitor.unavailable(),
-            banned=self.monitor.banned(),
+            banned=shown_banned,
         )
         self.result = result
         if self.on_result is not None:

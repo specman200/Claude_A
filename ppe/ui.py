@@ -351,6 +351,8 @@ class PPEPanel(QFrame):
         outer.addWidget(heading)
 
         self.rows: dict[str, ClassRow] = {}
+        # Rows taken out of the list but not yet freed — see rebuild().
+        self._retired: list[ClassRow] = []
         self._list = QVBoxLayout()
         self._list.setSpacing(2)
         outer.addLayout(self._list)
@@ -387,10 +389,24 @@ class PPEPanel(QFrame):
         return {name: row.color for name, row in self.rows.items()}
 
     def rebuild(self) -> None:
+        # The previous batch has long since left the event loop; freeing it
+        # now, rather than at the moment it was replaced, is the whole point.
+        self._retired.clear()
         while self._list.count():
             item = self._list.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            row = item.widget()
+            if row is None:
+                continue
+            # Detached from the layout and held, not deleted. rebuild() is
+            # reached from a row's own `removed` signal, so the row being
+            # dropped is still emitting while this runs: freeing it here —
+            # or dropping the last Python reference and leaving shiboken to
+            # collect the wrapper out from under a C++ object Qt had still
+            # to finish with — is a use-after-free. It surfaced as a
+            # segfault during an unrelated garbage collection much later,
+            # which is exactly as hard to place as it sounds.
+            row.setParent(None)
+            self._retired.append(row)
         self.rows.clear()
         for i, klass in enumerate(self.cfg.ppe.classes):
             row = ClassRow(
@@ -477,6 +493,7 @@ class StatusCard(QFrame):
         unavailable: list[str] | None = None,
         banned: list[str] | None = None,
         estop: bool = False,
+        intermittent: bool = False,
     ) -> None:
         headline, color = BANNER[status]
         detail = ""
@@ -486,6 +503,13 @@ class StatusCard(QFrame):
                 parts.append(f"PPE MISSING: {', '.join(missing)}")
             if banned:
                 parts.append(f"NOT ALLOWED: {', '.join(banned)}")
+            # The fault is no longer in view but is still holding the lamp:
+            # the checklist beside this card is green, so without a word
+            # here the red has nothing to account for it. Saying it also
+            # tells the operator what to do — stand still and let it
+            # settle — which "PPE MISSING" alone does not.
+            if intermittent:
+                parts.append("INTERMITTENT — not steady enough to clear")
             detail = "   ".join(parts)
         elif status is Status.DEGRADED and unavailable:
             headline = "NOT READY"
@@ -657,6 +681,7 @@ class StatusBanner(QLabel):
         unavailable: list[str] | None = None,
         banned: list[str] | None = None,
         estop: bool = False,
+        intermittent: bool = False,
     ) -> None:
         text, color = BANNER[status]
         if status is Status.STANDBY:
@@ -667,6 +692,8 @@ class StatusBanner(QLabel):
                 parts.append(f"PPE MISSING: {', '.join(missing)}")
             if banned:
                 parts.append(f"NOT ALLOWED: {', '.join(banned)}")
+            if intermittent:
+                parts.append("INTERMITTENT — not steady enough to clear")
             text = "   ".join(parts) or text
         elif status is Status.DEGRADED:
             # Two very different faults share this lamp — name the right one.
@@ -791,10 +818,15 @@ class DecisionPanel(QFrame):
             else f"in {max(0.0, wait - age):.2f}s"
         )
         audio = "-" if result.audio_due is None else f"{result.audio_due:.1f}s"
+        # A stuck status with a high flap count is the signature of a class
+        # switching faster than its confirm window: every disagreeing cycle
+        # restarts the wait, so the station can never settle. The number is
+        # what tells you which way to move that class's conf and hold_ms.
+        flapping = f"  (raw changed {result.flaps}x since)" if result.flaps > 1 else ""
         self.summary.setText(
             f"raw       {result.raw.value}\n"
             f"candidate {result.candidate.value}  ({age:.2f}s of {wait:.2f}s, {pending})\n"
-            f"applied   {result.status.value}\n"
+            f"applied   {result.status.value}{flapping}\n"
             f"audio     muted, next would be {audio}"
         )
         rows = []
@@ -1094,7 +1126,7 @@ class MainWindow(QMainWindow):
             self.decisions.apply(result)
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable,
-            result.banned, result.estop,
+            result.banned, result.estop, result.intermittent,
         )
 
     def _draw_stats(self) -> None:
