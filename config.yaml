@@ -160,3 +160,12 @@ telemetry:
   csv: logs/latency.csv # per-cycle end-to-end log; empty string disables
   window: 300           # samples kept for the rolling p50/p95 readout
   print_every: 0.0      # seconds between console summaries; 0 disables
+  # Commissioning trial traces. Writes stops.csv (one row per time the latch
+  # dropped, naming the class that had lost sight of what) and gaps.csv (one
+  # row per detection gap, whether or not it cost a stop). Read them with
+  #     python -m ppe.trials logs/trials
+  # which reports the stop rate, what caused it, and what hold_ms would have
+  # ridden it out — along with what that setting costs in seconds a worker
+  # who has genuinely removed the item keeps the machine. Empty disables.
+  # Leave it on while tuning a station; there is no reason to run it after.
+  trials: logs/trials

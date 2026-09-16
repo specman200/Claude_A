@@ -35,6 +35,12 @@ class ClassState:
     hold: float = 1.5        # seconds this class stays "seen" after its last sighting
     occluded: float = 1.5    # ...and how long a PARTLY visible set keeps full credit
     count: int = 0           # how many are on them right now
+    # What this cycle actually saw, before the hold and occlusion windows had
+    # their say. `count` is the credited figure and is what the verdict uses;
+    # this is the raw evidence behind it, and the only way to tell a dropout
+    # from a steady sighting after the fact. Observation only — nothing in
+    # the decision path reads it.
+    seen: int = 0
     conf: float = 0.0
     last_seen: float = 0.0
     counted_at: float = 0.0  # when `count` was observed, for the hold window
@@ -136,6 +142,7 @@ class ComplianceMonitor:
             # That split is what makes a long tolerance safe to configure;
             # one window for both would buy the occlusion by also letting a
             # bare-handed worker coast for the same span.
+            state.seen = seen
             window = state.hold if seen == 0 else state.occluded
             if seen >= state.count or (t - state.counted_at) > window:
                 state.count = seen
@@ -334,6 +341,10 @@ class TowerLight:
         # taken (or after one fails): unknown is not the same as hit, and
         # claiming an emergency nobody observed would be its own lie.
         self._estop_ok: bool | None = None
+        # Why the latch last dropped, for the trial log. Free text, because a
+        # person working out why a station stopped reads it; nothing branches
+        # on it.
+        self.last_drop = ""
 
     # -- connection --------------------------------------------------------
     def connect(self) -> bool:
@@ -498,10 +509,16 @@ class TowerLight:
         self._buzz_until = 0.0  # a blanked board is not mid-annunciation
         self._estop_ok = None
 
+    @property
+    def grinder_on(self) -> bool:
+        """Is the motor latched on right now?"""
+        return self._grinder_latched
+
     def _drop_grinder(self, why: str) -> bool:
         """Clear the latch and drive the coil low, logging the transition."""
         if self._grinder_latched:
             log.info("belt grinder off: %s", why)
+            self.last_drop = why
         self._grinder_latched = False
         return self.write({"belt_grinder": False})
 
@@ -614,6 +631,8 @@ class NullTower:
 
     connected = False
     estop_hit = False   # no board, no e-stop to read
+    grinder_on = False  # ...and no motor to latch
+    last_drop = ""
 
     def connect(self) -> bool:  # interface parity — nothing to take low
         return False

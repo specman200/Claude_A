@@ -221,3 +221,11 @@ def test_a_config_without_a_branding_block_still_loads(tmp_path):
     path.write_text(yaml.safe_dump({"model": {"imgsz": 320}}))
     cfg = Config.load(path)
     assert cfg.branding.name == "" and cfg.branding.logo_path(tmp_path) is None
+
+
+def test_the_shipped_config_records_trial_traces():
+    """Nuisance stops are tuned from the distribution, not from the anecdote,
+    so the traces that carry it are on by default while a station is new."""
+    cfg = Config.load("config.yaml")
+    assert cfg.telemetry.trials
+    cfg.validate()

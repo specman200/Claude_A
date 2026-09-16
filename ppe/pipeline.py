@@ -16,6 +16,7 @@ from .detector import Detection, Detector
 from .latency import Cycle, Metrics, Profiler, now
 from .subject import Focus, focus
 from .tower import ClassState, ComplianceMonitor, Status, make_tower
+from .trials import TrialLog
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ class Result:
     infer_fps: float = 0.0
     tower_ok: bool = False
     estop: bool = False   # the e-stop is pressed, per the last board reading
+    grinder_on: bool = False   # the motor latch, as the board last left it
+    stop_cause: str = ""       # why the latch last dropped, for the trial log
     # The decision behind the lamp, for the debug view: what this cycle
     # actually said, what is waiting to be confirmed, and for how long.
     raw: Status = Status.DEGRADED
@@ -76,6 +79,8 @@ class Pipeline(threading.Thread):
         self.on_error = on_error   # called once, instead, if loading fails
         self.profiler = profiler
         self.metrics = Metrics(cfg.telemetry.window, cfg.telemetry.csv or None)
+        self.trials = (TrialLog(cfg.telemetry.trials, cfg.ppe.subject)
+                       if cfg.telemetry.trials else None)
 
         # The model can take seconds to load and warm up. Loading it here,
         # in the constructor, would block whoever creates the Pipeline —
@@ -285,6 +290,8 @@ class Pipeline(threading.Thread):
             infer_fps=self.infer_fps,
             tower_ok=getattr(self.tower, "connected", False),
             estop=getattr(self.tower, "estop_hit", False),
+            grinder_on=getattr(self.tower, "grinder_on", False),
+            stop_cause=getattr(self.tower, "last_drop", ""),
             raw=self.monitor.raw,
             candidate=self.monitor.candidate,
             candidate_age=self.monitor.candidate_age(),
@@ -297,6 +304,8 @@ class Pipeline(threading.Thread):
             banned=shown_banned,
         )
         self.result = result
+        if self.trials is not None:
+            self.trials.observe(result, now())
         if self.on_result is not None:
             self.on_result(result)
 
@@ -321,4 +330,6 @@ class Pipeline(threading.Thread):
             self.tower.close()
         self.metrics.flush()
         self.metrics.close()
+        if self.trials is not None:
+            self.trials.close()
         log.info("pipeline stopped after %d cycles", self.cycles)

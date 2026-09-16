@@ -194,6 +194,11 @@ class TelemetryCfg:
     csv: str = "logs/latency.csv"
     window: int = 300
     print_every: float = 0.0
+    # Directory for the commissioning trial traces (stops.csv, gaps.csv).
+    # Empty disables them. Only wanted while tuning a station: they answer
+    # which class lost sight of what, and for how long, which is the only
+    # honest basis for moving a hold window. See ppe/trials.py.
+    trials: str = ""
 
 
 @dataclass
