@@ -143,8 +143,28 @@ class ComplianceMonitor:
             # one window for both would buy the occlusion by also letting a
             # bare-handed worker coast for the same span.
             state.seen = seen
-            window = state.hold if seen == 0 else state.occluded
-            if seen >= state.count or (t - state.counted_at) > window:
+            # Each window runs from the sighting that is actually evidence
+            # for it, and they are not the same sighting.
+            #
+            # The occlusion window asks how long a credited count outlives
+            # the last time that whole count was in view, so it runs from
+            # `counted_at`. The hold window asks how long a class outlives
+            # its last sighting of ANY kind, so it runs from `last_seen`.
+            #
+            # Running both from `counted_at` — which is what this did — has
+            # the partial view quietly eat the dropout hold, because
+            # `counted_at` stops advancing the moment the full count stops
+            # being visible. A glove pair seen as one for longer than
+            # hold_ms then had no hold left at all: both gloves leaving
+            # view dropped the count on the very next cycle. That is the
+            # exact case the occlusion window exists to serve, on the exact
+            # classes it was added for, so the two windows were cancelling
+            # each other out on gloves and sleeves and nowhere else.
+            if seen == 0:
+                window, since = state.hold, state.last_seen
+            else:
+                window, since = state.occluded, state.counted_at
+            if seen >= state.count or (t - since) > window:
                 state.count = seen
                 state.counted_at = t
             if seen:

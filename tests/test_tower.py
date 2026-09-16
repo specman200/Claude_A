@@ -1228,3 +1228,68 @@ def test_the_live_lists_stay_live():
     m.update([[det("helmet"), det("vest")]], t=1.1)
     assert m.missing() == []
     assert m.shown_faults() == (["Vest"], [])
+
+
+# -- the two windows must not cancel each other out -------------------------
+
+
+def test_a_partial_view_does_not_eat_the_dropout_hold():
+    """The regression this exists for: `hold` ran from the last time the FULL
+    count was seen, so a pair seen as one for longer than hold_ms had no hold
+    left at all — both gloves leaving view dropped the count on the very next
+    cycle. That is the exact case occluded_ms was added to serve, on the exact
+    classes it was added for, so the two windows cancelled each other out."""
+    m = paired_occluded(hold_ms=1000, occluded_ms=5000)
+    assert m.update(gloves(2), t=0.0) is Status.OK
+
+    t = 0.1                      # three seconds of one glove: inside the 5s
+    while t < 3.0:               # occlusion window, three times the 1s hold
+        m.update(gloves(1), t)
+        t += 0.1
+    assert m.classes[0].count == 2, "the occlusion window should still credit the pair"
+
+    # Now the other hand goes out of view too. The hold starts here, from the
+    # last sighting — not from the full sighting three seconds ago.
+    assert m.update(gloves(0), t=3.0) is Status.OK
+    assert m.update(gloves(0), t=3.9) is Status.OK, "still inside the 1s hold"
+    assert m.update(gloves(0), t=4.2) is Status.VIOLATION, "past it"
+
+
+def test_the_occlusion_window_still_runs_from_the_last_full_sighting():
+    """The other half: a lone glove must not renew its own credit for the
+    pair, or one glove would pass for two forever."""
+    m = paired_occluded(hold_ms=1000, occluded_ms=2000)
+    m.update(gloves(2), t=0.0)
+    t = 0.1
+    while t < 1.9:
+        m.update(gloves(1), t)
+        t += 0.1
+    assert m.classes[0].count == 2, "inside the occlusion window"
+    assert m.update(gloves(1), t=2.2) is Status.VIOLATION, (
+        "a lone glove cannot keep crediting the pair"
+    )
+
+
+def test_a_blinking_glove_refreshes_the_hold_but_not_the_pair_credit():
+    """A glove that flickers in and out refreshes the dropout hold each time
+    it appears — that is what the hold is for — while the credit for the PAIR
+    still expires on the occlusion window, measured from the last full view."""
+    m = paired_occluded(hold_ms=1000, occluded_ms=3000)
+    m.update(gloves(2), t=0.0)
+    t = 0.1
+    while t < 2.9:
+        m.update(gloves(1 if int(t * 10) % 4 else 0), t)
+        t += 0.1
+    assert m.classes[0].count == 2
+    while t < 3.6:
+        m.update(gloves(1), t)
+        t += 0.1
+    assert m.classes[0].count == 1, "3s from the last full sighting, the credit is gone"
+
+
+def test_a_clean_dropout_is_unchanged():
+    """Nothing partial involved: the hold is still exactly the hold."""
+    m = paired_occluded(hold_ms=1000, occluded_ms=5000)
+    m.update(gloves(2), t=0.0)
+    assert m.update(gloves(0), t=0.5) is Status.OK
+    assert m.update(gloves(0), t=1.2) is Status.VIOLATION
