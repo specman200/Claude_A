@@ -59,21 +59,36 @@ ppe:
   #                       covers seeing NOTHING, which may mean the item is
   #                       off, so it stays short. Defaults to hold_ms.
   #   containment: F   -> per-class override of ppe.containment
+  #   grace_sec: N     -> per-class override of tower.grace_sec: how long a
+  #                       RUNNING machine survives THIS item going missing.
+  #                       0 takes the motor at once. Where several items are
+  #                       missing together the SHORTEST window wins.
   #
   # The conf and hold_ms values below come from a station running this same
   # model on real hardware. Note the shape of them: `person` has a low floor
   # (find the subject easily), worn PPE sits high (be strict about crediting
   # equipment), and `Wrong Sleeve` is highest of all — a false positive there
   # is a spurious red light, which is the thing that gets a station ignored.
+  #
+  # On grace_sec below: the station-wide tower.grace_sec is 5 s, and the three
+  # items whose absence IS the hazard a belt grinder presents override it to
+  # 0 — a bare hand, an unprotected eye and a sleeve that can be caught get no
+  # seconds at all. Head net and mask keep the 5 s: they matter, but five
+  # seconds of either is not what hurts someone at this machine. `sleeves` is
+  # the judgement call — bare forearms are abrasion and burns rather than
+  # entanglement, so it keeps the default; set it to 0 if your risk
+  # assessment disagrees.
   classes:
     - {name: headnet,       label: Head Net,       required: true, conf: 0.50, hold_ms: 800}
-    - {name: Safetyglasses, label: Safety Glasses, required: true, conf: 0.60, hold_ms: 1100}
+    - {name: Safetyglasses, label: Safety Glasses, required: true, conf: 0.60, hold_ms: 1100,
+       grace_sec: 0}
     - {name: Mask,          label: Face Mask,      required: true, conf: 0.60, hold_ms: 700}
     - {name: Gloves,        label: Gloves,         required: true, conf: 0.60, hold_ms: 1000, count: 2,
-       occluded_ms: 5000, containment: 0.1}
+       occluded_ms: 5000, containment: 0.1, grace_sec: 0}
     - {name: sleeves,       label: Sleeves,        required: true, conf: 0.75, hold_ms: 1200, count: 2,
        occluded_ms: 5000, containment: 0.3}
-    - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, conf: 0.90, hold_ms: 400, expect: absent}
+    - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, conf: 0.90, hold_ms: 400, expect: absent,
+       grace_sec: 0}
     - {name: person,        label: Person in Cell, required: false, conf: 0.25, hold_ms: 1000}
 
   # PPE only means anything relative to a person. With `subject` set, the

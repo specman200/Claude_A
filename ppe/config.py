@@ -78,6 +78,14 @@ class ClassCfg:
     # arms and routinely fall outside the person box, so they often want a
     # looser threshold than a mask or a headnet does.
     containment: float | None = None
+    # Per-class override of tower.grace_sec: how long a running machine is
+    # left running after THIS item goes missing. 0 takes the motor at once.
+    # Set it where a few seconds of exposure is the exposure the item exists
+    # to prevent — gloves and eye protection at a grinder — and leave it unset
+    # where the item is about hygiene or containment and the seconds cost
+    # little. Where several items are missing together the SHORTEST window
+    # wins; see ComplianceMonitor.grace_window().
+    grace_sec: float | None = None
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -313,6 +321,10 @@ class Config:
             if klass.hold_ms is not None and klass.hold_ms < 0:
                 raise ValueError(
                     f"config: {klass.name}.hold_ms must be >= 0, got {klass.hold_ms}"
+                )
+            if klass.grace_sec is not None and klass.grace_sec < 0:
+                raise ValueError(
+                    f"config: {klass.name}.grace_sec must be >= 0, got {klass.grace_sec}"
                 )
             if klass.occluded_ms is not None and klass.occluded_ms < 0:
                 raise ValueError(

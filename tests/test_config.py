@@ -253,3 +253,26 @@ def test_validate_rejects_a_broken_countdown(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+def test_the_items_whose_absence_is_the_hazard_get_no_correction_window():
+    """A belt grinder takes hands and eyes. Five seconds of a missing head net
+    is a different proposition to five seconds of a bare hand at the belt, and
+    the config has to say so."""
+    cfg = Config.load("config.yaml")
+    by_name = {c.name: c for c in cfg.ppe.classes}
+    for name in ("Gloves", "Safetyglasses", "Wrong Sleeve"):
+        assert by_name[name].grace_sec == 0, f"{name} must stop the motor at once"
+    for name in ("headnet", "Mask"):
+        assert by_name[name].grace_sec is None, f"{name} takes the station default"
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [(lambda c: setattr(c.ppe.classes[0], "grace_sec", -1), "grace_sec must be >= 0")],
+)
+def test_validate_rejects_a_negative_class_window(mutate, message):
+    cfg = Config.load("config.yaml")
+    mutate(cfg)
+    with pytest.raises(ValueError, match=message):
+        cfg.validate()

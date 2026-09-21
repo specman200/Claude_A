@@ -436,6 +436,7 @@ class RecordingTower:
 
     def __init__(self):
         self.events = []
+        self.grace = []          # the window the pipeline offered each cycle
         self.connected = False
 
     def connect(self):
@@ -447,8 +448,9 @@ class RecordingTower:
         self.events.append(f"apply:{status.value}")
         return True
 
-    def update_belt_grinder(self, status):
+    def update_belt_grinder(self, status, grace=None):
         self.events.append(f"grinder:{status.value}")
+        self.grace.append(grace)
         return True
 
     def close(self):
@@ -509,3 +511,20 @@ def test_no_estop_reads_false_rather_than_missing(clip, tmp_path, monkeypatch):
     cfg = make_config(clip, tmp_path)          # tower disabled -> NullTower
     _pipe, seen = run(cfg, monkeypatch, cycles=2)
     assert seen[-1].estop is False
+
+
+def test_the_pipeline_offers_the_window_the_faulting_class_allows(clip, tmp_path, monkeypatch):
+    """Per-class grace only works if the pipeline resolves it from the classes
+    actually in violation — the tower has no class list to consult."""
+    cfg = make_config(clip, tmp_path)
+    cfg.tower.grace_sec = 5.0
+    # The stub never reports a vest, so the vest is what is in violation.
+    by_name = {c.name: c for c in cfg.ppe.classes}
+    by_name["vest"].grace_sec = 0.0
+
+    tower = RecordingTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+    _pipe, seen = run(cfg, monkeypatch, cycles=4)
+
+    assert seen[-1].status is Status.VIOLATION
+    assert tower.grace[-1] == 0.0, "the vest's own window, not the station default"

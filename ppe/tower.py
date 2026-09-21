@@ -34,6 +34,8 @@ class ClassState:
     need: int = 1            # how many the subject must be wearing
     hold: float = 1.5        # seconds this class stays "seen" after its last sighting
     occluded: float = 1.5    # ...and how long a PARTLY visible set keeps full credit
+    grace: float | None = None  # seconds a running machine survives THIS item
+                                # going missing; None defers to tower.grace_sec
     count: int = 0           # how many are on them right now
     # What this cycle actually saw, before the hold and occlusion windows had
     # their say. `count` is the credited figure and is what the verdict uses;
@@ -89,6 +91,7 @@ class ComplianceMonitor:
                     if c.occluded_ms is not None
                     else (c.hold_ms if c.hold_ms is not None else cfg.hold_ms)
                 ) / 1000.0,
+                grace=c.grace_sec,
                 available=c.name not in missing,
             )
             for c in cfg.classes
@@ -244,6 +247,26 @@ class ComplianceMonitor:
         if not self.watching:
             return []
         return [c.label for c in self.classes if c.required and c.forbidden and c.present]
+
+    def grace_window(self, default: float) -> float:
+        """How long the machine may keep running on the current fault.
+
+        The SHORTEST window any current fault allows, because the alternative
+        composes the wrong way round: with gloves off (no grace) and a head
+        net off (five seconds) at the same moment, taking the longer of the
+        two would let the harmless violation shelter the dangerous one for
+        five seconds. Taking the shorter never does.
+
+        Classes that set no window of their own use `default`, which is the
+        station-wide tower.grace_sec. With no fault standing this returns the
+        default unused — the tower only reads it on a violation.
+        """
+        return min(
+            (default if c.grace is None else c.grace
+             for c in self.classes
+             if c.required and c.available and not c.compliant),
+            default=default,
+        )
 
     def faults(self) -> list[str]:
         """Everything currently keeping the station out of compliance."""
@@ -574,7 +597,7 @@ class TowerLight:
         self._grace_until = 0.0
         return self.write({"belt_grinder": False})
 
-    def update_belt_grinder(self, status: Status) -> bool:
+    def update_belt_grinder(self, status: Status, grace: float | None = None) -> bool:
         """Drive the belt grinder relay from the e-stop and push-button
         inputs plus this cycle's compliance status.
 
@@ -600,6 +623,12 @@ class TowerLight:
         opens a countdown instead of dropping the latch, so the operator
         can put the item back on. Everything else on that list still stops
         the motor on the cycle it is seen.
+
+        ``grace`` overrides ``cfg.grace_sec`` for this cycle, and is how a
+        per-class window reaches here: the caller passes what the classes
+        actually in violation allow (ComplianceMonitor.grace_window). Zero
+        means no reprieve, which is the point of having it per class — the
+        items whose absence IS the hazard get none.
 
         Dropping the latch is the point of it. Nothing here restarts on
         its own: when the e-stop is released, or PPE compliance comes
@@ -654,11 +683,8 @@ class TowerLight:
         # operator can correct by putting something back on. They stop the
         # motor on this cycle, as does the e-stop above and an unreadable
         # input further up.
-        if (
-            status is Status.VIOLATION
-            and self._grinder_latched
-            and self.cfg.grace_sec > 0
-        ):
+        window = self.cfg.grace_sec if grace is None else grace
+        if status is Status.VIOLATION and self._grinder_latched and window > 0:
             # The lamp is already red (lamps_for puts VIOLATION there
             # whatever the motor is doing) and the buzzer warns now. What
             # this buys is the seconds in which pulling a glove back on
@@ -670,9 +696,8 @@ class TowerLight:
             # which is the one way a grace period becomes a defeat.
             t = now()
             if not self._grace_until:
-                self._grace_until = t + self.cfg.grace_sec
-                log.info("belt grinder: %.1fs to correct a violation",
-                         self.cfg.grace_sec)
+                self._grace_until = t + window
+                log.info("belt grinder: %.1fs to correct a violation", window)
                 self._buzz(self.cfg.buzzer_warn_sec, "a violation opened the countdown")
             if t < self._grace_until:
                 return self.write({"belt_grinder": True})
@@ -730,7 +755,11 @@ class NullTower:
     def apply(self, status: Status) -> bool:  # noqa: ARG002 — interface parity
         return False
 
-    def update_belt_grinder(self, status: Status) -> bool:  # noqa: ARG002
+    def update_belt_grinder(
+        self,
+        status: Status,  # noqa: ARG002 — interface parity
+        grace: float | None = None,  # noqa: ARG002
+    ) -> bool:
         return False
 
     def close(self) -> None:

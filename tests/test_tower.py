@@ -1462,3 +1462,106 @@ def test_grace_zero_is_the_original_behaviour(monkeypatch):
     tower.apply(Status.VIOLATION)
     assert not tower.grinder_on, "no window configured, no reprieve"
     assert coils(fake)[3] is True, "and the stop buzz is the one that sounds"
+
+
+# -- per-class correction windows -------------------------------------------
+# Five seconds without a head net is a different proposition to five seconds
+# with a bare hand at a running belt. The window is per class, and where
+# several items are missing at once the shortest of them wins.
+
+
+def windows(default=5.0, **per_class):
+    """A monitor whose classes carry their own correction windows."""
+    cfg = PPECfg(
+        classes=[ClassCfg(n, grace_sec=g) for n, g in per_class.items()],
+        confirm_sec=confirm_all(0.0),
+    )
+    return ComplianceMonitor(cfg), default
+
+
+def test_a_class_with_no_window_of_its_own_uses_the_station_default():
+    m, default = windows(gloves=None)
+    m.update([[]], t=0.0)
+    assert m.grace_window(default) == 5.0
+
+
+def test_a_class_can_refuse_the_reprieve_entirely():
+    m, default = windows(gloves=0.0)
+    m.update([[]], t=0.0)
+    assert m.grace_window(default) == 0.0, "a bare hand gets no seconds"
+
+
+def test_the_shortest_window_wins_when_several_items_are_missing():
+    """The composition that matters. Taking the LONGEST would let a harmless
+    violation shelter a dangerous one for as long as it lasted."""
+    m, default = windows(gloves=0.0, headnet=None, mask=8.0)
+    m.update([[]], t=0.0)                       # everything missing at once
+    assert m.grace_window(default) == 0.0
+
+    # Gloves back on; the remaining faults are the head net (default 5) and
+    # the mask (its own 8). The shorter of those is what is left.
+    m.update([[det("gloves")]], t=0.1)
+    assert m.grace_window(default) == 5.0
+
+    m.update([[det("gloves"), det("headnet")]], t=0.2)
+    assert m.grace_window(default) == 8.0
+
+
+def test_a_compliant_class_does_not_shorten_the_window():
+    """Only what is actually in violation gets a say."""
+    m, default = windows(gloves=0.0, mask=None)
+    m.update([[det("gloves")]], t=0.0)          # gloves on, mask missing
+    assert m.grace_window(default) == 5.0
+
+
+def test_no_fault_at_all_leaves_the_default_untouched():
+    m, default = windows(gloves=0.0)
+    m.update([[det("gloves")]], t=0.0)
+    assert m.grace_window(default) == 5.0, "nothing faulting, nothing to shorten"
+
+
+def test_a_class_the_model_cannot_see_does_not_shorten_the_window():
+    """An unavailable class puts the station in DEGRADED, which gets no
+    reprieve anyway — it must not silently zero the window for everything
+    else as well."""
+    cfg = PPECfg(
+        classes=[ClassCfg("gloves", grace_sec=0.0), ClassCfg("mask")],
+        confirm_sec=confirm_all(0.0),
+    )
+    m = ComplianceMonitor(cfg, ["gloves"])
+    m.update([[]], t=0.0)
+    assert m.grace_window(5.0) == 5.0
+
+
+def test_a_forbidden_class_can_carry_its_own_window():
+    """A wrong sleeve near a running belt is an entanglement hazard, so it is
+    exactly the kind of fault that should get no seconds."""
+    cfg = PPECfg(
+        classes=[ClassCfg("wrong_sleeve", expect="absent", grace_sec=0.0)],
+        confirm_sec=confirm_all(0.0),
+    )
+    m = ComplianceMonitor(cfg)
+    assert m.update([[]], t=0.0) is Status.OK
+    assert m.grace_window(5.0) == 5.0, "absent is compliant; nothing is faulting"
+    assert m.update([[det("wrong_sleeve")]], t=0.1) is Status.VIOLATION
+    assert m.grace_window(5.0) == 0.0
+
+
+def test_the_tower_takes_the_window_it_is_given_over_its_own(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(Status.VIOLATION, grace=0.0)
+    assert not tower.grinder_on, "a zero window is no window"
+    assert tower.stopping_in is None
+
+
+def test_the_tower_falls_back_to_its_own_window_when_given_none(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(Status.VIOLATION)      # no window passed
+    assert tower.grinder_on
+    assert tower.stopping_in == pytest.approx(5.0)

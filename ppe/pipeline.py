@@ -268,7 +268,11 @@ class Pipeline(threading.Thread):
         # Grinder first, then the lamps: green now means "the machine is
         # actually running", so apply() reads the latch update_belt_grinder()
         # just settled. The other order shows last cycle's machine state.
-        self.tower.update_belt_grinder(status)
+        # The window is the shortest the classes actually in violation allow,
+        # so a missing glove is not given the head net's five seconds.
+        self.tower.update_belt_grinder(
+            status, self.monitor.grace_window(self.cfg.tower.grace_sec)
+        )
         self.tower.apply(status)
         self.annunciator.update(status)
         for cyc in cycles.values():
