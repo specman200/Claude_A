@@ -147,6 +147,24 @@ class TowerCfg:
     # surely as buzzer_on_violation: false does.
     buzzer_on_violation: bool = False
     buzzer_sec: float = 3.0
+    # How long a RUNNING machine keeps running after a PPE violation, so the
+    # operator can put the item back on rather than lose the cut and have to
+    # restart. The lamp goes red and the buzzer warns immediately; the motor
+    # stops only when this expires, and the buzzer sounds again as it goes.
+    # Compliance restored inside the window cancels the countdown and the
+    # machine never stops — there is nothing to restart.
+    #
+    # 0 is the original behaviour: a violation takes the motor on the cycle
+    # it is seen. This is the one setting in this file that trades safety for
+    # usability, so set it deliberately — for grace_sec seconds the machine
+    # runs with a worker who is not correctly protected. It applies to PPE
+    # violations only. The e-stop, a camera or model failure, an unreadable
+    # input and nobody being in the cell all still stop the motor at once.
+    grace_sec: float = 0.0
+    # The pulse that opens the countdown, as against buzzer_sec which marks
+    # the motor actually being taken away. Set it equal to grace_sec for a
+    # warning that sounds continuously until the machine stops.
+    buzzer_warn_sec: float = 1.0
 
 
 @dataclass
@@ -332,6 +350,14 @@ class Config:
         if self.tower.buzzer_sec < 0:
             raise ValueError(
                 f"config: tower.buzzer_sec must be >= 0, got {self.tower.buzzer_sec}"
+            )
+        if self.tower.buzzer_warn_sec < 0:
+            raise ValueError(
+                f"config: tower.buzzer_warn_sec must be >= 0, got {self.tower.buzzer_warn_sec}"
+            )
+        if self.tower.grace_sec < 0:
+            raise ValueError(
+                f"config: tower.grace_sec must be >= 0, got {self.tower.grace_sec}"
             )
         unknown_inputs = set(self.tower.inputs) - {"estop", "push_button"}
         if unknown_inputs:

@@ -997,3 +997,19 @@ def test_the_window_carries_the_intermittent_flag_to_the_banner(app, station):
     # ...and the checklist keeps showing what is true right now, which is the
     # whole point: live rows beside a headline that explains itself.
     assert all(PRESENT in dot_color(row) for row in window.panel.rows.values())
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_the_countdown_to_a_stop_is_shown_to_the_operator(app, widget):
+    """Giving someone time is pointless if they cannot see they have it."""
+    w = widget()
+    w.apply(Status.VIOLATION, ["Gloves"], tower_ok=True, stopping_in=3.2)
+    assert "MISSING: Gloves" in w.text()
+    assert "STOPPING IN 3.2 s" in w.text()
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_no_countdown_means_no_countdown_on_screen(app, widget):
+    w = widget()
+    w.apply(Status.VIOLATION, ["Gloves"], tower_ok=True)
+    assert "STOPPING IN" not in w.text()

@@ -229,3 +229,27 @@ def test_the_shipped_config_records_trial_traces():
     cfg = Config.load("config.yaml")
     assert cfg.telemetry.trials
     cfg.validate()
+
+
+def test_the_shipped_config_gives_the_operator_time_to_correct_a_violation():
+    """A violation on a running machine opens a countdown rather than cutting
+    the motor. The warning has to come first and be shorter than the window
+    it opens, or it is not a warning."""
+    cfg = Config.load("config.yaml")
+    assert cfg.tower.grace_sec > 0
+    assert 0 < cfg.tower.buzzer_warn_sec <= cfg.tower.grace_sec
+    assert cfg.tower.buzzer_on_violation, "the countdown is announced or it is a trap"
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda c: setattr(c.tower, "grace_sec", -1), "grace_sec must be >= 0"),
+        (lambda c: setattr(c.tower, "buzzer_warn_sec", -0.5), "buzzer_warn_sec must be >= 0"),
+    ],
+)
+def test_validate_rejects_a_broken_countdown(mutate, message):
+    cfg = Config.load("config.yaml")
+    mutate(cfg)
+    with pytest.raises(ValueError, match=message):
+        cfg.validate()

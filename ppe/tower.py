@@ -361,6 +361,9 @@ class TowerLight:
         # taken (or after one fails): unknown is not the same as hit, and
         # claiming an emergency nobody observed would be its own lie.
         self._estop_ok: bool | None = None
+        # When the corrective-action countdown expires and takes the motor.
+        # 0.0 means no countdown is running. See update_belt_grinder().
+        self._grace_until = 0.0
         # Why the latch last dropped, for the trial log. Free text, because a
         # person working out why a station stopped reads it; nothing branches
         # on it.
@@ -527,6 +530,7 @@ class TowerLight:
         self._grinder_latched = False
         self._button_was_pressed = True
         self._buzz_until = 0.0  # a blanked board is not mid-annunciation
+        self._grace_until = 0.0  # ...nor mid-countdown
         self._estop_ok = None
 
     @property
@@ -534,12 +538,40 @@ class TowerLight:
         """Is the motor latched on right now?"""
         return self._grinder_latched
 
+    @property
+    def stopping_in(self) -> float | None:
+        """Seconds until the countdown takes the motor; None if none runs."""
+        if not self._grace_until:
+            return None
+        return max(0.0, self._grace_until - now())
+
+    def _buzz(self, seconds: float, why: str) -> None:
+        """Sound the buzzer as a fixed pulse, if it is wired and wanted."""
+        if not self.cfg.buzzer_on_violation or seconds <= 0:
+            return
+        self._buzz_until = now() + seconds
+        log.info("buzzer on for %.1fs: %s", seconds, why)
+
+    def _cancel_grace(self) -> None:
+        """The operator fixed it in time: forget the countdown, stop warning.
+
+        Silencing the buzzer matters as much as forgetting the deadline. A
+        warning that outlives the thing it was warning about teaches people
+        to ignore it, and this one is the only cue that the machine was
+        about to be taken away.
+        """
+        if self._grace_until:
+            log.info("belt grinder: countdown cancelled, PPE compliant again")
+            self._grace_until = 0.0
+            self._buzz_until = 0.0
+
     def _drop_grinder(self, why: str) -> bool:
         """Clear the latch and drive the coil low, logging the transition."""
         if self._grinder_latched:
             log.info("belt grinder off: %s", why)
             self.last_drop = why
         self._grinder_latched = False
+        self._grace_until = 0.0
         return self.write({"belt_grinder": False})
 
     def update_belt_grinder(self, status: Status) -> bool:
@@ -562,6 +594,12 @@ class TowerLight:
           drop   the e-stop going False, status leaving Status.OK, either
                  input failing to read, or the board being taken low by a
                  connect or a close
+
+        With ``grace_sec`` set, one of those is deferred rather than
+        immediate: a PPE violation on a machine that is already running
+        opens a countdown instead of dropping the latch, so the operator
+        can put the item back on. Everything else on that list still stops
+        the motor on the cycle it is seen.
 
         Dropping the latch is the point of it. Nothing here restarts on
         its own: when the e-stop is released, or PPE compliance comes
@@ -601,26 +639,57 @@ class TowerLight:
 
         if not estop:
             return self._drop_grinder("e-stop hit")
-        if status is not Status.OK:
-            # Only a violation sounds the buzzer, and only if it actually
-            # took a running machine away: STANDBY (the operator stepped
-            # out) and DEGRADED (the station cannot judge) stop the
-            # grinder just as hard, but neither is the worker doing
-            # something the buzzer is there to call out.
-            if (
-                self._grinder_latched
-                and status is Status.VIOLATION
-                and self.cfg.buzzer_on_violation
-            ):
-                self._buzz_until = now() + self.cfg.buzzer_sec
-                log.info("buzzer on for %.1fs: a violation stopped the grinder",
-                         self.cfg.buzzer_sec)
-            return self._drop_grinder(f"status is {status.value}")
 
-        if pressed and not was_pressed:
-            log.info("belt grinder on: button pressed")
-            self._grinder_latched = True
-        return self.write({"belt_grinder": self._grinder_latched})
+        if status is Status.OK:
+            self._cancel_grace()
+            if pressed and not was_pressed:
+                log.info("belt grinder on: button pressed")
+                self._grinder_latched = True
+            return self.write({"belt_grinder": self._grinder_latched})
+
+        # Not compliant. A PPE violation on a RUNNING machine may get a
+        # countdown first — see the grace_sec block below. Nothing else does:
+        # DEGRADED means the station cannot see well enough to judge, STANDBY
+        # means there is nobody to protect, and neither is a fault an
+        # operator can correct by putting something back on. They stop the
+        # motor on this cycle, as does the e-stop above and an unreadable
+        # input further up.
+        if (
+            status is Status.VIOLATION
+            and self._grinder_latched
+            and self.cfg.grace_sec > 0
+        ):
+            # The lamp is already red (lamps_for puts VIOLATION there
+            # whatever the motor is doing) and the buzzer warns now. What
+            # this buys is the seconds in which pulling a glove back on
+            # keeps the cut, instead of costing a stop and a restart.
+            #
+            # The deadline is set once and not renewed while the violation
+            # stands: re-arming it on every violating cycle would let PPE
+            # that flickers in and out hold the machine open indefinitely,
+            # which is the one way a grace period becomes a defeat.
+            t = now()
+            if not self._grace_until:
+                self._grace_until = t + self.cfg.grace_sec
+                log.info("belt grinder: %.1fs to correct a violation",
+                         self.cfg.grace_sec)
+                self._buzz(self.cfg.buzzer_warn_sec, "a violation opened the countdown")
+            if t < self._grace_until:
+                return self.write({"belt_grinder": True})
+            self._buzz(self.cfg.buzzer_sec, "the countdown expired and took the motor")
+            return self._drop_grinder("ppe violation, countdown expired")
+
+        # Only a violation sounds the buzzer, and only if it actually took a
+        # running machine away: STANDBY and DEGRADED stop the grinder just as
+        # hard, but neither is the worker doing something the buzzer is there
+        # to call out.
+        if (
+            self._grinder_latched
+            and status is Status.VIOLATION
+            and self.cfg.buzzer_on_violation
+        ):
+            self._buzz(self.cfg.buzzer_sec, "a violation stopped the grinder")
+        return self._drop_grinder(f"status is {status.value}")
 
     def close(self) -> None:
         """Leave the board dark, then drop the connection.
@@ -652,6 +721,7 @@ class NullTower:
     connected = False
     estop_hit = False   # no board, no e-stop to read
     grinder_on = False  # ...and no motor to latch
+    stopping_in = None  # ...and no countdown to run
     last_drop = ""
 
     def connect(self) -> bool:  # interface parity — nothing to take low

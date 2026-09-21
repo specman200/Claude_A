@@ -40,6 +40,10 @@ class Result:
     estop: bool = False   # the e-stop is pressed, per the last board reading
     grinder_on: bool = False   # the motor latch, as the board last left it
     stop_cause: str = ""       # why the latch last dropped, for the trial log
+    # Seconds left to correct a violation before the motor is taken, or None
+    # when no countdown is running. The operator can only use the time if
+    # they can see it.
+    stopping_in: float | None = None
     # The decision behind the lamp, for the debug view: what this cycle
     # actually said, what is waiting to be confirmed, and for how long.
     raw: Status = Status.DEGRADED
@@ -292,6 +296,7 @@ class Pipeline(threading.Thread):
             estop=getattr(self.tower, "estop_hit", False),
             grinder_on=getattr(self.tower, "grinder_on", False),
             stop_cause=getattr(self.tower, "last_drop", ""),
+            stopping_in=getattr(self.tower, "stopping_in", None),
             raw=self.monitor.raw,
             candidate=self.monitor.candidate,
             candidate_age=self.monitor.candidate_age(),

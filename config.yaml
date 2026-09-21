@@ -119,6 +119,24 @@ tower:
   # grinder already idle is silent, as are e-stop and camera-loss stops.
   buzzer_on_violation: true
   buzzer_sec: 3.0
+  # A violation on a RUNNING machine opens a countdown rather than cutting
+  # the motor on the spot: the lamp goes red and the buzzer warns at once,
+  # the screen shows the seconds left, and the motor stops — with a second,
+  # longer buzz — only if the countdown runs out. Put the item back on
+  # inside the window and the countdown is cancelled, the buzzer stops, and
+  # the machine never stops, so there is nothing to restart.
+  #
+  # Set this deliberately. For grace_sec seconds the machine runs with a
+  # worker who is not correctly protected, which on a belt grinder is
+  # exactly the exposure the PPE is there for. 0 restores the original
+  # behaviour. The window is NOT renewed while the violation stands, so
+  # flickering PPE cannot hold the machine open.
+  #
+  # Only PPE violations get it. The e-stop, an unreadable input, a camera
+  # or model failure (DEGRADED) and nobody in the cell (STANDBY) all still
+  # stop the motor on the cycle they are seen.
+  grace_sec: 5.0
+  buzzer_warn_sec: 1.0
   inputs:               # discrete input address of each switch this reads
     # Both switches are wired ACTIVE (normally closed): an idle input reads
     # true, and pressing the switch takes it to false. Both are read every

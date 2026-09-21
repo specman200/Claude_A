@@ -494,6 +494,7 @@ class StatusCard(QFrame):
         banned: list[str] | None = None,
         estop: bool = False,
         intermittent: bool = False,
+        stopping_in: float | None = None,
     ) -> None:
         headline, color = BANNER[status]
         detail = ""
@@ -510,6 +511,11 @@ class StatusCard(QFrame):
             # settle — which "PPE MISSING" alone does not.
             if intermittent:
                 parts.append("INTERMITTENT — not steady enough to clear")
+            # Last, so it reads as the consequence of everything before it,
+            # and first in the operator's mind: it is the only part of this
+            # they can still do something about.
+            if stopping_in is not None:
+                parts.append(f"STOPPING IN {stopping_in:.1f} s")
             detail = "   ".join(parts)
         elif status is Status.DEGRADED and unavailable:
             headline = "NOT READY"
@@ -682,6 +688,7 @@ class StatusBanner(QLabel):
         banned: list[str] | None = None,
         estop: bool = False,
         intermittent: bool = False,
+        stopping_in: float | None = None,
     ) -> None:
         text, color = BANNER[status]
         if status is Status.STANDBY:
@@ -694,6 +701,8 @@ class StatusBanner(QLabel):
                 parts.append(f"NOT ALLOWED: {', '.join(banned)}")
             if intermittent:
                 parts.append("INTERMITTENT — not steady enough to clear")
+            if stopping_in is not None:
+                parts.append(f"STOPPING IN {stopping_in:.1f} s")
             text = "   ".join(parts) or text
         elif status is Status.DEGRADED:
             # Two very different faults share this lamp — name the right one.
@@ -1126,7 +1135,7 @@ class MainWindow(QMainWindow):
             self.decisions.apply(result)
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable,
-            result.banned, result.estop, result.intermittent,
+            result.banned, result.estop, result.intermittent, result.stopping_in,
         )
 
     def _draw_stats(self) -> None:

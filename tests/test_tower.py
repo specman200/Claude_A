@@ -1293,3 +1293,172 @@ def test_a_clean_dropout_is_unchanged():
     m.update(gloves(2), t=0.0)
     assert m.update(gloves(0), t=0.5) is Status.OK
     assert m.update(gloves(0), t=1.2) is Status.VIOLATION
+
+
+# -- a countdown to correct a violation, rather than an instant stop --------
+# A PPE violation on a machine that is ALREADY RUNNING opens a countdown
+# instead of cutting the motor: red and a warning buzz at once, the seconds
+# left on the screen, and the motor taken — with a second buzz — only if the
+# window runs out. Put the item back on in time and nothing stops, so there
+# is nothing to restart.
+
+
+def grace_grinder(grace_sec=5.0, warn_sec=1.0, buzzer_sec=3.0):
+    """A wired tower whose violations get `grace_sec` to be corrected."""
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0, "push_button": 1},
+        buzzer_on_violation=True, buzzer_sec=buzzer_sec,
+        grace_sec=grace_sec, buzzer_warn_sec=warn_sec,
+    ))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    tower.connect()
+    return tower, fake
+
+
+def coils(fake):
+    """The coil states as the last pass left them."""
+    return dict(fake.writes)
+
+
+def test_a_violation_warns_and_counts_down_before_it_takes_the_motor(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=5.0, warn_sec=1.0)
+    t = clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    # The violating cycle: red, a warning buzz, and the motor still turning.
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert tower.grinder_on, "the motor must not stop on the violating cycle"
+    # coil 4 is absent from the writes because write() skips a coil already
+    # at the value it wants — the motor simply keeps turning.
+    assert 4 not in coils(fake)
+    assert coils(fake)[2] is True and coils(fake)[0] is False   # red, not green
+    assert coils(fake)[3] is True, "the warning has to sound at the start"
+    assert tower.stopping_in == pytest.approx(5.0)
+
+    t["now"] += 2.0                                  # 3 s left
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert tower.grinder_on
+    assert coils(fake)[3] is False, "the 1s warning pulse is over"
+    assert tower.stopping_in == pytest.approx(3.0)
+
+    t["now"] += 3.1                                  # expired
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert not tower.grinder_on, "the countdown ran out"
+    assert coils(fake)[4] is False
+    assert coils(fake)[3] is True, "and the buzzer sounds again as it goes"
+    assert tower.stopping_in is None
+
+
+def test_correcting_in_time_keeps_the_machine_running(monkeypatch):
+    """The point of the feature: no stop, so nothing to restart."""
+    tower, fake = grace_grinder(grace_sec=5.0, warn_sec=4.0)
+    t = clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert tower.stopping_in is not None
+
+    t["now"] += 2.0                                  # glove back on
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.OK)
+    tower.apply(Status.OK)
+    assert tower.grinder_on, "it never stopped"
+    assert tower.stopping_in is None, "the countdown is forgotten"
+    assert coils(fake)[3] is False, "a warning must not outlive its warning"
+    assert coils(fake)[0] is True, "running and compliant is green"
+
+    t["now"] += 10.0                                 # past the old deadline
+    tower.update_belt_grinder(Status.OK)
+    assert tower.grinder_on
+
+
+def test_a_flickering_violation_cannot_renew_its_own_countdown(monkeypatch):
+    """The one way a grace period turns into a defeat: re-arming the deadline
+    on every violating cycle would let PPE that blinks hold the machine open
+    for as long as it kept blinking."""
+    tower, fake = grace_grinder(grace_sec=3.0)
+    t = clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    for _ in range(30):                              # 3 s of violating cycles
+        tower.update_belt_grinder(Status.VIOLATION)
+        t["now"] += 0.1
+    assert tower.grinder_on
+
+    t["now"] += 0.2
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert not tower.grinder_on, "3s from the FIRST violation, not the latest"
+
+
+@pytest.mark.parametrize("status", [Status.DEGRADED, Status.STANDBY])
+def test_only_a_ppe_violation_gets_a_countdown(monkeypatch, status):
+    """A fault the operator cannot correct by putting something back on does
+    not get time to correct it. DEGRADED is the station unable to see;
+    STANDBY is nobody there to protect."""
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(status)
+    assert not tower.grinder_on, f"{status.value} stops the motor at once"
+    assert tower.stopping_in is None
+
+
+def test_the_estop_is_never_given_time(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(Status.VIOLATION)      # countdown open
+    assert tower.stopping_in is not None
+    fake.inputs[0] = False                           # ...and the e-stop is hit
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert not tower.grinder_on
+    assert tower.stopping_in is None, "a pending countdown dies with the latch"
+
+
+def test_a_violation_on_an_idle_machine_still_simply_refuses_to_start(monkeypatch):
+    """Nothing to give time to — the motor is already off."""
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    fake.inputs = {0: True, 1: False}                # e-stop clear, button held
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert not tower.grinder_on
+    assert tower.stopping_in is None
+
+
+def test_the_countdown_does_not_survive_a_stop_and_restart(monkeypatch):
+    """After the motor goes, a fresh press earns a fresh window — it does not
+    inherit the seconds the last violation had already spent."""
+    tower, fake = grace_grinder(grace_sec=3.0)
+    t = clock(monkeypatch)
+    running_grinder(fake, tower)
+    tower.update_belt_grinder(Status.VIOLATION)
+    t["now"] += 3.1
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert not tower.grinder_on
+
+    tower.update_belt_grinder(Status.OK)             # compliant again
+    running_grinder(fake, tower)
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert tower.stopping_in == pytest.approx(3.0), "a whole window, not a remnant"
+
+
+def test_grace_zero_is_the_original_behaviour(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.VIOLATION)
+    tower.apply(Status.VIOLATION)
+    assert not tower.grinder_on, "no window configured, no reprieve"
+    assert coils(fake)[3] is True, "and the stop buzz is the one that sounds"
