@@ -1013,3 +1013,20 @@ def test_no_countdown_means_no_countdown_on_screen(app, widget):
     w = widget()
     w.apply(Status.VIOLATION, ["Gloves"], tower_ok=True)
     assert "STOPPING IN" not in w.text()
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+@pytest.mark.parametrize("status", list(Status))
+def test_recording_is_announced_in_every_status(app, widget, status):
+    """A station quietly photographing the people at it is not a state anyone
+    should have to remember they left it in."""
+    w = widget()
+    w.apply(status, [], tower_ok=True, recording=42)
+    assert "(recording 42)" in w.text()
+
+
+@pytest.mark.parametrize("widget", [StatusCard, StatusBanner])
+def test_nothing_is_said_when_nothing_is_being_recorded(app, widget):
+    w = widget()
+    w.apply(Status.OK, [], tower_ok=True)
+    assert "recording" not in w.text()

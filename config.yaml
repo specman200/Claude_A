@@ -189,6 +189,34 @@ branding:
   tagline: Computer Vision & Industrial Automation
   logo: assets/logo.svg
 
+dataset:
+  # Capture mode: keeps raw frames for training, with the model's own
+  # detections written beside them as YOLO pre-labels — so an annotator
+  # corrects boxes instead of drawing them. Output drops straight into any
+  # annotation tool (images/, labels/, data.yaml). `python main.py --capture`
+  # turns it on for one run without editing this file.
+  #
+  # It writes photographs of identifiable people to local disk. Switch it on
+  # for as long as you need it, and handle what comes out the way the site
+  # handles the rest of its personal data. The station says "(recording N)"
+  # on screen the whole time it is on.
+  enabled: false
+  dir: datasets/capture
+  # interval     every interval_sec, for the ordinary frames that make a
+  #              dataset general rather than a collection of exceptions
+  # violation    the station called a violation — right or wrong, worth seeing
+  # motor_start  a worker judged compliant enough to cut: clean positives
+  # motor_stop   the moment the machine was taken away
+  # miss         a required item just went out of sight. These are the frames
+  #              the model actually failed on, and the ones most worth having
+  #              if you are chasing nuisance stops.
+  triggers: [interval, violation, motor_start, miss]
+  interval_sec: 30.0
+  min_gap_sec: 2.0      # never two captures closer together than this
+  max_images: 5000      # a hard stop, so a session left on cannot fill the disk
+  jpeg_quality: 92
+  labels: true
+
 telemetry:
   csv: logs/latency.csv # per-cycle end-to-end log; empty string disables
   window: 300           # samples kept for the rolling p50/p95 readout

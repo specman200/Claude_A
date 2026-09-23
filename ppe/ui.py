@@ -495,6 +495,7 @@ class StatusCard(QFrame):
         estop: bool = False,
         intermittent: bool = False,
         stopping_in: float | None = None,
+        recording: int | None = None,
     ) -> None:
         headline, color = BANNER[status]
         detail = ""
@@ -531,7 +532,12 @@ class StatusCard(QFrame):
             # generic headline to a specific detail only says it twice.
             detail = detail or headline
             headline, color = ESTOP_TEXT, ESTOP_COLOR
-        # After the e-stop swap, so it stays pinned to the end of the line.
+        # After the e-stop swap, so these stay pinned to the end of the line.
+        if recording is not None:
+            # On screen at all times while it is on, in every status. A
+            # station quietly photographing the people at it is not a state
+            # anyone should have to remember they left it in.
+            detail = (detail + "   " if detail else "") + f"(recording {recording})"
         if not tower_ok:
             detail = (detail + "   " if detail else "") + "(tower offline)"
         # VIOLATION drives the glyph so an e-stop cannot be painted under a
@@ -689,6 +695,7 @@ class StatusBanner(QLabel):
         estop: bool = False,
         intermittent: bool = False,
         stopping_in: float | None = None,
+        recording: int | None = None,
     ) -> None:
         text, color = BANNER[status]
         if status is Status.STANDBY:
@@ -711,6 +718,8 @@ class StatusBanner(QLabel):
                 if unavailable
                 else "NO VIDEO SIGNAL"
             )
+        if recording is not None:
+            text += f"   (recording {recording})"
         if not tower_ok:
             text += "   (tower offline)"
         if estop:
@@ -1136,6 +1145,7 @@ class MainWindow(QMainWindow):
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable,
             result.banned, result.estop, result.intermittent, result.stopping_in,
+            result.recording,
         )
 
     def _draw_stats(self) -> None:

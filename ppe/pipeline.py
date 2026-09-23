@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from .annunciator import Annunciator
 from .capture import CameraSet, Frame
 from .config import Config
+from .dataset import DatasetRecorder
 from .detector import Detection, Detector
 from .latency import Cycle, Metrics, Profiler, now
 from .subject import Focus, focus
@@ -44,6 +45,10 @@ class Result:
     # when no countdown is running. The operator can only use the time if
     # they can see it.
     stopping_in: float | None = None
+    # Images written so far by capture mode, or None when it is off. Shown on
+    # screen because a station quietly photographing people is not a state
+    # anyone should have to remember they left it in.
+    recording: int | None = None
     # The decision behind the lamp, for the debug view: what this cycle
     # actually said, what is waiting to be confirmed, and for how long.
     raw: Status = Status.DEGRADED
@@ -85,6 +90,10 @@ class Pipeline(threading.Thread):
         self.metrics = Metrics(cfg.telemetry.window, cfg.telemetry.csv or None)
         self.trials = (TrialLog(cfg.telemetry.trials, cfg.ppe.subject)
                        if cfg.telemetry.trials else None)
+        self.dataset = (
+            DatasetRecorder(cfg.dataset, [c.name for c in cfg.ppe.classes])
+            if cfg.dataset.enabled else None
+        )
 
         # The model can take seconds to load and warm up. Loading it here,
         # in the constructor, would block whoever creates the Pipeline —
@@ -275,6 +284,14 @@ class Pipeline(threading.Thread):
         )
         self.tower.apply(status)
         self.annunciator.update(status)
+        if self.dataset is not None:
+            # After the tower, so a motor_start capture sees the latch this
+            # cycle just set rather than last cycle's. The recorder queues and
+            # returns; nothing here waits on a disk.
+            self.dataset.observe(
+                list(zip(fresh, dets, strict=True)), status, self.monitor.classes,
+                getattr(self.tower, "grinder_on", False), now(),
+            )
         for cyc in cycles.values():
             cyc.stamp("relay")
             cyc.finish()
@@ -301,6 +318,7 @@ class Pipeline(threading.Thread):
             grinder_on=getattr(self.tower, "grinder_on", False),
             stop_cause=getattr(self.tower, "last_drop", ""),
             stopping_in=getattr(self.tower, "stopping_in", None),
+            recording=self.dataset.saved if self.dataset is not None else None,
             raw=self.monitor.raw,
             candidate=self.monitor.candidate,
             candidate_age=self.monitor.candidate_age(),
@@ -341,4 +359,6 @@ class Pipeline(threading.Thread):
         self.metrics.close()
         if self.trials is not None:
             self.trials.close()
+        if self.dataset is not None:
+            self.dataset.close()
         log.info("pipeline stopped after %d cycles", self.cycles)

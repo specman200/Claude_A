@@ -4,6 +4,7 @@
     python main.py                     # UI on the cameras in config.yaml
     python main.py --headless          # no UI; prints the latency breakdown
     python main.py --profile           # add a cProfile hotspot report on exit
+    python main.py --capture           # also keep frames for training
 """
 
 from __future__ import annotations
@@ -37,6 +38,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--operator", action="store_true", help="force the plain operator UI",
+    )
+    p.add_argument(
+        "--capture", action="store_true",
+        help="capture mode: keep frames for training (see the dataset section of the config)",
+    )
+    p.add_argument(
+        "--no-capture", action="store_true", help="force capture mode off for this run",
     )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     return p.parse_args(argv)
@@ -84,7 +92,17 @@ def main(argv: list[str] | None = None) -> int:
         cfg.ui.mode = "debug"
     if args.operator:
         cfg.ui.mode = "operator"
+    if args.capture:
+        cfg.dataset.enabled = True
+    if args.no_capture:
+        cfg.dataset.enabled = False
     cfg.validate()
+    if cfg.dataset.enabled:
+        # Loud on purpose. This writes photographs of identifiable people to
+        # local disk, and the one failure mode that matters is nobody
+        # realising it is on.
+        log.warning("CAPTURE MODE ON — writing frames to %s (%s)",
+                    cfg.dataset.dir, ", ".join(cfg.dataset.triggers))
 
     # Before torch is imported: the maths libraries read their thread counts
     # from the environment as they initialise.

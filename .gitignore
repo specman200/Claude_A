@@ -17,3 +17,6 @@ venv/
 # Runtime output
 logs/
 *.prof
+
+# capture mode output — images of people, never committed
+datasets/

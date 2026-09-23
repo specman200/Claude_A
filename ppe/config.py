@@ -176,6 +176,28 @@ class TowerCfg:
 
 
 @dataclass
+class DatasetCfg:
+    """Capture mode — see ppe/dataset.py.
+
+    Off unless asked for. It writes photographs of identifiable people to
+    local disk, so it is a thing you switch on for as long as you need it
+    rather than a thing that is quietly always running.
+    """
+
+    enabled: bool = False
+    dir: str = "datasets/capture"
+    # Which of ppe.dataset.TRIGGERS may ask for a frame.
+    triggers: list[str] = field(
+        default_factory=lambda: ["interval", "violation", "motor_start", "miss"]
+    )
+    interval_sec: float = 30.0   # for the `interval` trigger
+    min_gap_sec: float = 2.0     # never two captures closer together than this
+    max_images: int = 5000       # a hard stop, so a forgotten session cannot fill a disk
+    jpeg_quality: int = 92
+    labels: bool = True          # write the model's detections as YOLO pre-labels
+
+
+@dataclass
 class UICfg:
     """Which face the station shows.
 
@@ -237,6 +259,7 @@ class Config:
     branding: BrandingCfg = field(default_factory=BrandingCfg)
     audio: AudioCfg = field(default_factory=AudioCfg)
     ui: UICfg = field(default_factory=UICfg)
+    dataset: DatasetCfg = field(default_factory=DatasetCfg)
     path: Path | None = None
 
     # -- io ----------------------------------------------------------------
@@ -256,6 +279,7 @@ class Config:
             branding=_build(BrandingCfg, raw.get("branding") or {}),
             audio=_build(AudioCfg, raw.get("audio") or {}),
             ui=_build(UICfg, raw.get("ui") or {}),
+            dataset=_build(DatasetCfg, raw.get("dataset") or {}),
             path=path,
         )
 
@@ -367,6 +391,33 @@ class Config:
             raise ValueError(
                 f"config: tower.buzzer_warn_sec must be >= 0, got {self.tower.buzzer_warn_sec}"
             )
+        if self.dataset.enabled:
+            from .dataset import TRIGGERS
+
+            unknown = [t for t in self.dataset.triggers if t not in TRIGGERS]
+            if unknown:
+                raise ValueError(
+                    f"config: dataset.triggers has unknown {sorted(unknown)}; "
+                    f"known triggers are {sorted(TRIGGERS)}"
+                )
+            if not self.dataset.triggers:
+                raise ValueError("config: dataset.enabled with no dataset.triggers")
+            for name in ("interval_sec", "min_gap_sec"):
+                if getattr(self.dataset, name) < 0:
+                    raise ValueError(
+                        f"config: dataset.{name} must be >= 0, "
+                        f"got {getattr(self.dataset, name)}"
+                    )
+            if self.dataset.max_images < 1:
+                raise ValueError(
+                    f"config: dataset.max_images must be at least 1, "
+                    f"got {self.dataset.max_images}"
+                )
+            if not 1 <= self.dataset.jpeg_quality <= 100:
+                raise ValueError(
+                    f"config: dataset.jpeg_quality must be 1..100, "
+                    f"got {self.dataset.jpeg_quality}"
+                )
         if self.tower.grace_sec < 0:
             raise ValueError(
                 f"config: tower.grace_sec must be >= 0, got {self.tower.grace_sec}"

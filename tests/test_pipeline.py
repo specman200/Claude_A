@@ -528,3 +528,31 @@ def test_the_pipeline_offers_the_window_the_faulting_class_allows(clip, tmp_path
 
     assert seen[-1].status is Status.VIOLATION
     assert tower.grace[-1] == 0.0, "the vest's own window, not the station default"
+
+
+def test_capture_mode_keeps_frames_from_the_real_cycle(clip, tmp_path, monkeypatch):
+    """The wiring: real capture threads, a real cycle, frames on disk."""
+    cfg = make_config(clip, tmp_path)
+    cfg.dataset.enabled = True
+    cfg.dataset.dir = str(tmp_path / "capture")
+    cfg.dataset.triggers = ["violation", "miss"]
+    cfg.dataset.min_gap_sec = 0.0
+    cfg.validate()
+
+    pipe, seen = run(cfg, monkeypatch, cycles=6)
+    pipe.dataset.close()
+
+    images = sorted((tmp_path / "capture" / "images").glob("*.jpg"))
+    assert images, "the stub never reports a vest, so both triggers had cause"
+    assert seen[-1].recording == len(images)
+
+    # The pre-labels carry what the model saw, in the dataset's index space.
+    labels = (tmp_path / "capture" / "labels" / (images[0].stem + ".txt")).read_text()
+    assert labels.startswith("0 "), "helmet is index 0 here"
+    assert "nc: 2" in (tmp_path / "capture" / "data.yaml").read_text()
+
+
+def test_capture_mode_off_leaves_no_trace_on_the_result(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)
+    _pipe, seen = run(cfg, monkeypatch, cycles=2)
+    assert seen[-1].recording is None
