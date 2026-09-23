@@ -1565,3 +1565,122 @@ def test_the_tower_falls_back_to_its_own_window_when_given_none(monkeypatch):
     tower.update_belt_grinder(Status.VIOLATION)      # no window passed
     assert tower.grinder_on
     assert tower.stopping_in == pytest.approx(5.0)
+
+
+# -- the one button is start and stop both ----------------------------------
+# Which it is depends on what the motor is doing when it is pressed: idle and
+# compliant, it starts; turning, it stops. `press()` above is one real push —
+# a released cycle then a held one — because the latch moves on the edge.
+
+
+def test_pressing_the_button_while_it_runs_stops_it(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    press(tower, fake)
+    assert not tower.grinder_on
+    assert tower.last_drop == "button pressed while running"
+
+
+def test_holding_the_button_down_does_not_start_it_again(monkeypatch):
+    """The stop and the next start are two presses, not one held one."""
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    press(tower, fake)                           # stops, and stays held
+    assert not tower.grinder_on
+    for _ in range(5):
+        tower.update_belt_grinder(Status.OK)
+        assert not tower.grinder_on, "still held"
+
+    fake.inputs[1] = True                        # released
+    tower.update_belt_grinder(Status.OK)
+    assert not tower.grinder_on, "letting go is not a start either"
+    fake.inputs[1] = False                       # and pressed again
+    tower.update_belt_grinder(Status.OK)
+    assert tower.grinder_on
+
+
+def test_the_button_stops_it_mid_countdown(monkeypatch):
+    """The seconds the countdown gives are the operator's to cut short. A stop
+    button that waits for a timer is not a stop button."""
+    tower, fake = grace_grinder(grace_sec=5.0)
+    t = clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert tower.grinder_on and tower.stopping_in == pytest.approx(5.0)
+
+    t["now"] += 1.0
+    fake.inputs[1] = False
+    tower.update_belt_grinder(Status.VIOLATION)
+    assert not tower.grinder_on, "pressed at 1s of 5, not 5 of 5"
+    assert tower.stopping_in is None
+    assert tower.last_drop == "button pressed while running"
+
+
+@pytest.mark.parametrize("status", [Status.DEGRADED, Status.STANDBY])
+def test_a_status_that_stops_the_motor_gets_there_before_the_button(monkeypatch, status):
+    """Not a conflict, and worth writing down. DEGRADED and STANDBY stop the
+    motor on the cycle they are seen, so by the time a finger lands there is
+    nothing left for the button to stop. The button only ever has to beat a
+    machine that is still turning — which, under a correction countdown, is
+    exactly what it does."""
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    press(tower, fake, status)
+    assert not tower.grinder_on
+    assert tower.last_drop == f"status is {status.value}"
+
+
+def test_a_press_on_an_idle_machine_still_starts_it(monkeypatch):
+    """The half that already worked has to keep working."""
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    fake.inputs = {0: True, 1: True}
+    tower.update_belt_grinder(Status.OK)
+    assert not tower.grinder_on
+    press(tower, fake)
+    assert tower.grinder_on
+
+
+def test_a_press_on_an_idle_machine_with_bad_ppe_still_starts_nothing(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=5.0)
+    clock(monkeypatch)
+    fake.inputs = {0: True, 1: True}
+    tower.update_belt_grinder(Status.VIOLATION)
+    press(tower, fake, Status.VIOLATION)
+    assert not tower.grinder_on
+    assert tower.stopping_in is None, "nothing running, nothing to count down"
+
+
+def test_one_press_starts_and_the_next_stops(monkeypatch):
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    fake.inputs = {0: True, 1: True}
+    tower.update_belt_grinder(Status.OK)
+
+    press(tower, fake)
+    assert tower.grinder_on, "first press starts"
+    press(tower, fake)
+    assert not tower.grinder_on, "second press stops"
+    press(tower, fake)
+    assert tower.grinder_on, "third starts again"
+
+
+def test_a_button_stop_is_silent(monkeypatch):
+    """A deliberate operator action, not an alarm. The buzzer marks the
+    machine being taken away from someone, not handed back."""
+    tower, fake = grace_grinder(grace_sec=0.0)
+    clock(monkeypatch)
+    running_grinder(fake, tower)
+
+    fake.writes.clear()
+    press(tower, fake)
+    tower.apply(Status.OK)
+    assert not tower.grinder_on
+    assert coils(fake)[3] is False, "no buzzer on an operator's own stop"

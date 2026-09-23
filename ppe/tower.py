@@ -614,9 +614,16 @@ class TowerLight:
           start  a press (a release-then-press this method actually saw)
                  while the e-stop reads True and status is Status.OK
           run    until something drops it; releasing the button does not
-          drop   the e-stop going False, status leaving Status.OK, either
-                 input failing to read, or the board being taken low by a
-                 connect or a close
+          drop   a press while it is RUNNING, the e-stop going False,
+                 status leaving Status.OK, either input failing to read,
+                 or the board being taken low by a connect or a close
+
+        So the one button is start and stop both, by what the motor is doing
+        when it is pressed: idle and compliant, it starts; turning, it stops.
+        The stop half is checked before anything else the status could say,
+        including a correction countdown — an operator reaching for the
+        button on a machine that is running wants it to stop, and there is no
+        state in which the honest answer to that is "not yet".
 
         With ``grace_sec`` set, one of those is deferred rather than
         immediate: a PPE violation on a machine that is already running
@@ -668,6 +675,14 @@ class TowerLight:
 
         if not estop:
             return self._drop_grinder("e-stop hit")
+
+        # A press on a turning motor is a stop, whatever the status is. Ahead
+        # of the countdown below on purpose: the seconds that block exists to
+        # give are the operator's to spend or to cut short, and a stop button
+        # that waits for a timer is not a stop button. Ahead of the compliant
+        # branch too, or the same press would stop and restart in one cycle.
+        if pressed and not was_pressed and self._grinder_latched:
+            return self._drop_grinder("button pressed while running")
 
         if status is Status.OK:
             self._cancel_grace()

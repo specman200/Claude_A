@@ -157,10 +157,17 @@ tower:
     # true, and pressing the switch takes it to false. Both are read every
     # cycle to drive belt_grinder, which LATCHES: a press while estop is
     # true (not hit) and PPE is compliant starts the motor and it keeps
-    # running after the button is let go. It stops the instant the e-stop
-    # is hit, PPE stops being compliant, or an input cannot be read — and
-    # it stays stopped when that clears, until somebody presses again. See
-    # TowerLight.update_belt_grinder() for the exact logic.
+    # running after the button is let go.
+    #
+    # The same button stops it. Which it does depends on what the motor is
+    # doing when it is pressed: idle and compliant, it starts; turning, it
+    # stops — including part way through a grace_sec countdown, because the
+    # seconds that countdown gives are the operator's to cut short.
+    #
+    # It also stops the instant the e-stop is hit, PPE stops being compliant
+    # for longer than that class's grace_sec, or an input cannot be read —
+    # and it stays stopped when that clears, until somebody presses again.
+    # See TowerLight.update_belt_grinder() for the exact logic.
     estop: 0            # Digital Input 1 — false = e-stop hit
     push_button: 1      # Digital Input 2 — false = button pressed
 
