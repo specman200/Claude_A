@@ -228,7 +228,7 @@ Ranked by how often each one is the actual cause:
 `-v` prints OpenCV's own diagnostic under any of the above, and it usually
 names the cause directly.
 
-## Configure## Configure
+## Configure
 
 Everything lives in `config.yaml`, and the parts you tune most often are also
 editable in the UI (the checklist's **Save to config** button writes them back).
@@ -714,6 +714,73 @@ pip install snakeviz && snakeviz logs/profile.prof
 exactly what you would expect. On a GPU it drops to a few milliseconds and the
 other stages start to matter.)
 
+## How the code works
+
+The full explanation — every module and function, line by line through the
+parts that decide whether the motor runs, with worked timing examples — is in
+[docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md). This is the short
+version.
+
+**What it does.** Two cameras film the operator. YOLOv11 finds people and PPE
+in each frame. The code picks the person standing at the machine (the
+*subject*), keeps only the gear on that person, and compares it with the
+required list in `config.yaml`. The verdict is one of **OK**, **VIOLATION**,
+**STANDBY** (nobody there) or **DEGRADED** (can't judge). It is smoothed so it
+doesn't flicker, then drives the tower lamp, the buzzer and the motor's run
+permission over Modbus TCP. That permission is a latch that only a button
+press can set.
+
+**Threads.** Each stage runs on its own thread, so a slow stage never holds up
+a fast one:
+
+| Thread | Code | Job | Hands its output to |
+| --- | --- | --- | --- |
+| camera-0, camera-1 | `capture.Camera.run` | read frames as fast as the camera delivers | a one-slot "latest frame" box; older frames are dropped, never queued |
+| pipeline | `pipeline.Pipeline.run` | load the model, then loop: detect → judge → drive the relay | a `Result`, sent to the GUI by a Qt signal |
+| main / GUI | `ui.MainWindow` | repaint video every 16 ms, apply each `Result`, handle clicks | the screen |
+| dataset (capture mode only) | `dataset.DatasetRecorder` | write JPEGs and label files | disk |
+
+```mermaid
+flowchart LR
+    C0[camera-0] --> L[Pipeline loop]
+    C1[camera-1] --> L
+    L --> D[Detector] --> F[subject.focus] --> M[ComplianceMonitor] --> T[TowerLight]
+    T -- Modbus TCP --> R[(I/O relay:<br/>lamps, buzzer, motor)]
+    R -- e-stop, buttons --> T
+    T --> P[Result] -- Qt signal --> G[GUI]
+```
+
+**One cycle** (`Pipeline._cycle`, once per fresh frame):
+
+1. **Pick frames** — `_take` chooses the fresh frame(s); on a CPU, one camera
+   per cycle, taking turns.
+2. **Letterbox** — `letterbox.letterbox` scales each frame into a 640×640
+   square without squashing it, and remembers the exact inverse.
+3. **Detect** — `Detector._predict` runs YOLO; `_decode` maps boxes back to
+   frame pixels and drops anything under that class's confidence floor.
+4. **Focus** — `subject.focus` picks the largest person per view and keeps
+   only the detections that sit on them; bystanders' PPE doesn't count.
+5. **Judge** — `ComplianceMonitor.update` counts each item from the best
+   single camera, bridges short dropouts (hold window) and partial views
+   (occlusion window), and decides the status; `_debounce` waits until that
+   verdict has stood long enough before the lamp follows it.
+6. **Motor** — `TowerLight.update_belt_grinder` reads the e-stop and buttons
+   and sets, keeps or drops the motor latch, including the correction
+   countdown. It never restarts the motor on its own.
+7. **Lamps** — `TowerLight.apply` writes only the coils that changed.
+8. **Side effects** — spoken prompt (`annunciator`), capture mode
+   (`dataset`), stage timing (`latency`).
+9. **Publish** — `_publish` packs everything into a `Result`; the trial log
+   (`trials`) reads it and the GUI draws it.
+
+**Failing safe.** On connect and on shutdown every relay channel is blanked.
+Losing both cameras, failing to read the e-stop or button, or a model that
+lacks a required class all drop the motor latch, and only a fresh button
+press restarts it. If the board itself stops answering, that "off" cannot
+reach it: its outputs hold their last state unless the board has its own
+communication watchdog. The software e-stop input is a second line only; it
+does not replace a hard-wired e-stop circuit.
+
 ## Layout
 
 ```
@@ -732,12 +799,16 @@ ppe/
   subject.py         who is being checked, and whose gear counts
   export.py          `python -m ppe.export` — OpenVINO / ONNX conversion
   bench.py           `python -m ppe.bench` — measure backends on your machine
-  camcheck.py         `python -m ppe.camcheck` — diagnose "no video signal"
+  camcheck.py        `python -m ppe.camcheck` — diagnose "no video signal"
+  dataset.py         capture mode: keep hard frames, pre-labelled for annotation
+  trials.py          commissioning logs: why it stopped, what it couldn't see
   ui.py              Qt: video panes, editable checklist, latency HUD
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
+assets/thumbs_*.svg  checklist tick / cross icons
 docs/layout.svg      architecture diagram
-tests/               319 tests
+docs/CODE_WALKTHROUGH.md  how the code works, function by function
+tests/               421 tests
 ```
 
 ## About
@@ -773,7 +844,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 319 tests
+pytest                       # 421 tests
 ruff check ppe main.py tests
 ```
 
