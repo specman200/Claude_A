@@ -39,6 +39,7 @@ drift as the code changes; the function names will not.
    - [trials.py](#314-ppetrialspy--commissioning-evidence)
    - [ui.py](#315-ppeuipy--the-window)
    - [export.py, bench.py, camcheck.py](#316-the-command-line-tools)
+   - [paths.py, supervise.py, provision.py](#317-the-installed-build)
 4. [Worked examples: following real events through the code](#4-worked-examples)
 5. [Config key → code map](#5-config-key--code-map)
 6. [Tests: where each behaviour is pinned down](#6-tests)
@@ -1345,6 +1346,69 @@ station.
 - **`main`**: optional scan, then modes or probe for each configured camera.
   It returns 1 if any camera failed.
 
+### 3.17 The installed build
+
+Three small modules let the same code run as an installed Windows program
+(`packaging/`, [DEPLOYMENT.md](DEPLOYMENT.md)) without changing how it runs
+from source.
+
+**`ppe/paths.py`: where things live.**
+
+- **`frozen()`**: True inside a PyInstaller build (`sys.frozen`).
+- **`app_dir()`**: the read-only program files. From source this is the
+  checkout; installed, it is PyInstaller's `_internal` folder
+  (`sys._MEIPASS`), which holds `models/`, `assets/` and the default config.
+- **`data_dir()`**: the writable per-machine files. From source this is the
+  working directory, as before; installed, it is
+  `%ProgramData%\PPE Station`. `PPE_STATION_DATA` overrides both, so a build
+  machine can self-test without touching the real ProgramData.
+- **`resolve(path, base)`**: a relative path from the config. It is
+  returned **unchanged** if it exists as given; that is the old behaviour,
+  kept byte for byte, including the trailing `/` that marks an OpenVINO
+  export. Otherwise it is tried beside the config, then in `app_dir()`. If
+  it is found nowhere, it is returned as written, so a bare `yolo11s.pt`
+  still reaches ultralytics. `Detector.__init__` uses it for the weights.
+  `BrandingCfg.logo_path` and `Annunciator._resolve` apply the same
+  fallback.
+- **`InstanceLock`**: one station per PC. It takes an OS file lock
+  (`msvcrt.locking` on Windows, `fcntl.flock` elsewhere) on
+  `logs/station.lock`. The OS drops the lock when the process dies, so a
+  crash never blocks the restart.
+
+**`ppe/supervise.py`: crash restart.** `supervise(argv)` runs the station
+as a child (`child_command`: the same program and arguments, minus
+`--supervise`) and waits:
+
+- a **non-zero** exit is a crash, so it waits and starts it again;
+- a **zero** exit is someone closing the window, so the supervisor exits
+  too.
+
+The delay doubles from 2 s to 60 s and resets after a run of 5 minutes or
+more. `popen`, `sleep` and `clock` are parameters so the tests can drive it
+without real processes. Restarting is safe because the station blanks every
+output on connect and the motor latch needs a fresh button press.
+
+**`ppe/provision.py`: the per-machine setting.**
+`set_relay_host(path, ip)` validates the address
+(`ipaddress.IPv4Address`), finds the `host:` line inside the `tower:` block
+and rewrites only its value. It works on bytes, so Windows line endings and
+every comment survive. It raises `ValueError` for a bad address or when no
+such line exists, and never touches a `host:` key in another section.
+
+**What `main.py` adds for them:**
+
+- `prepare_installed()` (installed only): `chdir` into `data_dir()` so
+  `logs/` and `datasets/` land there, and keep ultralytics offline
+  (`YOLO_OFFLINE`, `YOLO_AUTOINSTALL=false`, `YOLO_CONFIG_DIR`).
+- `default_config()`: `config.yaml` here, or the machine's copy in
+  ProgramData, created from the shipped default on first run.
+- `setup_logging()`: console if there is one, plus rotating
+  `logs/station.log` (or `supervisor.log`) and a `faulthandler` crash log
+  when installed.
+- `selftest()`: load the model and run it once on a blank frame.
+- `--set-relay-ip`, `--supervise` and the `camcheck` subcommand dispatch
+  before the station starts.
+
 ---
 
 ## 4. Worked examples
@@ -1452,7 +1516,7 @@ fresh button press.
 
 ## 6. Tests
 
-There are 421 test functions in `tests/`. They need no camera, GPU, display
+There are 449 test functions in `tests/`. They need no camera, GPU, display
 or Modbus device: video comes from synthetic files, Qt runs offscreen, and
 the bus is a fake that records writes.
 
@@ -1466,6 +1530,7 @@ the bus is a fake that records writes.
 | `test_camcheck.py` (19), `test_capture_*` | camera probing, FOURCC order, the MSMF environment-variable ordering |
 | `test_detector.py` (14), `test_batching.py` (11), `test_letterbox.py` (9) | model wrapper, batch settling and padding, box inverse matching Ultralytics within half a pixel |
 | `test_latency.py`, `test_runtime.py`, `test_export.py`, `test_annunciator.py`, `test_dataset.py`, `test_trials.py` | their modules |
+| `test_paths.py` (12), `test_supervise.py` (10), `test_provision.py` (6) | installed-build paths and the one-station lock, crash restart and back-off, the installer's relay-address edit |
 
 Run them with `pytest`, and lint with `ruff check ppe main.py tests`.
 

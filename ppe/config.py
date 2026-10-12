@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from .paths import app_dir
+
 
 def _build(cls, data: dict[str, Any]):
     """Instantiate a dataclass from a dict, ignoring unknown keys."""
@@ -232,9 +234,14 @@ class BrandingCfg:
         if not self.logo:
             return None
         path = Path(self.logo)
-        if not path.is_absolute() and base is not None:
-            path = base / path
-        return path if path.is_file() else None
+        if path.is_absolute():
+            return path if path.is_file() else None
+        if base is not None and (base / path).is_file():
+            return base / path
+        # An installed build ships assets/ with the program, not beside the
+        # machine's config in ProgramData.
+        shipped = app_dir() / path
+        return shipped if shipped.is_file() else None
 
 
 @dataclass

@@ -781,6 +781,36 @@ reach it: its outputs hold their last state unless the board has its own
 communication watchdog. The software e-stop input is a second line only; it
 does not replace a hard-wired e-stop circuit.
 
+## Installing on the station PCs
+
+For the machines themselves there is a Windows installer, so nobody installs
+Python by hand. `packaging/` builds it: PyInstaller turns the program into a
+folder with `PPEStation.exe`, and Inno Setup wraps that in
+`PPEStation-Setup-<version>.exe`. The *Windows installer* GitHub workflow
+builds it, installs it silently on a clean Windows machine and self-tests the
+result; `packaging\build.ps1` does the same on a Windows PC.
+
+```bat
+:: one line per PC; the machine number sets its relay module address from the IP plan
+PPEStation-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MACHINE=7
+```
+
+Installed, the program lives in `C:\Program Files\PPE Station` and each
+machine's own `config.yaml` and logs in `C:\ProgramData\PPE Station`, kept
+across upgrades. It starts at logon under a supervisor that restarts it after
+a crash, and refuses to run twice. The same flags work from source:
+
+```bash
+python main.py --selftest          # load the model, run it once, exit 0 or 1
+python main.py --supervise         # restart after a crash, not after a clean close
+python main.py --set-relay-ip 192.168.1.56   # what the installer runs per machine
+python main.py camcheck --scan     # the camera diagnostic
+```
+
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the guide for the IT department:
+App Control allow-listing, silent installs, upgrades, the relay address per
+machine and troubleshooting.
+
 ## Layout
 
 ```
@@ -803,12 +833,21 @@ ppe/
   dataset.py         capture mode: keep hard frames, pre-labelled for annotation
   trials.py          commissioning logs: why it stopped, what it couldn't see
   ui.py              Qt: video panes, editable checklist, latency HUD
+  paths.py           source tree vs installed build: where config, models, logs live
+  supervise.py       `--supervise` — restart the station after a crash
+  provision.py       `--set-relay-ip` — the installer's per-machine setting
+packaging/
+  ppe_station.spec   PyInstaller: dist/PPEStation/PPEStation.exe
+  installer.iss      Inno Setup: PPEStation-Setup-<version>.exe
+  build.ps1          build both on a Windows PC
+  constraints.txt    pinned library versions for the build
 models/              the fine-tuned PPE weights
 assets/logo.svg      placeholder personal mark — swap for your own
 assets/thumbs_*.svg  checklist tick / cross icons
 docs/layout.svg      architecture diagram
 docs/CODE_WALKTHROUGH.md  how the code works, function by function
-tests/               421 tests
+docs/DEPLOYMENT.md   installing on the station PCs (for IT)
+tests/               449 tests
 ```
 
 ## About
@@ -844,7 +883,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 421 tests
+pytest                       # 449 tests
 ruff check ppe main.py tests
 ```
 

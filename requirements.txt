@@ -1,5 +1,6 @@
 # Core inference
-ultralytics>=8.3.0          # YOLOv11 (yolo11s) models
+ultralytics>=8.3.0,<8.4      # YOLOv11 (yolo11s) models; 8.4 changes OpenVINO batching
+                            # (see packaging/constraints.txt)
 torch>=2.2.0                # required by ultralytics even when running OpenVINO
 opencv-python>=4.9.0
 

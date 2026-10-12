@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 
 from .latency import now
+from .paths import app_dir
 from .tower import Status
 
 log = logging.getLogger(__name__)
@@ -67,8 +68,11 @@ class Annunciator:
         if not path:
             return None
         p = Path(path)
-        if not p.is_absolute() and base is not None:
-            p = base / p
+        if not p.is_absolute():
+            shipped = app_dir() / p
+            p = base / p if base is not None else p
+            if not p.is_file() and shipped.is_file():
+                p = shipped
         if not p.is_file():
             log.warning("annunciator: no such audio file %s", p)
             return None

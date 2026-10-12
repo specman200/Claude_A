@@ -38,6 +38,7 @@ from .detector import Detection
 from .latency import STAGES
 from .latency import now as _clock
 from .letterbox import fit
+from .paths import app_dir
 from .pipeline import Pipeline, Result
 from .tower import ClassState, Status
 
@@ -927,7 +928,7 @@ _GLYPH_ICONS: dict[tuple[str, int, float], QPixmap | None] = {}
 def _glyph_icon(name: str, height: int, ratio: float) -> QPixmap | None:
     key = (name, height, ratio)
     if key not in _GLYPH_ICONS:
-        path = Path(__file__).resolve().parent.parent / "assets" / f"{name}.svg"
+        path = app_dir() / "assets" / f"{name}.svg"
         _GLYPH_ICONS[key] = load_logo(path, height, ratio)
     return _GLYPH_ICONS[key]
 

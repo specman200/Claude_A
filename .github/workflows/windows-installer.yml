@@ -1,0 +1,89 @@
+name: Windows installer
+
+# Builds PPEStation-Setup-<version>.exe on a clean Windows machine, then
+# proves it: self-tests the frozen program, installs it silently as
+# machine 3, checks the relay address landed in the config, and self-tests
+# the installed copy. The installer is attached to the run as an artifact.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    branches: ["**"]
+    paths:
+      - "packaging/**"
+      - "ppe/**"
+      - "main.py"
+      - "config.yaml"
+      - "requirements.txt"
+      - "models/**"
+      - "assets/**"
+      - ".github/workflows/windows-installer.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies (pinned)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r packaging/requirements-build.txt -c packaging/constraints.txt
+
+      - name: Tests for the packaging code
+        shell: pwsh
+        run: python -m pytest -q tests/test_paths.py tests/test_supervise.py tests/test_provision.py tests/test_config.py
+
+      - name: Build the program folder (PyInstaller)
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean packaging/ppe_station.spec
+
+      - name: Self-test the frozen build
+        shell: pwsh
+        env:
+          PPE_STATION_DATA: ${{ runner.temp }}\ppe-selftest
+        run: |
+          & dist\PPEStation\PPEStation-console.exe --version
+          & dist\PPEStation\PPEStation-console.exe --selftest
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:PPE_STATION_DATA\logs\station.log" -ErrorAction SilentlyContinue; exit 1 }
+
+      - name: Build the installer (Inno Setup)
+        id: installer
+        shell: pwsh
+        run: |
+          $version = python -c "import ppe; print(ppe.__version__)"
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=$version" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          "setup=dist\PPEStation-Setup-$version.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Silent install as machine 3, then self-test the installed copy
+        shell: pwsh
+        run: |
+          $p = Start-Process "${{ steps.installer.outputs.setup }}" -Wait -PassThru `
+                 -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MACHINE=3','/LOG=install.log'
+          Get-Content install.log | Select-String -Pattern 'relay address|self-test' | ForEach-Object { $_.Line }
+          if ($p.ExitCode -ne 0) { Get-Content install.log; exit 1 }
+          $cfg = Get-Content "$env:ProgramData\PPE Station\config.yaml" -Raw
+          if ($cfg -notmatch 'host:\s*192\.168\.1\.52\b') { Write-Error "machine 3 relay address not written"; exit 1 }
+          & "$env:ProgramFiles\PPE Station\PPEStation-console.exe" --selftest
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:ProgramData\PPE Station\logs\station.log"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PPEStation-installer
+          path: ${{ steps.installer.outputs.setup }}
+          if-no-files-found: error

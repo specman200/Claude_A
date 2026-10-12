@@ -20,3 +20,8 @@ logs/
 
 # capture mode output — images of people, never committed
 datasets/
+
+# Packaging output (packaging/ppe_station.spec, packaging/installer.iss)
+build/
+dist/
+.venv-build/

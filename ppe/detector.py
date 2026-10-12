@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
 from .config import ModelCfg, PPECfg
 from .latency import now
 from .letterbox import Letterbox, letterbox
+from .paths import resolve
 from .runtime import apply_torch, configure
 
 log = logging.getLogger(__name__)
@@ -60,7 +62,7 @@ class Detector:
     per-frame overhead of a two-camera station.
     """
 
-    def __init__(self, cfg: ModelCfg, ppe: PPECfg) -> None:
+    def __init__(self, cfg: ModelCfg, ppe: PPECfg, base: Path | None = None) -> None:
         from ultralytics import YOLO
 
         self.cfg = cfg
@@ -73,7 +75,9 @@ class Detector:
         # two costs about twice a batch of one anyway.
         self.batches = cfg.batches(self.device)
 
-        self.model = YOLO(cfg.weights)
+        # An installed build keeps the model with the program, not beside the
+        # config; resolve() finds it either way (ppe/paths.py).
+        self.model = YOLO(resolve(cfg.weights, base))
         self.names: dict[int, str] = dict(self.model.names)
         self._precision = _precision_kwargs(self.half)
 

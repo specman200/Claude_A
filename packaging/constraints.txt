@@ -1,0 +1,27 @@
+# Exact versions for building the installer (pip install ... -c packaging/constraints.txt).
+#
+# requirements.txt says what the code needs (">="); this says what was tested
+# together. The full test suite passes on exactly this set. Bump a line only
+# with a full `pytest` run and a pilot-station check.
+#
+# ultralytics stays on 8.3.x: from 8.4 an OpenVINO export accepts a batch of
+# two, so the station silently changes from one camera per cycle to both
+# cameras per call, which is not what was validated
+# (tests/test_detector.py::test_an_export_asked_to_batch_falls_back_rather_than_failing_to_load).
+ultralytics==8.3.253
+torch==2.14.1
+torchvision==0.29.1
+openvino==2026.4.1
+opencv-python==5.0.0.93
+numpy==2.4.6
+PySide6==6.12.0
+pymodbus==3.16.1
+pyserial==3.5
+pygame==2.6.1
+PyYAML==6.0.3
+pillow==12.3.0
+onnx==1.23.2
+onnxruntime==1.31.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+pytest==9.1.1

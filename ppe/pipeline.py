@@ -142,7 +142,7 @@ class Pipeline(threading.Thread):
             # window is already up and painting frames regardless.
             self.tower = make_tower(self.cfg.tower)
             self.tower.connect()
-            self.detector = Detector(self.cfg.model, self.cfg.ppe)
+            self.detector = Detector(self.cfg.model, self.cfg.ppe, base=self.cfg.base_dir)
             self.monitor = ComplianceMonitor(self.cfg.ppe, self.detector.missing)
         except Exception as exc:  # noqa: BLE001 — reported via on_error, never silent
             log.exception("failed to load model %s", self.cfg.model.weights)
