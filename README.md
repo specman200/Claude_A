@@ -247,6 +247,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `ppe.classes[].expect` | `present` (must be worn) or `absent` (detecting it *is* the violation) |
 | `cameras[].fourcc` | Compression the camera is asked to use — `MJPG` (default) or `""` for the driver's raw default |
 | `ppe.classes[].count` | How many must be on the subject — 2 gloves, 2 sleeves (default 1) |
+| `ppe.classes[].any_of` | Alternatives: required classes sharing a name are satisfied by any one of them — `sleeves` OR `Apron` |
 | `ppe.subject` | Class the checks are applied to; empty checks every detection |
 | `ppe.containment` | Fraction of a PPE box that must lie on the subject to count |
 | `ppe.classes[].conf` | Per-class confidence floor, overriding `model.conf`; also editable live in the UI |
@@ -499,6 +500,26 @@ passes.
 It does not fix a camera that can never see the second glove at all.
 Check the debug decision panel first: if the row never reaches `2/2`,
 no window helps and the camera needs moving.
+
+**Alternatives (`any_of`).** Arm protection is two sleeves *or* an apron:
+
+```yaml
+- {name: sleeves, label: Sleeves, required: true, count: 2, any_of: arms, ...}
+- {name: Apron,   label: Apron,   required: true,           any_of: arms, ...}
+```
+
+One compliant member satisfies the group; each keeps its own count, conf,
+hold and grace. Nothing outside the group is excused: an apron does not
+stand in for gloves, and `Wrong Sleeve` stays forbidden. A worker with
+neither sees one fault, `Sleeves (0 of 2) or Apron`; the grace window is the
+shortest among the group; and in the checklist the member not worn reads
+**NOT NEEDED** in grey rather than a red MISSING. A member the loaded model
+cannot detect is dropped from the group instead of degrading the station.
+The shipped model has no `Apron` class yet, so until it is retrained the
+station judges arm protection on sleeves alone, says so in `--selftest`,
+and never tells a worker to put on an apron it cannot credit. Capture mode
+already lists `Apron` in its `data.yaml`, so frames kept now can be labelled
+for that retraining.
 
 **Per-class `containment`** is the other half. One global threshold has to
 be loose enough for the worst case, which then lets a bystander's gear
@@ -847,7 +868,7 @@ assets/thumbs_*.svg  checklist tick / cross icons
 docs/layout.svg      architecture diagram
 docs/CODE_WALKTHROUGH.md  how the code works, function by function
 docs/DEPLOYMENT.md   installing on the station PCs (for IT)
-tests/               449 tests
+tests/               463 tests
 ```
 
 ## About
@@ -883,7 +904,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 449 tests
+pytest                       # 463 tests
 ruff check ppe main.py tests
 ```
 

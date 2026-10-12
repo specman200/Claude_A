@@ -88,6 +88,12 @@ class ClassCfg:
     # little. Where several items are missing together the SHORTEST window
     # wins; see ComplianceMonitor.grace_window().
     grace_sec: float | None = None
+    # Alternatives: required classes that share an any_of name form a group,
+    # and ONE compliant member satisfies the whole group, e.g. sleeves OR an
+    # apron. Each member keeps its own count, conf, hold and grace; the group
+    # only changes what "compliant" means for the verdict, the fault text and
+    # the grace window. See ComplianceMonitor.
+    any_of: str | None = None
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -366,6 +372,29 @@ class Config:
                     f"config: {klass.name}.containment must be between 0 and 1, "
                     f"got {klass.containment}"
                 )
+        groups: dict[str, list[ClassCfg]] = {}
+        for klass in self.ppe.classes:
+            if klass.any_of is not None:
+                groups.setdefault(klass.any_of, []).append(klass)
+        for name, members in groups.items():
+            names = [m.name for m in members]
+            if len(members) < 2:
+                raise ValueError(
+                    f"config: any_of group {name!r} has only {names}; an alternative "
+                    f"needs at least two classes"
+                )
+            for m in members:
+                if not m.required:
+                    raise ValueError(
+                        f"config: {m.name} is in any_of group {name!r} but not required; "
+                        f"only required classes can stand in for each other"
+                    )
+                if m.forbidden:
+                    # "wear sleeves OR be seen with the wrong sleeve" is not a rule.
+                    raise ValueError(
+                        f"config: {m.name} has expect: absent and cannot be in an any_of "
+                        f"group ({name!r})"
+                    )
         if not 0.0 <= self.ppe.containment <= 1.0:
             raise ValueError(
                 f"config: ppe.containment must be between 0 and 1, got {self.ppe.containment}"

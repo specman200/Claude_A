@@ -220,12 +220,14 @@ class ClassRow(QWidget):
     removed = Signal(str)
 
     def __init__(
-        self, cfg: ClassCfg, color: str, default_conf: float, editable: bool = True
+        self, cfg: ClassCfg, color: str, default_conf: float, editable: bool = True,
+        alternatives: tuple[str, ...] = (),
     ) -> None:
         super().__init__()
         self.cfg = cfg
         self.color = color
         self.editable = editable
+        self.alternatives = alternatives
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 2, 0, 2)
@@ -244,12 +246,16 @@ class ClassRow(QWidget):
         # says how many the worker needs.
         prefix = "\u2298 " if cfg.forbidden else ""
         suffix = f"  \u00d7{cfg.count}" if cfg.count > 1 else ""
-        self.label = QLabel(prefix + cfg.label + suffix)
+        # "Sleeves ×2  (or Apron)": the row says up front that it can be
+        # satisfied another way, before anyone sees it go grey.
+        either = f"  (or {' / '.join(alternatives)})" if alternatives else ""
+        self.label = QLabel(prefix + cfg.label + suffix + either)
         self.label.setToolTip(
             f"model class: {cfg.name}\n"
             + ("must NOT appear — detecting it is a violation" if cfg.forbidden
                else f"{cfg.count} must be on the worker" if cfg.count > 1
                else "must be worn")
+            + (f"\nnot needed while {' or '.join(alternatives)} is worn" if alternatives else "")
         )
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
@@ -283,7 +289,7 @@ class ClassRow(QWidget):
             for widget in (self.required, self.conf, remove):
                 widget.hide()
             self.label.setFont(QFont("Segoe UI", 12))
-            self.score.setFixedWidth(84)
+            self.score.setFixedWidth(110)   # room for "NOT NEEDED"
             self.score.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
 
         # Start in the "not seen yet" look rather than an inherited default.
@@ -308,6 +314,14 @@ class ClassRow(QWidget):
             self._paint_dot(IDLE)
             self.label.setStyleSheet(f"color:{IDLE};")
             self.score.setText("--")
+            return
+        if state.required and state.covered:
+            # An alternative is worn (sleeves covered by an apron): not a
+            # fault, so not red, and not "OK" either, which would claim the
+            # item itself was seen.
+            self._paint_dot(IDLE)
+            self.label.setStyleSheet(f"color:{IDLE};")
+            self.score.setText("NOT NEEDED" if not self.editable else "alt")
             return
         if not state.available:
             self._paint_dot(UNAVAILABLE)
@@ -410,8 +424,13 @@ class PPEPanel(QFrame):
             self._retired.append(row)
         self.rows.clear()
         for i, klass in enumerate(self.cfg.ppe.classes):
+            alternatives = tuple(
+                c.label for c in self.cfg.ppe.classes
+                if klass.any_of is not None and c.any_of == klass.any_of and c is not klass
+            )
             row = ClassRow(
-                klass, PALETTE[i % len(PALETTE)], self.cfg.model.conf, self.editable
+                klass, PALETTE[i % len(PALETTE)], self.cfg.model.conf, self.editable,
+                alternatives=alternatives,
             )
             row.changed.connect(self.edited)
             row.removed.connect(self._remove)

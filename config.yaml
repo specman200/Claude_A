@@ -63,6 +63,12 @@ ppe:
   #                       RUNNING machine survives THIS item going missing.
   #                       0 takes the motor at once. Where several items are
   #                       missing together the SHORTEST window wins.
+  #   any_of: NAME     -> alternatives: required classes sharing a NAME form a
+  #                       group, and ONE compliant member satisfies it. Each
+  #                       member keeps its own count, conf, hold and grace. A
+  #                       member the loaded model cannot detect is left out of
+  #                       the group (the station keeps judging on the others);
+  #                       only a group with no detectable member degrades.
   #
   # The conf and hold_ms values below come from a station running this same
   # model on real hardware. Note the shape of them: `person` has a low floor
@@ -78,6 +84,13 @@ ppe:
   # the judgement call — bare forearms are abrasion and burns rather than
   # entanglement, so it keeps the default; set it to 0 if your risk
   # assessment disagrees.
+  #
+  # Arm protection is either/or: two sleeves OR an apron (any_of: arms).
+  # `Apron` must be the class name in the retrained model. The shipped model
+  # has no Apron class yet; until it does, the group is judged on sleeves
+  # alone (Apron reads "n/a", or "NOT NEEDED" while sleeves are worn). Wrong
+  # Sleeve stays forbidden either way. Apron's conf and hold_ms are starting
+  # values: tune them on footage once the model can see aprons.
   classes:
     - {name: headnet,       label: Head Net,       required: true, conf: 0.50, hold_ms: 800}
     - {name: Safetyglasses, label: Safety Glasses, required: true, conf: 0.60, hold_ms: 1100,
@@ -86,7 +99,9 @@ ppe:
     - {name: Gloves,        label: Gloves,         required: true, conf: 0.60, hold_ms: 1000, count: 2,
        occluded_ms: 5000, containment: 0.1, grace_sec: 0}
     - {name: sleeves,       label: Sleeves,        required: true, conf: 0.75, hold_ms: 1200, count: 2,
-       occluded_ms: 5000, containment: 0.3}
+       occluded_ms: 5000, containment: 0.3, any_of: arms}
+    - {name: Apron,         label: Apron,          required: true, conf: 0.60, hold_ms: 1200,
+       any_of: arms}
     - {name: Wrong Sleeve,  label: Wrong Sleeve,   required: true, conf: 0.90, hold_ms: 400, expect: absent,
        grace_sec: 0}
     - {name: person,        label: Person in Cell, required: false, conf: 0.25, hold_ms: 1000}

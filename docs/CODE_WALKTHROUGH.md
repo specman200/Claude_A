@@ -600,6 +600,13 @@ them would count four and pass a worker wearing one.
 177  return _debounce(_evaluate(), t)
 ```
 
+Just before that return, **`_cover()`** settles the alternative groups
+(`any_of` in the config, e.g. sleeves OR an apron). For each group it asks
+whether any detectable member is compliant. If one is, every other member
+gets `covered = True`: not a fault, just not needed. `ClassState.satisfied`
+is `compliant or covered`, and the verdict, the fault text and the grace
+window all read `satisfied` instead of `compliant`.
+
 How to read lines 166–172:
 
 - **More or equal items seen** (`seen >= count`): accept at once. Good news
@@ -619,9 +626,10 @@ the classes it was added for. The comments at lines 149–165 record this bug.
 
 **`_evaluate()`** (`:179`) gives the instant verdict, in priority order:
 
-1. no required classes, or one the model lacks → `DEGRADED`;
+1. no required classes, or `unavailable()` is non-empty → `DEGRADED`;
 2. a subject is configured and not present → `STANDBY`;
-3. every required class compliant → `OK`, otherwise `VIOLATION`.
+3. every required class `satisfied` (compliant, or covered by an
+   alternative) → `OK`, otherwise `VIOLATION`.
 
 **`_debounce(candidate, t)`** (`:188`) makes the lamp wait until a new verdict
 has held long enough, and it's asymmetric: OK needs 1.0 s, VIOLATION only
@@ -652,18 +660,27 @@ Small helpers:
   panel.
 - **`watching`**: True when there's someone to check, or no subject gating.
 - **`missing()`**: required, non-forbidden items that are short, written as
-  `"Gloves (1 of 2)"` when a count matters.
+  `"Gloves (1 of 2)"` when a count matters. An unmet group is **one** line,
+  `"Sleeves (0 of 2) or Apron"`, naming only members the model can detect.
+  Suggesting an apron the model cannot see would send the worker to put on
+  something the station will never credit.
 - **`banned()`**: forbidden items currently seen.
 - **`faults()`**: both lists.
 - **`grace_window(default)`** (`:251`): the correction time the motor gets.
   It's the **shortest** window among the required items currently out of
   compliance. With gloves off (0 s) and head net off (5 s) at once, the
-  harmless item must not shelter the dangerous one for 5 s.
+  harmless item must not shelter the dangerous one for 5 s. A covered group
+  member sets no window: sleeves at 0 s must not stop a worker in an apron.
 - **`shown_faults()`**: the latched reason, only while VIOLATION is shown.
 - **`intermittent`**: True when VIOLATION is shown but the live verdict has
   already cleared, meaning a class is flickering faster than the confirm
   window. The card then says "INTERMITTENT — not steady enough to clear".
-- **`unavailable()`**: required items the model has no class for.
+- **`unavailable()`**: required items the model has no class for **and**
+  that stop the station judging. A group member the model lacks is left out
+  while another member is detectable. That is why the config can name
+  `Apron` before the model knows it: the group is judged on sleeves until
+  then. Only a group with no detectable member is listed, e.g.
+  `"Sleeves or Apron"`.
 - **`degrade()`**: forces DEGRADED through the same debounce. Used when no
   camera delivers frames.
 
@@ -1498,6 +1515,7 @@ fresh button press.
 | `…occluded_ms` | `ComplianceMonitor.update` | partial-view window |
 | `…containment`, `ppe.containment` | `subject.focus` | how much of an item must be on the person |
 | `…grace_sec` | `grace_window` → `update_belt_grinder` | per-item correction time |
+| `…any_of` | `_cover`, `_evaluate`, `missing`, `grace_window`, `unavailable`; `ClassRow` | alternatives: one compliant member satisfies the group |
 | `ppe.subject` | `focus`, `_evaluate` | who is checked; enables STANDBY |
 | `ppe.confirm_sec` | `_debounce` | how long a verdict must stand |
 | `tower.host`, `port`, `unit`, `transport`, `timeout`, `reconnect_sec` | `TowerLight._make_client`, `connect` | Modbus connection |
@@ -1516,16 +1534,16 @@ fresh button press.
 
 ## 6. Tests
 
-There are 449 test functions in `tests/`. They need no camera, GPU, display
+There are 463 test functions in `tests/`. They need no camera, GPU, display
 or Modbus device: video comes from synthetic files, Qt runs offscreen, and
 the bus is a fake that records writes.
 
 | File | Pins down |
 |---|---|
-| `test_tower.py` (125) | debounce timing, hold vs occlusion windows, counts, forbidden classes, the motor latch (no restart, edge-triggered start/stop, e-stop, input failure), correction countdown, buzzer pulses, lamps, connect/close blanking |
-| `test_ui.py` (70), `test_ui_modes.py` (17) | widget states, wording, e-stop and intermittent text, operator vs debug |
+| `test_tower.py` (135) | debounce timing, hold vs occlusion windows, counts, forbidden classes, alternative groups (sleeves or apron), the motor latch (no restart, edge-triggered start/stop, e-stop, input failure), correction countdown, buzzer pulses, lamps, connect/close blanking |
+| `test_ui.py` (70), `test_ui_modes.py` (18) | widget states, wording, e-stop and intermittent text, operator vs debug |
 | `test_pipeline.py` (32) | cycle order, offline handling, batching/turn-taking, publish contents |
-| `test_config.py` (27) | load/save/validate rules |
+| `test_config.py` (30) | load/save/validate rules, including `any_of` groups |
 | `test_subject.py` (18) | subject choice, containment, bystanders |
 | `test_camcheck.py` (19), `test_capture_*` | camera probing, FOURCC order, the MSMF environment-variable ordering |
 | `test_detector.py` (14), `test_batching.py` (11), `test_letterbox.py` (9) | model wrapper, batch settling and padding, box inverse matching Ultralytics within half a pixel |

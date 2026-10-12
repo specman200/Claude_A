@@ -175,12 +175,23 @@ def test_the_shipped_config_and_the_shipped_weights_agree():
     if not Path(cfg.model.weights).exists():
         pytest.skip(f"{cfg.model.weights} not present")
 
+    from ppe.tower import ComplianceMonitor
+
+    # Configured ahead of the retrained model that will detect them. Allowed
+    # only because the monitor keeps judging without them (last assertion);
+    # once the model has the class, `missing` is simply empty and this passes.
+    pending_retrain = {"Apron"}
+
     detector = Detector(ModelCfg(weights=cfg.model.weights, warmup=False), cfg.ppe)
-    assert detector.missing == [], (
+    assert set(detector.missing) <= pending_retrain, (
         f"config lists classes the model does not have: {detector.missing}"
     )
-    assert set(detector.names.values()) == {c.name for c in cfg.ppe.classes}, (
+    configured = {c.name for c in cfg.ppe.classes} - set(detector.missing)
+    assert set(detector.names.values()) == configured, (
         "the model has classes the config never mentions, or vice versa"
+    )
+    assert ComplianceMonitor(cfg.ppe, detector.missing).unavailable() == [], (
+        "a class the model lacks would stop the station judging"
     )
 
 

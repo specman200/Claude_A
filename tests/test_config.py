@@ -22,12 +22,59 @@ def test_the_shipped_config_wires_the_belt_grinder_interlock():
     assert cfg.tower.inputs == {"estop": 0, "push_button": 1}  # DI1, DI2
 
 
+MODEL_CLASSES = {"Gloves", "Mask", "Safetyglasses", "Wrong Sleeve", "headnet", "person", "sleeves"}
+
+
 def test_the_shipped_classes_match_the_fine_tuned_model():
-    """Guards the config against drifting from the weights it points at."""
+    """Guards the config against drifting from the weights it points at.
+
+    One deliberate exception: Apron is configured ahead of the retrained model
+    that will detect it, as the alternative to sleeves. It may only be there
+    because it cannot stop the station judging on today's model — that is
+    what the last assertion pins. Drop it from the expected difference once
+    the model learns the class.
+    """
+    from ppe.tower import ComplianceMonitor
+
     cfg = Config.load("config.yaml")
-    assert {c.name for c in cfg.ppe.classes} == {
-        "Gloves", "Mask", "Safetyglasses", "Wrong Sleeve", "headnet", "person", "sleeves",
-    }
+    names = {c.name for c in cfg.ppe.classes}
+    assert names >= MODEL_CLASSES
+    assert names - MODEL_CLASSES == {"Apron"}
+    monitor = ComplianceMonitor(cfg.ppe, sorted(names - MODEL_CLASSES))
+    assert monitor.unavailable() == [], "a class the model lacks would degrade the station"
+
+
+def test_arm_protection_is_sleeves_or_an_apron():
+    cfg = Config.load("config.yaml")
+    by_name = {c.name: c for c in cfg.ppe.classes}
+    assert by_name["sleeves"].any_of == by_name["Apron"].any_of is not None
+    assert by_name["Apron"].required and not by_name["Apron"].forbidden
+    assert by_name["Wrong Sleeve"].any_of is None    # still forbidden on its own
+
+
+@pytest.mark.parametrize("classes, match", [
+    ([ClassCfg("sleeves", any_of="arms")], "needs at least two"),
+    ([ClassCfg("sleeves", any_of="arms"), ClassCfg("Apron", any_of="arms", required=False)],
+     "not required"),
+    ([ClassCfg("sleeves", any_of="arms"), ClassCfg("Wrong Sleeve", any_of="arms", expect="absent")],
+     "cannot be in an any_of group"),
+])
+def test_a_malformed_alternative_group_is_refused(classes, match):
+    cfg = Config.load("config.yaml")
+    replaced = ("sleeves", "Apron", "Wrong Sleeve")
+    cfg.ppe.classes = [c for c in cfg.ppe.classes if c.name not in replaced]
+    cfg.ppe.classes += classes
+    with pytest.raises(ValueError, match=match):
+        cfg.validate()
+
+
+def test_any_of_survives_a_save_round_trip(tmp_path):
+    cfg = Config.load("config.yaml")
+    again = Config.load(cfg.save(tmp_path / "out.yaml"))
+    groups = {c.name: c.any_of for c in cfg.ppe.classes}
+    assert {c.name: c.any_of for c in again.ppe.classes} == groups
+    raw = (tmp_path / "out.yaml").read_text()
+    assert raw.count("any_of:") == 2, "classes without a group must not save any_of: null"
 
 
 def test_the_violation_class_is_shipped_as_forbidden_not_as_required_ppe():

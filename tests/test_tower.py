@@ -1684,3 +1684,90 @@ def test_a_button_stop_is_silent(monkeypatch):
     tower.apply(Status.OK)
     assert not tower.grinder_on
     assert coils(fake)[3] is False, "no buzzer on an operator's own stop"
+
+
+# -- alternatives: sleeves OR an apron ---------------------------------------
+
+
+def arms_monitor(missing=(), sleeve_grace=None, apron_grace=None):
+    """Gloves required on their own; sleeves (a pair) and an apron as alternatives."""
+    cfg = PPECfg(
+        classes=[
+            ClassCfg("gloves", count=2, grace_sec=0),
+            ClassCfg("sleeves", count=2, any_of="arms", grace_sec=sleeve_grace),
+            ClassCfg("apron", any_of="arms", grace_sec=apron_grace),
+        ],
+        hold_ms=0,
+        confirm_sec=confirm_all(0.0),
+    )
+    return ComplianceMonitor(cfg, list(missing))
+
+
+GLOVES = [det("gloves"), det("gloves")]
+
+
+def test_two_sleeves_without_an_apron_is_compliant():
+    m = arms_monitor()
+    assert m.update([GLOVES + [det("sleeves"), det("sleeves")]], t=1.0) is Status.OK
+    by = {c.name: c for c in m.classes}
+    assert by["apron"].covered and not by["sleeves"].covered
+
+
+def test_an_apron_without_sleeves_is_compliant():
+    m = arms_monitor()
+    assert m.update([GLOVES + [det("apron")]], t=1.0) is Status.OK
+    assert m.missing() == []
+    assert {c.name: c.covered for c in m.classes}["sleeves"]
+
+
+def test_neither_is_one_violation_naming_both_ways_to_fix_it():
+    m = arms_monitor()
+    assert m.update([GLOVES], t=1.0) is Status.VIOLATION
+    assert m.missing() == ["Sleeves (0 of 2) or Apron"]
+
+
+def test_one_sleeve_and_no_apron_is_still_a_violation():
+    m = arms_monitor()
+    assert m.update([GLOVES + [det("sleeves")]], t=1.0) is Status.VIOLATION
+    assert m.missing() == ["Sleeves (1 of 2) or Apron"]
+
+
+def test_the_alternative_does_not_excuse_anything_outside_its_group():
+    m = arms_monitor()
+    assert m.update([[det("gloves"), det("apron")]], t=1.0) is Status.VIOLATION
+    assert m.missing() == ["Gloves (1 of 2)"]
+
+
+def test_taking_the_apron_off_with_no_sleeves_is_caught_on_the_next_cycle():
+    m = arms_monitor()
+    assert m.update([GLOVES + [det("apron")]], t=1.0) is Status.OK
+    assert m.update([GLOVES], t=1.1) is Status.VIOLATION
+
+
+def test_a_covered_member_sets_no_grace_window():
+    """Sleeves off at 0 s grace must not stop a machine whose worker wears an apron."""
+    m = arms_monitor(sleeve_grace=0)
+    m.update([GLOVES + [det("apron")]], t=1.0)
+    assert m.grace_window(5.0) == 5.0
+
+
+def test_an_unmet_group_takes_its_shortest_window():
+    m = arms_monitor(sleeve_grace=3, apron_grace=1)
+    m.update([GLOVES], t=1.0)
+    assert m.grace_window(5.0) == 1
+
+
+def test_a_model_without_aprons_still_judges_on_sleeves():
+    """Today's model: the config names Apron, the model cannot see one."""
+    m = arms_monitor(missing=["apron"])
+    assert m.update([GLOVES + [det("sleeves"), det("sleeves")]], t=1.0) is Status.OK
+    assert m.unavailable() == []
+    assert m.update([GLOVES], t=1.1) is Status.VIOLATION
+    # and never tells the worker to put on something it cannot credit
+    assert m.missing() == ["Sleeves (0 of 2)"]
+
+
+def test_a_group_the_model_cannot_see_at_all_degrades():
+    m = arms_monitor(missing=["sleeves", "apron"])
+    assert m.update([GLOVES], t=1.0) is Status.DEGRADED
+    assert m.unavailable() == ["Sleeves or Apron"]

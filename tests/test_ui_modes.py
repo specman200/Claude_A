@@ -230,3 +230,20 @@ def test_the_logo_gets_real_estate(app, clip, monkeypatch):
     if not marks:
         pytest.skip("no logo configured in this fixture")
     assert marks[0].width() >= 64
+
+
+def test_a_row_covered_by_its_alternative_reads_not_needed_not_missing(app):
+    from ppe.config import ClassCfg
+    from ppe.tower import ClassState
+    from ppe.ui import IDLE, ClassRow
+
+    row = ClassRow(ClassCfg("sleeves", label="Sleeves", count=2, any_of="arms"), "#fff", 0.5,
+                   editable=False, alternatives=("Apron",))
+    assert "(or Apron)" in row.label.text()
+    covered = ClassState("sleeves", "Sleeves", True, need=2, any_of="arms", covered=True)
+    row.apply(covered)
+    assert row.score.text() == "NOT NEEDED"
+    assert IDLE in row.dot.styleSheet()
+    missing = ClassState("sleeves", "Sleeves", True, need=2, any_of="arms")
+    row.apply(missing)
+    assert row.score.text() == "0/2"

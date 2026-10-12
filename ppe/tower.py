@@ -47,6 +47,11 @@ class ClassState:
     last_seen: float = 0.0
     counted_at: float = 0.0  # when `count` was observed, for the hold window
     available: bool = True   # False when the model has no such class
+    any_of: str | None = None   # alternative group (config any_of); None = stands alone
+    # Set every cycle by the monitor: another member of this class's any_of
+    # group is compliant, so this one is not needed right now. An apron worn
+    # covers the sleeves: they are not missing, just not required.
+    covered: bool = False
 
     @property
     def present(self) -> bool:
@@ -68,6 +73,11 @@ class ClassState:
         """How many are still missing; 0 once the rule is satisfied."""
         return 0 if self.forbidden else max(0, self.need - self.count)
 
+    @property
+    def satisfied(self) -> bool:
+        """Compliant itself, or covered by an alternative that is."""
+        return self.compliant or self.covered
+
 
 class ComplianceMonitor:
     """Turns per-frame detections into a stable station status.
@@ -75,6 +85,13 @@ class ComplianceMonitor:
     Two things keep the light steady rather than strobing: a *hold* window, so
     an item flickering out for a frame stays lit, and a *confirm* count, so the
     lamp only changes after several evaluations agree.
+
+    Required classes that share an ``any_of`` name are alternatives: one
+    compliant member satisfies the group (sleeves OR an apron). Members the
+    loaded model cannot detect are left out of the group rather than
+    degrading the station, so a config that already names a class a future
+    model will learn keeps working on today's model; only a group with no
+    detectable member at all degrades.
     """
 
     def __init__(self, cfg: PPECfg, unavailable: list[str] | None = None) -> None:
@@ -93,10 +110,15 @@ class ComplianceMonitor:
                 ) / 1000.0,
                 grace=c.grace_sec,
                 available=c.name not in missing,
+                any_of=c.any_of,
             )
             for c in cfg.classes
         ]
         self._by_name = {c.name: c for c in self.classes}
+        self._groups: dict[str, list[ClassState]] = {}
+        for c in self.classes:
+            if c.any_of is not None and c.required:
+                self._groups.setdefault(c.any_of, []).append(c)
         # The subject rides the same hold window as everything else, so one
         # dropped frame does not drop the station into standby.
         self._subject = self._by_name.get(cfg.subject) if cfg.subject else None
@@ -174,16 +196,24 @@ class ComplianceMonitor:
                 state.last_seen = t
                 state.conf = best_conf
 
+        self._cover()
         return self._debounce(self._evaluate(), t)
+
+    def _cover(self) -> None:
+        """Mark group members that an alternative has made unnecessary."""
+        for members in self._groups.values():
+            done = any(m.available and m.compliant for m in members)
+            for m in members:
+                m.covered = done and not m.compliant
 
     def _evaluate(self) -> Status:
         required = [c for c in self.classes if c.required]
-        if not required or any(not c.available for c in required):
+        if not required or self.unavailable():
             return Status.DEGRADED
         if self._subject is not None and not self._subject.present:
             # No one in the cell: there is no PPE to be missing.
             return Status.STANDBY
-        return Status.OK if all(c.compliant for c in required) else Status.VIOLATION
+        return Status.OK if all(c.satisfied for c in required) else Status.VIOLATION
 
     def _debounce(self, candidate: Status, t: float) -> Status:
         """Hold a candidate status until it has stood for long enough.
@@ -235,12 +265,29 @@ class ComplianceMonitor:
         if not self.watching:
             return []
         out = []
+        groups_done: set[str] = set()
         for c in self.classes:
-            if not c.required or c.forbidden or not c.shortfall:
+            if not c.required or c.forbidden or c.satisfied:
                 continue
-            # "Gloves (1 of 2)" tells an operator far more than "Gloves".
-            out.append(f"{c.label} ({c.count} of {c.need})" if c.need > 1 else c.label)
+            if c.any_of is None:
+                if c.shortfall:
+                    out.append(self._describe(c))
+                continue
+            # One line per unmet group, naming only what the model can see:
+            # suggesting an apron the model cannot detect would send the
+            # worker to put on something the station will never credit.
+            if c.any_of in groups_done:
+                continue
+            groups_done.add(c.any_of)
+            alternatives = [self._describe(m) for m in self._groups[c.any_of] if m.available]
+            if alternatives:
+                out.append(" or ".join(alternatives))
         return out
+
+    @staticmethod
+    def _describe(c: ClassState) -> str:
+        # "Gloves (1 of 2)" tells an operator far more than "Gloves".
+        return f"{c.label} ({c.count} of {c.need})" if c.need > 1 else c.label
 
     def banned(self) -> list[str]:
         """Items that must not appear, but are being detected right now."""
@@ -261,10 +308,13 @@ class ComplianceMonitor:
         station-wide tower.grace_sec. With no fault standing this returns the
         default unused — the tower only reads it on a violation.
         """
+        # A covered member is not a fault, so it sets no window. An unmet
+        # group contributes every detectable member's window, and the
+        # shortest still wins.
         return min(
             (default if c.grace is None else c.grace
              for c in self.classes
-             if c.required and c.available and not c.compliant),
+             if c.required and c.available and not c.satisfied),
             default=default,
         )
 
@@ -299,8 +349,27 @@ class ComplianceMonitor:
         return self.status is Status.VIOLATION and self.raw is not Status.VIOLATION
 
     def unavailable(self) -> list[str]:
-        """Required items the loaded model has no class for."""
-        return [c.label for c in self.classes if c.required and not c.available]
+        """Required items the loaded model has no class for, and that therefore
+        stop the station judging at all.
+
+        A group member the model lacks is not one of them while another member
+        is detectable: the group is judged on what the model can see.
+        """
+        out = []
+        groups_done: set[str] = set()
+        for c in self.classes:
+            if not c.required or c.available:
+                continue
+            if c.any_of is None:
+                out.append(c.label)
+                continue
+            if c.any_of in groups_done:
+                continue
+            groups_done.add(c.any_of)
+            members = self._groups[c.any_of]
+            if not any(m.available for m in members):
+                out.append(" or ".join(m.label for m in members))
+        return out
 
     def degrade(self, t: float | None = None) -> Status:
         """Force DEGRADED — used when no camera is delivering frames."""
