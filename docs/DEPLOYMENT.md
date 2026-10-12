@@ -139,7 +139,7 @@ top of `packaging/installer.iss`.
 ## 4. Check the installation
 
 1. Start menu → PPE Station → **Self-test**: expect
-   `selftest OK — PPE Station <version>, model …, inference … ms`.
+   `selftest OK - PPE Station <version>, model …, inference … ms`.
 2. `PPEStation-console.exe camcheck --scan`: both cameras answer.
 3. Start the station and run the I/O loop check and functional tests from
    the FAT/SAT protocols.

@@ -159,10 +159,10 @@ def selftest(cfg) -> int:
         import PySide6.QtWidgets  # noqa: F401
     except Exception:
         log.exception("selftest FAILED")
-        print("selftest FAILED — see the log above", file=sys.stderr if sys.stderr else None)
+        print("selftest FAILED - see the log above", file=sys.stderr if sys.stderr else None)
         return 1
     missing = getattr(detector, "missing", [])
-    msg = (f"selftest OK — PPE Station {__version__}, model {cfg.model.weights}, "
+    msg = (f"selftest OK - PPE Station {__version__}, model {cfg.model.weights}, "
            f"{len(detector.names)} classes, loaded in {loaded:.1f} s, "
            f"inference {timings['inference']:.0f} ms, "
            f"{len(detections[0])} detections on a blank frame")
