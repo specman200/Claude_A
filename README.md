@@ -584,10 +584,19 @@ it rather than guess.
 cut wire looks like the e-stop being hit, which is the safe direction. With
 normally open, a cut wire looks like an e-stop at rest. The software stops
 seeing the e-stop: the lamp does not go red and the latch below is not
-dropped. The hard-wired safety relay still stops the motor; that is what it
-is for. So:
+dropped. Only a hard-wired e-stop circuit stops the motor in that case.
 
-- the e-stop's own contacts into the safety relay stay **normally closed**
+> **This software is not the e-stop.** Until the safety relay is fitted, an
+> e-stop wired only to the relay module does nothing at all if the wire
+> breaks, the PC or the program freezes, the network drops, or a relay
+> contact sticks. None of those parts is safety-rated. A hard-wired
+> e-stop (normally-closed contacts breaking the motor contactor circuit,
+> stop category 0 or 1, ISO 13850 / IEC 60204-1) is required before
+> operators rely on the station. This input then only *reports* the e-stop.
+
+So:
+
+- the e-stop's own contacts into the safety circuit are **normally closed**
   (ISO 13850 / IEC 60947-5-5 direct opening). Only the signal to this input
   is normally open;
 - where the safety relay has a monitored status output, wire this input to

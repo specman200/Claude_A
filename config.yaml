@@ -192,12 +192,17 @@ tower:
     #
     # With normally_open, a broken signal wire reads exactly like a switch
     # at rest. For the push button that only means it stops working. For the
-    # e-stop it means the software no longer SEES an e-stop: the hard-wired
-    # safety relay still stops the motor, but the lamp does not go red and
-    # this latch is not dropped. So the e-stop's own safety contacts into the
-    # safety relay must stay normally closed (ISO 13850, IEC 60947-5-5), and
-    # this input should come from a monitored safety relay output where one
-    # is available. Test a pulled wire on each input at commissioning.
+    # e-stop it means the software no longer SEES an e-stop: the lamp does
+    # not go red and this latch is not dropped.
+    #
+    # WHILE NO SAFETY RELAY IS FITTED, that makes this input the ONLY thing
+    # the e-stop does: a broken wire, a crashed or frozen PC, a network fault
+    # or a stuck relay contact each leave the e-stop doing nothing. This
+    # software is a permissive, not a safety function. A hard-wired e-stop
+    # (normally-closed contacts breaking the motor contactor circuit, ISO
+    # 13850, IEC 60204-1, IEC 60947-5-5) is required before operators rely
+    # on it; this input then only reports the e-stop. Test a pulled wire on
+    # each input at commissioning.
     estop: normally_open
     push_button: normally_open
 

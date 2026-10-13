@@ -692,9 +692,11 @@ class TowerLight:
 
         Know what normally open costs on the e-stop: a broken signal wire
         reads exactly like an e-stop at rest, so the software stops seeing
-        it. The hard-wired safety relay still stops the motor, but this
-        latch is not dropped, which is why tower.contacts belongs in the
-        commissioning checks (docs/DEPLOYMENT.md, the FAT/SAT protocols).
+        it and this latch is not dropped. Only a hard-wired e-stop circuit
+        (the safety relay the SOW requires) still stops the motor then;
+        without one, nothing does. This method is a permissive, never the
+        e-stop itself. tower.contacts belongs in the commissioning checks
+        (docs/DEPLOYMENT.md, the FAT/SAT protocols).
 
         The push button is momentary, so this is a **latch** — the seal-in
         of a standard motor starter — rather than the hold-to-run a plain
