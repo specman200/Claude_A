@@ -157,6 +157,18 @@ Settings added by a new version use their built-in defaults until they are
 added to the machine's `config.yaml`. The shipped default for comparison is
 `C:\Program Files\PPE Station\_internal\config.yaml`.
 
+**Switch wiring (`tower.contacts`)** is the one to check by hand. A config
+written before this setting existed treats both switches as normally
+closed. On a station whose switches are normally open, that reads the
+e-stop as permanently hit: safe, because the motor will not start, but the
+station is unusable until these lines are added under `tower:`:
+
+```yaml
+  contacts:
+    estop: normally_open
+    push_button: normally_open
+```
+
 ## 6. Uninstall
 
 Settings → Apps → PPE Station → Uninstall, or silently:

@@ -1,5 +1,7 @@
 """Config load, save and validation."""
 
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -323,3 +325,30 @@ def test_validate_rejects_a_negative_class_window(mutate, message):
     mutate(cfg)
     with pytest.raises(ValueError, match=message):
         cfg.validate()
+
+
+def test_the_shipped_switches_are_normally_open():
+    cfg = Config.load("config.yaml")
+    assert cfg.tower.contacts == {"estop": "normally_open", "push_button": "normally_open"}
+
+
+@pytest.mark.parametrize("contacts, match", [
+    ({"start": "normally_open"}, "names no input"),
+    ({"estop": "NO"}, "must be one of"),
+    ({"estop": False}, "YAML reads a bare no as false"),
+])
+def test_a_bad_contacts_entry_is_refused(contacts, match):
+    cfg = Config.load("config.yaml")
+    cfg.tower.contacts = contacts
+    with pytest.raises(ValueError, match=match):
+        cfg.validate()
+
+
+def test_a_bare_no_in_the_yaml_is_caught_not_read_as_normally_closed(tmp_path):
+    """`estop: no` loads as False. Silently treating that as "not normally
+    open" would flip the e-stop's meaning; it must fail loudly instead."""
+    raw = Path("config.yaml").read_text().replace("estop: normally_open", "estop: no")
+    path = tmp_path / "c.yaml"
+    path.write_text(raw)
+    with pytest.raises(ValueError, match="bare no"):
+        Config.load(path).validate()

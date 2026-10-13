@@ -364,10 +364,11 @@ def test_apply_never_touches_a_coil_it_does_not_manage():
 
 # -- belt grinder interlock -------------------------------------------------
 # Digital Input 1 (estop) and Digital Input 2 (push_button) gate Digital
-# Output 5 (belt_grinder). Both switches are wired ACTIVE (normally
-# closed), so an idle input reads True and pressing takes it to False —
-# hence estop True means "not hit" and push_button False means "held
-# down".
+# Output 5 (belt_grinder). The tests in this block use a config without
+# tower.contacts, which means normally closed, the original wiring: an idle
+# input reads True and pressing takes it to False, hence estop True means
+# "not hit" and push_button False means "held down". The normally-open
+# wiring the shipped config now uses has its own block further down.
 #
 # The button is momentary, so the output latches: a press while the e-stop
 # is clear and PPE is compliant starts the motor and it keeps running once
@@ -1771,3 +1772,94 @@ def test_a_group_the_model_cannot_see_at_all_degrades():
     m = arms_monitor(missing=["sleeves", "apron"])
     assert m.update([GLOVES], t=1.0) is Status.DEGRADED
     assert m.unavailable() == ["Sleeves or Apron"]
+
+
+# -- normally-open switches (tower.contacts) ---------------------------------
+# The same latch with the opposite raw bits: idle reads False, operated
+# reads True. The config translates; the latch logic is unchanged.
+
+NO = {"estop": "normally_open", "push_button": "normally_open"}
+
+
+def tower_with_contacts(contacts):
+    tower = TowerLight(TowerCfg(
+        coils={"green": 0, "amber": 1, "red": 2, "buzzer": 3, "belt_grinder": 4},
+        inputs={"estop": 0, "push_button": 1},
+        contacts=contacts,
+    ))
+    fake = FakeClient()
+    tower._make_client = lambda: fake
+    tower.connect()
+    fake.writes.clear()
+    return tower, fake
+
+
+def press_no(tower, fake, status=Status.OK):
+    fake.inputs[1] = False   # released: open contact reads 0
+    tower.update_belt_grinder(status)
+    fake.inputs[1] = True    # pressed: the contact closes
+    return tower.update_belt_grinder(status)
+
+
+def test_normally_open_an_idle_board_is_not_an_estop_and_starts_nothing():
+    tower, fake = tower_with_contacts(NO)
+    fake.inputs = {0: False, 1: False}
+    tower.update_belt_grinder(Status.OK)
+    assert not tower.estop_hit
+    assert dict(fake.writes).get(4) is not True
+
+
+def test_normally_open_a_press_reads_high_and_the_latch_holds_after_release():
+    tower, fake = tower_with_contacts(NO)
+    fake.inputs = {0: False, 1: False}
+    assert press_no(tower, fake) is True
+    assert dict(fake.writes) == {4: True}
+    fake.writes.clear()
+    fake.inputs[1] = False   # let go
+    tower.update_belt_grinder(Status.OK)
+    assert fake.writes == []
+    assert press_no(tower, fake) is True   # same button stops it
+    assert dict(fake.writes)[4] is False
+
+
+def test_normally_open_estop_reads_high_when_hit_and_release_does_not_restart():
+    tower, fake = tower_with_contacts(NO)
+    fake.inputs = {0: False, 1: False}
+    press_no(tower, fake)
+    fake.writes.clear()
+    fake.inputs[0] = True    # e-stop hit closes the contact
+    assert tower.update_belt_grinder(Status.OK) is True
+    assert dict(fake.writes) == {4: False}
+    assert tower.estop_hit and tower.last_drop == "e-stop hit"
+    fake.writes.clear()
+    fake.inputs[0] = False   # released
+    tower.update_belt_grinder(Status.OK)
+    assert fake.writes == [], "released e-stop restarted the motor on its own"
+
+
+def test_normally_open_a_button_held_through_a_fault_does_not_restart():
+    tower, fake = tower_with_contacts(NO)
+    fake.inputs = {0: False, 1: False}
+    press_no(tower, fake)
+    tower.update_belt_grinder(Status.VIOLATION)      # fault drops it, button still held
+    fake.writes.clear()
+    tower.update_belt_grinder(Status.OK)             # fault clears, button never released
+    assert fake.writes == []
+
+
+def test_each_input_is_read_by_its_own_contact_type():
+    """E-stop normally closed, button normally open: idle is estop 1, button 0."""
+    tower, fake = tower_with_contacts({"estop": "normally_closed", "push_button": "normally_open"})
+    fake.inputs = {0: True, 1: False}
+    assert press_no(tower, fake) is True
+    fake.inputs[0] = False   # normally-closed e-stop hit reads 0
+    tower.update_belt_grinder(Status.OK)
+    assert tower.estop_hit
+
+
+def test_a_config_without_contacts_keeps_the_normally_closed_meaning():
+    """An installed station upgraded without touching its config must not flip."""
+    tower, fake = tower_with_contacts({})
+    fake.inputs = {0: False, 1: True}    # raw 0 on the e-stop: hit, as it always meant
+    tower.update_belt_grinder(Status.OK)
+    assert tower.estop_hit

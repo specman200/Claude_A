@@ -257,6 +257,7 @@ editable in the UI (the checklist's **Save to config** button writes them back).
 | `tower.*` | Transport, address, and the coil behind each lamp |
 | `tower.channels` | Channels on the relay board; all are driven low at connect |
 | `tower.reconnect_sec` | Wait between reconnect attempts after a bus failure |
+| `tower.contacts` | Per input: `normally_open` or `normally_closed` (the default) |
 | `audio.file` | Spoken prompt while a violation stands; empty = silent |
 | `audio.grace_sec` | Pause before the first prompt — time to comply |
 | `audio.repeat_sec` | Gap between repeats while the violation stands |
@@ -560,23 +561,47 @@ tower:
   coils:
     belt_grinder: 4   # Digital Output 5 — channel N is coil N-1, as above
   inputs:
-    estop: 0          # Digital Input 1 — false = e-stop hit
-    push_button: 1    # Digital Input 2 — false = button pressed
+    estop: 0          # Digital Input 1
+    push_button: 1    # Digital Input 2
+  contacts:
+    estop: normally_open
+    push_button: normally_open
 ```
 
-**Switch polarity.** Both switches are wired **active** (normally closed):
-an idle input reads `true`, and pressing the switch takes it to `false`.
-That is why the run condition below wants `estop` true and `push_button`
-false — it reads like a typo and is not one. It also fails safe: a cut
-wire on the e-stop line reads the same as the e-stop being hit.
+**Switch polarity** is set per input under `contacts`:
+
+| | at rest | operated (hit, pressed) | a broken wire reads as |
+|---|---|---|---|
+| `normally_open` (shipped) | 0 | 1 | at rest |
+| `normally_closed` | 1 | 0 | operated |
+
+A name left out of `contacts` is `normally_closed`, the original wiring, so
+a station upgraded without touching its config does not flip. Write the
+values in full: YAML reads a bare `no` as *false*, and the config refuses
+it rather than guess.
+
+**What normally open costs on the e-stop input.** With normally closed, a
+cut wire looks like the e-stop being hit, which is the safe direction. With
+normally open, a cut wire looks like an e-stop at rest. The software stops
+seeing the e-stop: the lamp does not go red and the latch below is not
+dropped. The hard-wired safety relay still stops the motor; that is what it
+is for. So:
+
+- the e-stop's own contacts into the safety relay stay **normally closed**
+  (ISO 13850 / IEC 60947-5-5 direct opening). Only the signal to this input
+  is normally open;
+- where the safety relay has a monitored status output, wire this input to
+  that instead of to an auxiliary contact on the button;
+- at commissioning, pull each input's wire with the station running and
+  confirm what happens (FAT/SAT protocols).
 
 The button is momentary, so the output **latches** — the seal-in of a
 standard motor starter, read and driven every cycle:
 
 - **start** on a press (a release-then-press the station actually saw)
-  while `estop` reads true and the station shows `OK`
+  while the e-stop is not hit and the station shows `OK`
 - **run** until something drops it — letting go of the button does not
-- **drop** when `estop` goes false (hit, or the circuit broken), when the
+- **drop** when the e-stop is hit (or, wired normally closed, its circuit broken), when the
   station leaves `OK` (missing PPE, STANDBY, DEGRADED), when either input
   cannot be read, or when the board is taken low by a connect or a close
 
@@ -868,7 +893,7 @@ assets/thumbs_*.svg  checklist tick / cross icons
 docs/layout.svg      architecture diagram
 docs/CODE_WALKTHROUGH.md  how the code works, function by function
 docs/DEPLOYMENT.md   installing on the station PCs (for IT)
-tests/               463 tests
+tests/               472 tests
 ```
 
 ## About
@@ -904,7 +929,7 @@ change, and an unreadable or missing file is ignored rather than fatal.
 
 ```bash
 pip install pytest ruff
-pytest                       # 463 tests
+pytest                       # 472 tests
 ruff check ppe main.py tests
 ```
 

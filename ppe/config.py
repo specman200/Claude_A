@@ -10,6 +10,8 @@ import yaml
 
 from .paths import app_dir
 
+CONTACT_KINDS = ("normally_closed", "normally_open")
+
 
 def _build(cls, data: dict[str, Any]):
     """Instantiate a dataclass from a dict, ignoring unknown keys."""
@@ -158,6 +160,13 @@ class TowerCfg:
     # wired addresses, never a guessed default. "estop" and "push_button"
     # are the only names update_belt_grinder() looks for.
     inputs: dict[str, int] = field(default_factory=dict)
+    # How each input's switch is wired, by the same names:
+    #   normally_closed  idle reads 1, operated (pressed, hit) reads 0
+    #   normally_open    idle reads 0, operated reads 1
+    # A name left out is normally_closed, the original wiring, so a config
+    # written before this setting existed keeps its meaning. Spelled out in
+    # full on purpose: YAML reads an unquoted `no` as false.
+    contacts: dict[str, str] = field(default_factory=dict)
     # The buzzer sounds as a fixed pulse when a violation cuts the
     # grinder, not for as long as the violation stands. 0 disables it as
     # surely as buzzer_on_violation: false does.
@@ -475,3 +484,16 @@ class Config:
                 "tower.coils.belt_grinder, tower.inputs.estop and "
                 "tower.inputs.push_button set together — only some are set"
             )
+        for name, kind in self.tower.contacts.items():
+            if name not in self.tower.inputs:
+                raise ValueError(
+                    f"config: tower.contacts.{name} names no input in tower.inputs"
+                )
+            if kind not in CONTACT_KINDS:
+                # The likeliest way here: `estop: no`, which YAML loads as False.
+                hint = " (write normally_open: YAML reads a bare no as false)" \
+                    if isinstance(kind, bool) else ""
+                raise ValueError(
+                    f"config: tower.contacts.{name} must be one of {list(CONTACT_KINDS)}, "
+                    f"got {kind!r}{hint}"
+                )

@@ -788,9 +788,14 @@ Supporting helpers:
 
 #### `update_belt_grinder(status, grace)` — the motor interlock, line by line (`:600`)
 
-The two switches are wired **normally closed** (NC). An idle switch reads
-**True**; pressing it reads **False**. A broken wire therefore reads the same
-as "pressed", the safe direction.
+How a raw input bit is read depends on `tower.contacts`. **`_operated(name)`**
+reads the input and translates it: normally closed (NC, the default for a
+name left out) reads True at rest and False when operated; normally open
+(NO, what the shipped config now uses) the reverse. It returns True when the
+switch is operated (e-stop hit, button pressed), or None if the read failed.
+With NC a broken wire reads as operated, the safe direction. With NO it reads
+as at rest, so a broken e-stop signal hides the e-stop from the software;
+the hard-wired safety relay must cover that case.
 
 The push button is momentary, so the motor run is a **latch**, like the
 seal-in contact of a classic motor starter. The same button starts the motor
@@ -798,14 +803,13 @@ when it's idle and compliant, and stops it when it's running.
 
 ```text
 655-658  not wired (no belt_grinder coil, or no estop/push_button inputs) -> do nothing
-660-661  estop = read DI ; push_button = read DI
+660-661  estop_hit = _operated("estop") ; pressed = _operated("push_button")
 662-668  either read failed:
              assume the button is held (so the NEXT start needs a fresh press)
              e-stop reading unknown
              -> drop the motor ("input read failed")
-672-673  pressed = not push_button              (NC: False means pressed)
-         was_pressed = last cycle's value; remember this cycle's
-674      _estop_ok = estop                       (for the lamp)
+672-673  was_pressed = last cycle's value; remember this cycle's
+674      _estop_ok = not estop_hit               (for the lamp)
 676-677  e-stop hit -> drop ("e-stop hit")
 684-685  a NEW press (pressed now, not last cycle) while running -> drop ("button pressed while running")
              checked before the status, so a stop request is never delayed by a countdown
@@ -1521,6 +1525,7 @@ fresh button press.
 | `tower.host`, `port`, `unit`, `transport`, `timeout`, `reconnect_sec` | `TowerLight._make_client`, `connect` | Modbus connection |
 | `tower.coils`, `channels` | `apply`, `write`, `_blank` | which relay drives what |
 | `tower.inputs` | `update_belt_grinder` | e-stop and push-button inputs |
+| `tower.contacts` | `_operated` | normally open / normally closed, per input |
 | `tower.grace_sec` | `grace_window` default | station-wide correction time |
 | `tower.buzzer_on_violation`, `buzzer_sec`, `buzzer_warn_sec` | `_buzz` | buzzer pulses |
 | `ui.mode` | `MainWindow`, `Annunciator` | operator or debug view; debug mutes audio |
@@ -1534,16 +1539,16 @@ fresh button press.
 
 ## 6. Tests
 
-There are 463 test functions in `tests/`. They need no camera, GPU, display
+There are 472 test functions in `tests/`. They need no camera, GPU, display
 or Modbus device: video comes from synthetic files, Qt runs offscreen, and
 the bus is a fake that records writes.
 
 | File | Pins down |
 |---|---|
-| `test_tower.py` (135) | debounce timing, hold vs occlusion windows, counts, forbidden classes, alternative groups (sleeves or apron), the motor latch (no restart, edge-triggered start/stop, e-stop, input failure), correction countdown, buzzer pulses, lamps, connect/close blanking |
+| `test_tower.py` (141) | debounce timing, hold vs occlusion windows, counts, forbidden classes, alternative groups (sleeves or apron), the motor latch (no restart, edge-triggered start/stop, e-stop, input failure), correction countdown, buzzer pulses, lamps, connect/close blanking, normally-open and normally-closed switches |
 | `test_ui.py` (70), `test_ui_modes.py` (18) | widget states, wording, e-stop and intermittent text, operator vs debug |
 | `test_pipeline.py` (32) | cycle order, offline handling, batching/turn-taking, publish contents |
-| `test_config.py` (30) | load/save/validate rules, including `any_of` groups |
+| `test_config.py` (33) | load/save/validate rules, including `any_of` groups and switch contacts |
 | `test_subject.py` (18) | subject choice, containment, bystanders |
 | `test_camcheck.py` (19), `test_capture_*` | camera probing, FOURCC order, the MSMF environment-variable ordering |
 | `test_detector.py` (14), `test_batching.py` (11), `test_letterbox.py` (9) | model wrapper, batch settling and padding, box inverse matching Ultralytics within half a pixel |
@@ -1572,5 +1577,6 @@ Run them with `pytest`, and lint with `ruff check ppe main.py tests`.
 | **NMS** | non-maximum suppression: YOLO merging overlapping boxes for one object |
 | **Coil / discrete input** | Modbus terms for a relay output / a digital input on the I/O board |
 | **NC (normally closed)** | a switch that reads True when idle and False when pressed or when its wire breaks |
+| **NO (normally open)** | a switch that reads False when idle and True when pressed; a broken wire reads as idle (`tower.contacts`) |
 | **DEGRADED** | can't judge (no camera, model failure, or a required class the model lacks) |
 | **STANDBY** | nobody at the machine |

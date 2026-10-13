@@ -609,6 +609,21 @@ class TowerLight:
                 self._retry_at = now() + self.cfg.reconnect_sec
                 return None
 
+    def _operated(self, name: str) -> bool | None:
+        """Is this switch operated (e-stop hit, button pressed)? None if unread.
+
+        The raw bit means opposite things for the two contact types: a
+        normally-closed switch reads 1 at rest and 0 when operated, a
+        normally-open one the reverse. tower.contacts says which; a name it
+        leaves out is normally_closed, the original wiring.
+        """
+        raw = self._read_input(name)
+        if raw is None:
+            return None
+        if self.cfg.contacts.get(name, "normally_closed") == "normally_open":
+            return raw
+        return not raw
+
     def _disarm_grinder(self) -> None:
         """Forget the latch and demand a fresh press before running again.
 
@@ -670,20 +685,25 @@ class TowerLight:
         """Drive the belt grinder relay from the e-stop and push-button
         inputs plus this cycle's compliance status.
 
-        Both switches are wired **active** (normally closed): an idle input
-        reads True, and pressing the switch takes it to False. So False is
-        "e-stop hit" on one and "button pressed" on the other — which is
-        why the run condition wants estop True and push_button False, and
-        why that is not the typo it looks like.
+        What a raw input bit means depends on the switch's contact, set per
+        input in tower.contacts: normally closed reads 1 at rest and 0 when
+        operated, normally open the reverse. _operated() translates, so the
+        logic below only ever deals in "e-stop hit" and "button pressed".
+
+        Know what normally open costs on the e-stop: a broken signal wire
+        reads exactly like an e-stop at rest, so the software stops seeing
+        it. The hard-wired safety relay still stops the motor, but this
+        latch is not dropped, which is why tower.contacts belongs in the
+        commissioning checks (docs/DEPLOYMENT.md, the FAT/SAT protocols).
 
         The push button is momentary, so this is a **latch** — the seal-in
         of a standard motor starter — rather than the hold-to-run a plain
         AND chain would give:
 
           start  a press (a release-then-press this method actually saw)
-                 while the e-stop reads True and status is Status.OK
+                 while the e-stop is not hit and status is Status.OK
           run    until something drops it; releasing the button does not
-          drop   a press while it is RUNNING, the e-stop going False,
+          drop   a press while it is RUNNING, the e-stop being hit,
                  status leaving Status.OK, either input failing to read,
                  or the board being taken low by a connect or a close
 
@@ -726,9 +746,9 @@ class TowerLight:
         if not {"estop", "push_button"} <= set(self.cfg.inputs):
             return False
 
-        estop = self._read_input("estop")
-        push_button = self._read_input("push_button")
-        if estop is None or push_button is None:
+        estop_hit = self._operated("estop")
+        pressed = self._operated("push_button")
+        if estop_hit is None or pressed is None:
             # The button's position is unknown, so the next press cannot be
             # told from a hold that spanned the outage. Demand one this
             # method has seen from both sides rather than guessing.
@@ -738,11 +758,10 @@ class TowerLight:
 
         # Track the button every cycle, faults included: a release *during*
         # a fault is what makes the operator's next press a real edge.
-        pressed = not push_button
         was_pressed, self._button_was_pressed = self._button_was_pressed, pressed
-        self._estop_ok = bool(estop)
+        self._estop_ok = not estop_hit
 
-        if not estop:
+        if estop_hit:
             return self._drop_grinder("e-stop hit")
 
         # A press on a turning motor is a stop, whatever the status is. Ahead
