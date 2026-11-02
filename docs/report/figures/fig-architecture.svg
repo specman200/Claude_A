@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#3a4656"/></marker>
+  </defs>
+  <style>
+    .b{fill:#f3f5f8;stroke:#3a4656;stroke-width:1.4}
+    .p{fill:#ffffff;stroke:#3a4656;stroke-width:1.4;stroke-dasharray:6 4}
+    .h{fill:#0b1f3a;font-size:14px;font-weight:bold}
+    .t{fill:#0b1f3a;font-size:12.5px}
+    .s{fill:#5b6b82;font-size:11px}
+    .l{stroke:#3a4656;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+    .k{fill:#c2410c;font-size:11px;font-weight:bold}
+  </style>
+  <rect width="960" height="520" fill="#ffffff"/>
+  <!-- cameras -->
+  <rect class="b" x="20" y="70" width="150" height="56" rx="6"/>
+  <text class="h" x="34" y="94">Camera 1</text><text class="s" x="34" y="113">front view, USB 3.0</text>
+  <rect class="b" x="20" y="150" width="150" height="56" rx="6"/>
+  <text class="h" x="34" y="174">Camera 2</text><text class="s" x="34" y="193">side view, USB 3.0</text>
+  <!-- control panel -->
+  <rect class="p" x="215" y="30" width="520" height="460" rx="10"/>
+  <text class="s" x="230" y="50">CONTROL PANEL</text>
+  <rect class="b" x="235" y="65" width="230" height="160" rx="6"/>
+  <text class="h" x="250" y="88">Industrial PC (CPU only)</text>
+  <text class="t" x="250" y="110">capture threads (x2)</text>
+  <text class="t" x="250" y="130">YOLO11s, OpenVINO, FP32</text>
+  <text class="t" x="250" y="150">compliance logic + debounce</text>
+  <text class="t" x="250" y="170">motor permissive latch</text>
+  <text class="t" x="250" y="190">operator UI (Qt)</text>
+  <text class="s" x="250" y="212">Windows 10/11, one installer per station</text>
+  <rect class="b" x="505" y="65" width="210" height="160" rx="6"/>
+  <text class="h" x="520" y="88">Ethernet relay module</text>
+  <text class="t" x="520" y="110">Modbus TCP server</text>
+  <text class="t" x="520" y="130">DO1-DO3 tower lamps</text>
+  <text class="t" x="520" y="150">DO4 buzzer</text>
+  <text class="t" x="520" y="170">DO5 motor permissive</text>
+  <text class="t" x="520" y="190">DI1 e-stop, DI2 push button</text>
+  <rect class="b" x="235" y="260" width="140" height="50" rx="6"/>
+  <text class="h" x="250" y="283">SMPS</text><text class="s" x="250" y="300">DC supply for I/O</text>
+  <rect class="b" x="395" y="260" width="150" height="50" rx="6"/>
+  <text class="h" x="410" y="283">E-stop</text><text class="s" x="410" y="300">NO contact to DI1</text>
+  <rect class="b" x="565" y="260" width="150" height="50" rx="6"/>
+  <text class="h" x="580" y="283">Push button</text><text class="s" x="580" y="300">NO, start / stop</text>
+  <rect class="b" x="505" y="340" width="210" height="64" rx="6"/>
+  <text class="h" x="520" y="363">Motor contactor</text>
+  <text class="s" x="520" y="381">+ overload relay</text>
+  <text class="s" x="520" y="396">coil via DO5 permissive</text>
+  <rect class="b" x="235" y="340" width="230" height="64" rx="6"/>
+  <text class="h" x="250" y="363">Monitor at station</text>
+  <text class="s" x="250" y="383">status, checklist, live video</text>
+  <text class="k" x="235" y="440">E-stop currently reaches the motor only through DI1 and the software;</text>
+  <text class="k" x="235" y="456">the hard-wired safety relay is pending (Sections 7.6 and 12.2).</text>
+  <!-- field devices -->
+  <rect class="b" x="780" y="65" width="160" height="70" rx="6"/>
+  <text class="h" x="795" y="90">Tower light</text><text class="s" x="795" y="108">green / amber / red</text><text class="s" x="795" y="123">+ buzzer</text>
+  <rect class="b" x="780" y="340" width="160" height="64" rx="6"/>
+  <text class="h" x="795" y="365">Belt grinder</text><text class="s" x="795" y="383">drive motor</text>
+  <!-- links -->
+  <path class="l" d="M170 98 H235"/>
+  <path class="l" d="M170 178 H205 V150 H235"/>
+  <path class="l" d="M465 145 H505"/><text class="s" x="469" y="137">Modbus</text><text class="s" x="476" y="162">TCP</text>
+  <path class="l" d="M715 100 H780"/>
+  <path class="l" d="M470 260 V240 H560 V225"/>
+  <path class="l" d="M640 260 V225"/>
+  <path class="l" d="M610 225 V340"/>
+  <path class="l" d="M715 372 H780"/>
+  <path class="l" d="M350 225 V340"/>
+</svg>

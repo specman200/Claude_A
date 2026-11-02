@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" width="960" height="430" font-family="Arial, Helvetica, sans-serif">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#3a4656"/></marker></defs>
+  <style>
+    .b{fill:#f3f5f8;stroke:#3a4656;stroke-width:1.4}.o{fill:#fff4ea;stroke:#c2410c;stroke-width:1.4}
+    .lane{fill:none;stroke:#8a97a8;stroke-width:1.2;stroke-dasharray:6 4}
+    .h{fill:#0b1f3a;font-size:13.5px;font-weight:bold}.t{fill:#0b1f3a;font-size:12px}.s{fill:#5b6b82;font-size:11px}
+    .l{stroke:#3a4656;stroke-width:1.6;fill:none;marker-end:url(#ar)}.lbl{fill:#5b6b82;font-size:10.5px;letter-spacing:1px}
+  </style>
+  <rect width="960" height="430" fill="#ffffff"/>
+  <rect class="lane" x="12" y="30" width="200" height="250" rx="10"/><text class="lbl" x="24" y="50">CAPTURE THREADS (x2)</text>
+  <rect class="b" x="28" y="64" width="168" height="84" rx="6"/><text class="h" x="40" y="86">Camera.run (x2)</text>
+  <text class="t" x="40" y="106">read() paced to fps</text><text class="t" x="40" y="124">1-frame driver buffer</text><text class="s" x="40" y="141">reconnect with back-off</text>
+  <rect class="b" x="28" y="170" width="168" height="90" rx="6"/><text class="h" x="40" y="192">Latest-frame slot</text>
+  <text class="t" x="40" y="212">one Frame per camera</text><text class="t" x="40" y="230">(index, seq, image, ts)</text><text class="s" x="40" y="248">overwritten, never queued</text>
+  <rect class="lane" x="232" y="30" width="470" height="380" rx="10"/><text class="lbl" x="244" y="50">PIPELINE THREAD (Pipeline.run)</text>
+  <rect class="b" x="248" y="64" width="210" height="64" rx="6"/><text class="h" x="260" y="86">sample() and select</text><text class="t" x="260" y="106">fresh = new seq only</text><text class="s" x="260" y="121">round-robin turn, one camera per cycle</text>
+  <rect class="b" x="478" y="64" width="210" height="64" rx="6"/><text class="h" x="490" y="86">Detector.detect</text><text class="t" x="490" y="106">letterbox to 640 x 640</text><text class="s" x="490" y="121">OpenVINO inference, decode, floors</text>
+  <rect class="b" x="478" y="150" width="210" height="64" rx="6"/><text class="h" x="490" y="172">focus() per camera</text><text class="t" x="490" y="192">largest person = subject</text><text class="s" x="490" y="207">containment test for each item</text>
+  <rect class="b" x="248" y="150" width="210" height="64" rx="6"/><text class="h" x="260" y="172">ComplianceMonitor</text><text class="t" x="260" y="192">hold / occlusion windows</text><text class="s" x="260" y="207">any_of groups, debounce</text>
+  <rect class="o" x="248" y="236" width="210" height="80" rx="6"/><text class="h" x="260" y="258">TowerLight (Modbus TCP)</text><text class="t" x="260" y="278">read DI1, DI2 every cycle</text><text class="t" x="260" y="296">motor latch, grace countdown</text><text class="s" x="260" y="311">write changed coils only</text>
+  <rect class="b" x="478" y="236" width="210" height="80" rx="6"/><text class="h" x="490" y="258">Side effects</text><text class="t" x="490" y="278">annunciator, latency record</text><text class="t" x="490" y="296">capture mode (queued)</text><text class="s" x="490" y="311">trial log</text>
+  <rect class="b" x="248" y="336" width="440" height="56" rx="6"/><text class="h" x="260" y="358">_publish(Result)</text><text class="s" x="260" y="377">status, per-class rows, boxes, latency, countdown -> Qt signal</text>
+  <rect class="lane" x="722" y="30" width="226" height="250" rx="10"/><text class="lbl" x="734" y="50">MAIN THREAD (Qt GUI)</text>
+  <rect class="b" x="738" y="64" width="194" height="84" rx="6"/><text class="h" x="750" y="86">MainWindow</text><text class="t" x="750" y="106">apply each Result</text><text class="t" x="750" y="124">repaint video at 16 ms</text><text class="s" x="750" y="141">reads latest frames directly</text>
+  <rect class="lane" x="722" y="300" width="226" height="110" rx="10"/><text class="lbl" x="734" y="320">DATASET WRITER (capture mode)</text>
+  <rect class="b" x="738" y="332" width="194" height="64" rx="6"/><text class="h" x="750" y="354">DatasetRecorder</text><text class="s" x="750" y="372">bounded queue; drops when full</text><text class="s" x="750" y="387">JPEG + pre-label to disk</text>
+  <path class="l" d="M112 148 V170"/><path class="l" d="M196 215 H220 V96 H248"/>
+  <path class="l" d="M458 96 H478"/><path class="l" d="M583 128 V150"/><path class="l" d="M478 182 H458"/>
+  <path class="l" d="M353 214 V236"/><path class="l" d="M458 276 H478"/><path class="l" d="M468 316 V336"/>
+  <path class="l" d="M688 364 H712 V106 H738"/><path class="l" d="M688 290 H705 V364 H738"/>
+  <text class="s" x="248" y="424">Orange: Modbus I/O runs on the pipeline thread, inside the measured end-to-end cycle (Section 6.2).</text>
+</svg>
