@@ -311,25 +311,26 @@ Table 3 lists the configurations evaluated.
 The nano anomaly deserves care. YOLO11n needs about a third of the arithmetic of YOLO11s
 (6.5 against 21.5 GFLOPs [2]), so it should have been two to three times *faster*. A fixed
 per-call overhead or graph optimisation favouring wider layers could narrow that gap, but not
-reverse it. Only a precision or configuration mismatch in the nano's export predicts a reversal,
-so it should be ruled out first. The deployed *s* export is pure FP32; the nano export was not
-kept.
+reverse it. Only a mismatch in how the nano was exported or run predicts a reversal. A controlled
+re-measurement at the end of the internship confirmed this, as described below.
 
 **Model versions.** Table 4 compares the six checkpoints that were kept. The comparison is drawn
 from the training records stored inside each file, and Figure A2 in Attachment A shows their
 training curves. The repository's `ppe-yolo11s.pt` has the same weights as *v2*, bit for bit:
 the v2 file is a re-run on 3 September that, with the fixed seed, reproduced it exactly.
 
-**Table 4.** Model versions, with validation metrics at each run's best epoch.
+**Table 4.** Model versions: validation metrics at each run's best epoch, and CPU inference
+time after conversion to OpenVINO with the same tool (FP32, 640 × 640, median of 60 calls on one
+4-core CPU).
 
-| Version | Trained | Classes | Starting weights | Epochs (best) | P | R | mAP@0.5 | mAP@0.5:0.95 |
+| Version | Trained | Classes | Epochs (best) | P | R | mAP@0.5 | mAP@0.5:0.95 | OpenVINO ms |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v2 (in repository) | 23 Aug | 7 | COCO `yolo11s` | 105 (75) | 0.942 | 0.955 | 0.966 | 0.840 |
-| nano 3 | 30 Aug | 7 | COCO `yolo11n` | 100 (98) | 0.969 | 0.967 | 0.985 | 0.858 |
-| v4 | 10 Sep | 7 | COCO `yolo11s` | 100 (70) | 0.945 | 0.952 | 0.970 | 0.842 |
-| v5 | 10 Sep | 7 | COCO `yolo11s` | 104 (74) | 0.948 | 0.955 | 0.975 | 0.843 |
-| v6 | 20 Sep | 7 | COCO `yolo11s` | 100 (70) | 0.941 | 0.964 | 0.972 | 0.844 |
-| best-apron (station) | 12 Oct | 8 | an earlier fine-tuned run | 93 (63) | 0.971 | 0.979 | 0.987 | 0.864 |
+| v2 (first deployed) | 23 Aug | 7 | 105 (75) | 0.942 | 0.955 | 0.966 | 0.840 | 35.0 |
+| nano 3 | 30 Aug | 7 | 100 (98) | 0.969 | 0.967 | 0.985 | 0.858 | **16.5** |
+| v4 | 10 Sep | 7 | 100 (70) | 0.945 | 0.952 | 0.970 | 0.842 | 34.5 |
+| v5 | 10 Sep | 7 | 104 (74) | 0.948 | 0.955 | 0.975 | 0.843 | 35.1 |
+| v6 | 20 Sep | 7 | 100 (70) | 0.941 | 0.964 | 0.972 | 0.844 | 34.1 |
+| best-apron (default) | 12 Oct | 8 | 93 (63) | 0.971 | 0.979 | 0.987 | 0.864 | 33.5 |
 
 The table supports three readings:
 
@@ -350,10 +351,16 @@ The table supports three readings:
   version is best is a single, fixed test set drawn from station footage, held out from every
   training set and evaluated per class. It is among the open items in Chapter 11.
 
-The records also narrow the nano anomaly. The nano was trained in a different environment and on
-a different Ultralytics release, so it reached the station by a different export path. How it was
-exported is not recorded. The decisive test remains: export both models with the same tool, then
-time them on the station's PC.
+**The nano anomaly is resolved.** All six checkpoints were converted to OpenVINO with the
+station's own export tool and timed on one CPU. The nano took 16.5 ms per call against 34–35 ms
+for the small models, so it is about **twice as fast**, as its arithmetic predicts. In PyTorch it
+was three times as fast (40 ms against 122 ms). The architecture was therefore never slower. The
+station measurement came from how that particular nano export was produced or run, the only
+explanation that could reverse the result. All five small models cost the same, so choosing
+between them is purely a question of accuracy. The nano's speed is not needed: the small model
+already fits the budget, and the nano's accuracy cannot be judged until it is evaluated on the
+same test set as the others. The repository's default model is now `best-apron`, converted the
+same way.
 
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
@@ -817,13 +824,15 @@ someone who would never read its code was the best test of whether I understood 
   Keeping one owner for those documents, and a record of each change, would have saved review
   rounds.
 - **Measurements were not archived.** The training run directory, the per-class metrics and the
-  nano export were not kept, so this report cannot show the per-class results or settle the nano
-  anomaly. I would archive every run with the model it produced.
+  nano export were not kept, so this report cannot show the per-class results. I would archive
+  every run with the model it produced.
 - **Safety integration lagged behind the software.** The hard-wired e-stop is still pending, and
   two software failure paths were found only in the final review. A failure-mode analysis written
   *before* the first installation, not after it, would have found them earlier.
-- **Some causes remain unexplained.** The nano anomaly was never explained. I let it go once the
-  larger model met the budget, and it remains open.
+- **A comparison that was not like for like stood for months.** The nano was judged slower on a
+  measurement that differed from the small model's in how it was exported. I let it go once the
+  larger model met the budget. A like-for-like benchmark at the end showed the opposite result. I
+  would compare models only through one export and one benchmark tool.
 
 ## 11. Conclusion and outlook
 
@@ -848,7 +857,7 @@ The open items, in order of priority, are:
 5. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
 6. Evaluate all model versions on one fixed, held-out test set, per class.
 7. Reposition the cameras for the observed posture.
-8. Settle the nano anomaly.
+8. Keep model comparisons like for like: one export tool, one benchmark, one test set.
 
 Attachment D lists all open items. Beyond them, the outlook is:
 
@@ -1014,7 +1023,7 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | 7 | Spectacles and carried gloves | Targeted evaluation set; relational hand test |
 | 8 | Camera geometry | Reposition and angle for the observed posture |
 | 9 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the rest, and one glove instead of two |
-| 10 | Nano anomaly | Export both models with one tool; benchmark |
+| 10 | Nano anomaly | Resolved: nano is 2× faster when exported like the small model |
 | 11 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
 | 12 | Library version split | Align at the next retraining |
 

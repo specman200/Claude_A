@@ -90,11 +90,19 @@ Table 4 and Figure A2 of the report compare the six checkpoints. The data is in
   "combined" dataset, fine-tuned from an earlier run, under **another user's Windows profile,
   named by an employee number**. Add that to the authorship question in 2.10, and keep the number
   out of anything you publish. It is not in the report or the CSV.
-- **The CPU benchmark of nano against small was not run.** The CPU-only PyTorch index is blocked
-  from this environment, and the standard build, with several gigabytes of GPU libraries,
-  downloaded too slowly. To settle the nano anomaly, run this on the station PC:
-  `python -m ppe.export -w nanobest_3.pt`, then
-  `python -m ppe.bench -w models/ppe-yolo11s_openvino_model/ nanobest_3_openvino_model/`.
+- **The nano anomaly is resolved.** The `Export and compare models` workflow converted every
+  checkpoint with `ppe.export` (FP32) and timed it with `ppe.bench` on one 4-core CI CPU. Nano ran
+  at 16.5 ms against 34–35 ms for the small models in OpenVINO, and 40 ms against 122 ms in
+  PyTorch. The raw output is `docs/report/data/model-benchmark.md`. Confirm on the station PC if
+  you want the station's own numbers.
+- **`best-apron` is now the repository default** (`models/best-apron_openvino_model/`). The
+  earlier versions' OpenVINO exports are in `model-versions/`. The installer does not ship that
+  folder.
+- **Personal paths.** The export metadata no longer names the trainers' user folders. The `.pt`
+  checkpoints still record them inside their training arguments, and the installer ships
+  `models/best-apron.pt` and `models/ppe-yolo11s.pt`. If that matters, re-save the checkpoints
+  without the training arguments, or drop the `.pt` files from the installer; the station only
+  needs the OpenVINO folder.
 - **The one comparison that would decide between versions is still missing:** all six evaluated on
   one fixed test set of station footage, per class (open item 6 in the report).
 
