@@ -38,8 +38,9 @@ approved for deployment on every flat belt grinder at the plant.
 The most consequential finding was not a model result. Operators stand at an angle to the machine
 to inspect their work, outside the geometry the cameras were placed for. This is a requirements
 failure, and it changed how the rollout is specified. A review of the code against the project
-record also found weaknesses in the fail-safe behaviour, chief among them an emergency stop that
-does not yet act independently of the software. These are reported with remedies.
+record also found weaknesses in the fail-safe behaviour. I fixed the two that lay in the
+software; the most serious remaining one is an emergency stop that does not yet act independently
+of the software. It is reported with its remedy.
 
 I also contributed to a droplet-transfer measurement study in robotic TIG welding, an automated
 tube-trimming cell and the site's welding automation roadmap.
@@ -563,7 +564,8 @@ switched off at connection and at shutdown.
 ### 6.4 Failure behaviour
 
 I analysed what the code does when each part fails (Attachment C), and confirmed two paths by
-running the real pipeline against a stubbed model. The behaviour divides as follows.
+running the real pipeline against a stubbed model. Both were software faults, and I fixed them.
+The behaviour divides as follows.
 
 **Fail-safe paths:**
 
@@ -572,24 +574,32 @@ running the real pipeline against a stubbed model. The behaviour divides as foll
 - an unreadable input;
 - the operator leaving the cell.
 
-**Paths that can leave the grinder enabled while detection is not working:**
+**Paths that could leave the grinder enabled while detection was not working:**
 
-1. **One camera freezes while the other runs.** Its last detections stay in force indefinitely.
-   This was confirmed by simulation, with the status kept OK while the live camera saw no gloves.
-2. **An exception during inference.** The pipeline thread ends without switching the relay off,
-   and the window stays open, so the supervisor does not restart it. This was also confirmed by
-   simulation.
+1. **One camera stops while the other runs (fixed).** Its last detections stayed in force
+   indefinitely: in simulation the status stayed OK while the live camera saw no gloves. Now a
+   camera without a new frame for 1.5 s counts as down, its results are discarded, and the station
+   goes DEGRADED, naming the camera on screen. A camera that keeps streaming a *frozen image* still
+   looks live to the software.
+2. **An exception during inference (fixed).** The pipeline thread ended without switching the
+   relay off, and the window stayed open, so the supervisor did not restart it. Now every failed
+   cycle switches the motor off; after five in a row the station closes the relay connection and
+   exits with an error code, so the supervisor restarts it.
+
+Each fix came with a test that fails on the old code. The remaining paths need hardware or device
+configuration rather than code:
+
 3. **Loss of communication, a hang, or a PC crash or power loss.** The relay module keeps its
    last outputs unless its own communication watchdog is enabled. The deployment guide relies on
    that watchdog, but nothing records that it was tested.
-4. **The emergency stop depends on the software path.** In every case above, the e-stop cannot
-   stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
+4. **The emergency stop depends on the software path.** Whenever that path fails or stalls, the e-stop
+   cannot stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
    [10], IEC 60204-1 [11] and IEC 60947-5-5 [12] require a hard-wired e-stop with normally closed,
    direct-opening contacts. **Until the pending safety relay is fitted, the station's e-stop
    should not be relied upon as an emergency stop.**
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
-a permissive must be most conservative. The software fixes for the first two are small.
+a permissive must be most conservative.
 
 ## 7. Deployment and commissioning
 
@@ -740,7 +750,8 @@ part, and one only with qualifications that the rollout must close.
 
 Two properties the objective took for granted are not yet met:
 
-- **Fail-safe behaviour at the boundary between software and machine** (Section 6.4).
+- **Fail-safe behaviour at the boundary between software and machine** (Section 6.4). The two
+  software faults are fixed; the hard-wired e-stop and the relay watchdog are not.
 - **Detection of decision failures** such as carried gloves (Section 4.2).
 
 Neither is a matter of model accuracy, and both are on the list of open items in Chapter 11.
@@ -853,6 +864,7 @@ The internship delivered a working, approved and replicable PPE interlock:
 - compliance logic that separates detection from decision and balances responsiveness against
   stability class by class;
 - two MOC approvals, an updated risk assessment and an SOP;
+- two fail-safe faults found in review and fixed, each with a test;
 - a rollout package for every flat belt grinder at the plant.
 
 It also produced a finding that changed how the rollout is specified, and an honest list of what
@@ -861,13 +873,11 @@ must be fixed before the system is relied upon.
 The open items, in order of priority, are:
 
 1. **Fit the hard-wired emergency-stop safety relay.**
-2. **Discard stale per-camera results.**
-3. **Switch the outputs off on any pipeline exception.**
-4. **Verify the relay module's communication watchdog.**
-5. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-6. Run `ppe.evaluate` on the held-out test set and fill Table 5.
-7. Reposition the cameras for the observed posture.
-8. Keep model comparisons like for like: one export tool, one benchmark, one test set.
+2. **Verify the relay module's communication watchdog.**
+3. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
+4. Run `ppe.evaluate` on the held-out test set and fill Table 5.
+5. Reposition the cameras for the observed posture.
+6. Keep model comparisons like for like: one export tool, one benchmark, one test set.
 
 Attachment D lists all open items. Beyond them, the outlook is:
 
@@ -1012,10 +1022,10 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | Failure | What the code does | Grinder ends up |
 | --- | --- | --- |
 | Both cameras stop | DEGRADED after 1.5 s stale + 0.5 s confirm; latch dropped | Inhibited (≈ 2 s) |
-| One camera stops, other runs | Stale camera's last result still counted | **Can stay enabled** (simulated) |
+| One camera stops, other runs | Camera counted down after 1.5 s; its results discarded; DEGRADED, camera named | Inhibited (≈ 2 s; fixed) |
 | Camera streams a frozen image | Treated as fresh frames | **Can stay enabled** |
 | Model fails to load | Board blanked before load; pipeline closes the board | Inhibited |
-| Inference throws mid-run | Thread ends without blanking; process stays up | **Stays in last state** (simulated) |
+| Inference throws mid-run | Each failed cycle sets DEGRADED; after 5 in a row, board closed and process exits | Inhibited; supervisor restarts (fixed) |
 | Relay unreachable | Latch dropped in software; write cannot arrive | **Last state** unless module watchdog |
 | Crash or kill | Supervisor restarts after ≥ 2 s; board blanked on connect | **Enabled until restart** |
 | Hang, PC power loss, cable pulled | Nothing detects it | **Last state** unless module watchdog |
@@ -1030,8 +1040,8 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | # | Item | Next action |
 | --- | --- | --- |
 | 1 | Hard-wired e-stop | Fit the safety relay; normally closed, direct-opening contacts in the contactor circuit |
-| 2 | Single frozen camera | Discard per-camera results older than 1.5 s |
-| 3 | Inference exception | Blank the board and exit, so the supervisor restarts |
+| 2 | Single stopped camera | Fixed: results older than 1.5 s discarded, station DEGRADED. A camera streaming a frozen image is not yet detected |
+| 3 | Inference exception | Fixed: motor off on every failed cycle; exit after five, so the supervisor restarts |
 | 4 | Module watchdog | Enable; test by pulling the network cable with the motor running |
 | 5 | Modbus on the critical path | Measure the relay stage on the station |
 | 6 | Apron model | Add its validation results; confirm in the risk assessment that an apron replaces sleeves |
