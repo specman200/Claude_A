@@ -13,6 +13,11 @@ venv/
 !models/ppe-yolo11s.pt
 !models/ppe-yolo11s_openvino_model/
 !models/ppe-yolo11s_b2_openvino_model/
+!models/best-apron.pt
+!models/best-apron_openvino_model/
+# Earlier model versions, kept for comparison only (outside models/, so the
+# installer does not ship them).
+!model-versions/*.pt
 
 # Runtime output
 logs/

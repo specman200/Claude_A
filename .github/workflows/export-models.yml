@@ -1,0 +1,93 @@
+name: Export and compare models
+
+# Converts every checkpoint to OpenVINO with the station's own export tool
+# (ppe.export: FP32, batch 1, 640x640, the same as the deployed model), then
+# times all of them on one CPU with ppe.bench and commits the IRs and the
+# results back to the branch. Runs on the pinned library versions the
+# installer ships, so the comparison is like for like with the station.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "models/*.pt"
+      - "model-versions/*.pt"
+      - ".github/workflows/export-models.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the pinned stack, CPU-only PyTorch
+        run: |
+          python -m pip install --upgrade pip
+          tv=$(grep -E '^torch==' packaging/constraints.txt | cut -d= -f3)
+          vv=$(grep -E '^torchvision==' packaging/constraints.txt | cut -d= -f3)
+          pip install "torch==$tv" "torchvision==$vv" --index-url https://download.pytorch.org/whl/cpu
+          grep -v -E '^(PySide6|pygame)' requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt -c packaging/constraints.txt
+          sudo apt-get update -qq && sudo apt-get install -y -qq libgl1 libglib2.0-0 >/dev/null
+          python -c "import torch, ultralytics, openvino; print(torch.__version__, ultralytics.__version__, openvino.__version__)"
+
+      - name: Export every checkpoint to OpenVINO (FP32)
+        run: |
+          set -e
+          mkdir -p work
+          # v2 is the model already in the repo; export a copy so its committed IR is untouched.
+          cp models/ppe-yolo11s.pt work/yolo11s-v2.pt
+          cp model-versions/*.pt work/
+          cp models/best-apron.pt work/best-apron.pt
+          for pt in work/*.pt; do
+            python -m ppe.export -w "$pt"
+          done
+          ls -la work
+          rm -rf models/best-apron_openvino_model
+          cp -r work/best-apron_openvino_model models/
+          for m in yolo11s-v4 yolo11s-v5 yolo11s-v6 yolo11n-nano3; do
+            rm -rf model-versions/${m}_openvino_model
+            cp -r work/${m}_openvino_model model-versions/
+          done
+
+      - name: Model sizes and arithmetic
+        run: |
+          python - <<'PY' | tee work/model-info.txt
+          from pathlib import Path
+          from ultralytics import YOLO
+          for pt in sorted(Path("work").glob("*.pt")):
+              m = YOLO(str(pt))
+              layers, params, _, gflops = m.info(verbose=False)
+              print(f"{pt.stem:<16} classes={len(m.names)} params={params/1e6:.2f}M gflops={gflops:.1f}")
+          PY
+
+      - name: Benchmark on one CPU
+        run: |
+          IMG=$(python -c "from ultralytics.utils import ASSETS; print(ASSETS / 'bus.jpg')")
+          python -m ppe.bench -n 60 --image "$IMG" -w \
+            work/yolo11s-v2.pt work/yolo11n-nano3.pt \
+            work/yolo11s-v2_openvino_model/ work/yolo11s-v4_openvino_model/ \
+            work/yolo11s-v5_openvino_model/ work/yolo11s-v6_openvino_model/ \
+            work/best-apron_openvino_model/ work/yolo11n-nano3_openvino_model/ \
+            models/ppe-yolo11s_openvino_model/ 2>&1 | grep -v -i warn | tee work/bench.txt
+          lscpu | grep -E 'Model name|^CPU\(s\)' | tee work/cpu.txt
+          python -c "import torch, ultralytics, openvino; print('torch', torch.__version__, '| ultralytics', ultralytics.__version__, '| openvino', openvino.__version__)" | tee -a work/cpu.txt
+
+      - name: Commit the IRs and the results
+        run: |
+          mkdir -p docs/report/data
+          { echo "# Model export and benchmark (CI run ${{ github.run_id }})"; echo; echo '```'; cat work/cpu.txt; echo; cat work/model-info.txt; echo; cat work/bench.txt; echo '```'; } > docs/report/data/model-benchmark.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f models/best-apron_openvino_model model-versions/*_openvino_model docs/report/data/model-benchmark.md
+          git commit -m "Export the model versions to OpenVINO and benchmark them on one CPU" || exit 0
+          for i in 1 2 3 4; do git pull --rebase -q && git push && break; sleep $((2**i)); done
