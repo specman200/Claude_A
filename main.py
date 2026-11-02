@@ -180,15 +180,25 @@ def report(text: str) -> None:
         log.info("\n%s", text)
 
 
-def run_headless(seconds: float) -> None:
-    """Loop until Ctrl+C, then print where the time went."""
+def run_headless(seconds: float, pipeline) -> int:
+    """Loop until Ctrl+C, then print where the time went.
+
+    Returns PIPELINE_FAILED if the detection loop gave up, so the supervisor
+    restarts the station; 0 otherwise.
+    """
+    from ppe.pipeline import PIPELINE_FAILED
+
     stop = {"now": False}
     signal.signal(signal.SIGINT, lambda *_: stop.update(now=True))
     deadline = time.monotonic() + seconds if seconds else float("inf")
     print("running headless — Ctrl+C to stop")
     while not stop["now"] and time.monotonic() < deadline:
+        if pipeline.fatal is not None:
+            log.critical("detection stopped after repeated errors: %s", pipeline.fatal)
+            return PIPELINE_FAILED
         time.sleep(0.2)
     print("\nstopping…")
+    return 0
 
 
 def run_ui(cfg, cameras, pipeline) -> int:
@@ -305,8 +315,7 @@ def main(argv: list[str] | None = None) -> int:
             # ever useful, never something to skip.
             if not cameras.wait_ready(timeout=10.0):
                 log.warning("not every camera delivered a frame; continuing anyway")
-            run_headless(args.seconds)
-            code = 0
+            code = run_headless(args.seconds, pipeline)
         else:
             code = run_ui(cfg, cameras, pipeline)
     finally:

@@ -39,7 +39,7 @@ from .latency import STAGES
 from .latency import now as _clock
 from .letterbox import fit
 from .paths import app_dir
-from .pipeline import Pipeline, Result
+from .pipeline import PIPELINE_FAILED, Pipeline, Result
 from .tower import ClassState, Status
 
 # One accent per class, so a box's colour matches its row in the checklist.
@@ -516,6 +516,7 @@ class StatusCard(QFrame):
         intermittent: bool = False,
         stopping_in: float | None = None,
         recording: int | None = None,
+        cameras_down: list[str] | None = None,
     ) -> None:
         headline, color = BANNER[status]
         detail = ""
@@ -541,6 +542,8 @@ class StatusCard(QFrame):
         elif status is Status.DEGRADED and unavailable:
             headline = "NOT READY"
             detail = f"model has no class for: {', '.join(unavailable)}"
+        elif status is Status.DEGRADED and cameras_down:
+            detail = f"no video signal: {', '.join(cameras_down)}"
         elif status is Status.DEGRADED:
             detail = "no video signal"
         if estop:
@@ -716,6 +719,7 @@ class StatusBanner(QLabel):
         intermittent: bool = False,
         stopping_in: float | None = None,
         recording: int | None = None,
+        cameras_down: list[str] | None = None,
     ) -> None:
         text, color = BANNER[status]
         if status is Status.STANDBY:
@@ -733,11 +737,12 @@ class StatusBanner(QLabel):
             text = "   ".join(parts) or text
         elif status is Status.DEGRADED:
             # Two very different faults share this lamp — name the right one.
-            text = (
-                f"MODEL HAS NO CLASS FOR: {', '.join(unavailable)}"
-                if unavailable
-                else "NO VIDEO SIGNAL"
-            )
+            if unavailable:
+                text = f"MODEL HAS NO CLASS FOR: {', '.join(unavailable)}"
+            elif cameras_down:
+                text = f"NO VIDEO SIGNAL: {', '.join(cameras_down)}"
+            else:
+                text = "NO VIDEO SIGNAL"
         if recording is not None:
             text += f"   (recording {recording})"
         if not tower_ok:
@@ -996,6 +1001,7 @@ class MainWindow(QMainWindow):
     result_ready = Signal(object)
     model_ready = Signal()
     model_failed = Signal(str)
+    pipeline_failed = Signal(str)
 
     def __init__(self, cfg: Config, cameras: CameraSet, pipeline: Pipeline) -> None:
         super().__init__()
@@ -1130,6 +1136,11 @@ class MainWindow(QMainWindow):
         self.model_failed.connect(self._on_model_failed)
         pipeline.on_ready = self.model_ready.emit
         pipeline.on_error = lambda exc: self.model_failed.emit(str(exc))
+        # The detection loop gave up after repeated failures. The board is
+        # already low; say so, then exit non-zero so the supervisor restarts
+        # the station rather than leaving a window that judges nothing.
+        self.pipeline_failed.connect(self._on_pipeline_failed)
+        pipeline.on_fatal = lambda exc: self.pipeline_failed.emit(str(exc))
         # The load may already have finished (or failed) by the time this
         # window exists — the signal would have fired with nothing yet
         # connected to hear it — so check directly rather than waiting for
@@ -1165,7 +1176,7 @@ class MainWindow(QMainWindow):
         self.banner.apply(
             result.status, result.missing, result.tower_ok, result.unavailable,
             result.banned, result.estop, result.intermittent, result.stopping_in,
-            result.recording,
+            result.recording, result.cameras_down,
         )
 
     def _draw_stats(self) -> None:
@@ -1189,6 +1200,12 @@ class MainWindow(QMainWindow):
 
     def _on_model_failed(self, message: str) -> None:
         self.banner.show_error(message)
+
+    def _on_pipeline_failed(self, message: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        self.banner.show_error(f"detection stopped after repeated errors, restarting: {message}")
+        QTimer.singleShot(3000, lambda: QApplication.instance().exit(PIPELINE_FAILED))
 
     def _on_edit(self) -> None:
         self.pipeline.reconfigure()

@@ -1,12 +1,15 @@
 """End-to-end wiring: real capture threads, a stubbed model, a fake bus."""
 
+import threading
 import time
 
+import numpy as np
 import pytest
 
 import ppe.pipeline as pipeline_mod
-from ppe.capture import CameraSet
+from ppe.capture import CameraSet, Frame
 from ppe.config import CameraCfg, ClassCfg, Config, ModelCfg, PPECfg, TelemetryCfg, TowerCfg
+from ppe.detector import Detection
 from ppe.tower import Status
 
 from .conftest import StubDetector
@@ -556,3 +559,128 @@ def test_capture_mode_off_leaves_no_trace_on_the_result(clip, tmp_path, monkeypa
     cfg = make_config(clip, tmp_path)
     _pipe, seen = run(cfg, monkeypatch, cycles=2)
     assert seen[-1].recording is None
+
+
+# -- failures must leave the motor safe -------------------------------------------
+
+
+class ScriptedCameras:
+    """Cameras whose frames a test controls: index, age in seconds, and whether new."""
+
+    def __init__(self, cfgs):
+        self.cameras = [type("Cam", (), {"cfg": c})() for c in cfgs]
+        self.frames = [None] * len(cfgs)
+        self._seq = 0
+
+    def __len__(self):
+        return len(self.cameras)
+
+    def deliver(self, index, age=0.0):
+        self._seq += 1
+        self.frames[index] = Frame(index, self._seq, np.zeros((240, 320, 3), np.uint8),
+                                   pipeline_mod.now() - age)
+
+    def sample(self):
+        return list(self.frames)
+
+
+def test_a_camera_that_stops_delivering_no_longer_vouches_for_ppe(clip, tmp_path, monkeypatch):
+    """A frozen camera's last detections must not keep crediting PPE.
+
+    Camera A saw a helmet and a vest and then stopped delivering; camera B keeps
+    running and sees only the helmet. Before the fix A's stale result stayed in
+    the best-camera count, so the station stayed OK on a frozen moment. Now A's
+    result is dropped and the station is DEGRADED, naming the camera.
+    """
+    cfg = make_config(clip, tmp_path)
+    monkeypatch.setattr(pipeline_mod, "Detector", StubDetector)
+    cams = ScriptedCameras(cfg.cameras)
+    pipe = pipeline_mod.Pipeline(cfg, cams)
+    assert pipe._load()
+    both = [Detection("helmet", 0.9, (0, 0, 10, 10)), Detection("vest", 0.9, (0, 20, 10, 30))]
+
+    pipe.detector.dets = both
+    cams.deliver(0)
+    cams.deliver(1)
+    pipe._cycle(pipe._take([cams.frames[0]]), cams.sample())
+    assert pipe.result.status is Status.OK
+
+    cams.deliver(0, age=pipeline_mod.STALE_AFTER + 0.5)   # A froze long ago
+    pipe.detector.dets = both[:1]                          # B sees no vest
+    for _ in range(3):
+        cams.deliver(1)
+        pipe._cycle([cams.frames[1]], cams.sample())
+    assert pipe.result.status is Status.DEGRADED
+    assert pipe.result.cameras_down == ["Line A"]
+    assert pipe.result.detections[0] == [], "the frozen camera's boxes are still shown"
+
+
+def test_a_cycle_that_keeps_failing_takes_the_motor_and_gives_up(clip, tmp_path, monkeypatch):
+    """An exception in inference used to end the thread with the relay as it was."""
+    cfg = make_config(clip, tmp_path)
+    tower = RecordingTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+
+    class Broken(StubDetector):
+        def detect(self, images):
+            raise RuntimeError("inference blew up")
+
+    monkeypatch.setattr(pipeline_mod, "Detector", Broken)
+    cams = ScriptedCameras(cfg.cameras)
+    original = cams.sample
+
+    def always_fresh():
+        cams.deliver(0)
+        cams.deliver(1)
+        return original()
+
+    cams.sample = always_fresh
+    fatal = []
+    pipe = pipeline_mod.Pipeline(cfg, cams)
+    pipe.on_fatal = fatal.append
+    pipe.run()  # returns by itself once it gives up
+
+    assert isinstance(pipe.fatal, RuntimeError) and fatal == [pipe.fatal]
+    grinder_drops = tower.events.count("grinder:degraded")
+    assert grinder_drops == pipeline_mod.MAX_CYCLE_FAILURES, tower.events
+    assert tower.events.index("grinder:degraded") < tower.events.index("close")
+    assert tower.events[-1] == "close", "the board must be taken low on the way out"
+
+
+def test_one_failed_cycle_takes_the_motor_but_the_station_carries_on(clip, tmp_path, monkeypatch):
+    cfg = make_config(clip, tmp_path)
+    tower = RecordingTower()
+    monkeypatch.setattr(pipeline_mod, "make_tower", lambda cfg: tower)
+
+    class Flaky(StubDetector):
+        calls_made = 0
+
+        def detect(self, images):
+            Flaky.calls_made += 1
+            if Flaky.calls_made == 1:
+                raise RuntimeError("one bad frame")
+            return super().detect(images)
+
+    monkeypatch.setattr(pipeline_mod, "Detector", Flaky)
+    cams = ScriptedCameras(cfg.cameras)
+    original = cams.sample
+
+    def always_fresh():
+        cams.deliver(0)
+        cams.deliver(1)
+        return original()
+
+    cams.sample = always_fresh
+    pipe = pipeline_mod.Pipeline(cfg, cams)
+    thread = threading.Thread(target=pipe.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while pipe.cycles < 5 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    alive = thread.is_alive()
+    pipe._halt.set()
+    thread.join(timeout=5)
+
+    assert alive, "one failure must not end the loop"
+    assert pipe.fatal is None and pipe.cycles >= 5
+    assert tower.events.count("grinder:degraded") >= 1, "the failure must take the motor"

@@ -136,15 +136,28 @@ class ComplianceMonitor:
         # against the shown status is what let the card display a red with
         # nothing named on it.
         self._fault: tuple[list[str], list[str]] = ([], [])
+        # Cameras that have stopped delivering, as named by the caller. While
+        # any is listed the station cannot see what it was built to see.
+        self.cameras_down: list[str] = []
 
     def update(
-        self, per_camera: list[list[Detection]], t: float | None = None
+        self,
+        per_camera: list[list[Detection]],
+        t: float | None = None,
+        cameras_down: list[str] | tuple[str, ...] = (),
     ) -> Status:
         """Fold one cycle's detections into the station status.
 
         Counts are taken as the **best single camera's** view, never the sum:
         two cameras looking at one worker both see the same two gloves, so
         adding them up would report four and pass a one-gloved worker.
+
+        ``cameras_down`` names cameras that are configured but not delivering.
+        Any at all makes the verdict DEGRADED: the two views are complementary
+        (the side camera is where gloves and sleeves are seen), so a station
+        judging on one of them is not the station that was validated. The
+        counts are still folded in, so the checklist keeps showing what the
+        live camera sees.
         """
         t = now() if t is None else t
 
@@ -197,7 +210,9 @@ class ComplianceMonitor:
                 state.conf = best_conf
 
         self._cover()
-        return self._debounce(self._evaluate(), t)
+        self.cameras_down = list(cameras_down)
+        candidate = Status.DEGRADED if self.cameras_down else self._evaluate()
+        return self._debounce(candidate, t)
 
     def _cover(self) -> None:
         """Mark group members that an alternative has made unnecessary."""

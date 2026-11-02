@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import logging
 import threading
@@ -23,6 +24,13 @@ log = logging.getLogger(__name__)
 
 STALE_AFTER = 1.5   # seconds without a frame before a camera counts as down
 OFFLINE_PERIOD = 0.2  # how often to re-evaluate while no camera is delivering
+# Consecutive failed cycles before the pipeline gives up. Each failure already
+# takes the motor away; giving up hands the station to the supervisor, which
+# restarts it as a fresh process.
+MAX_CYCLE_FAILURES = 5
+# Exit code for "the pipeline failed and stopped": non-zero, so the
+# supervisor (ppe.supervise) restarts the station.
+PIPELINE_FAILED = 3
 
 
 @dataclass(slots=True)
@@ -66,6 +74,9 @@ class Result:
     missing: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
     banned: list[str] = field(default_factory=list)
+    # Configured cameras that are not delivering (no frame for STALE_AFTER).
+    # Any at all holds the station in DEGRADED; the banner names them.
+    cameras_down: list[str] = field(default_factory=list)
 
 
 class Pipeline(threading.Thread):
@@ -86,6 +97,11 @@ class Pipeline(threading.Thread):
         self.on_result = on_result
         self.on_ready = on_ready    # called once the model has loaded
         self.on_error = on_error   # called once, instead, if loading fails
+        # Called once if the loop gives up after MAX_CYCLE_FAILURES, after the
+        # board has been taken low. The process should then exit with
+        # PIPELINE_FAILED so the supervisor restarts it.
+        self.on_fatal: Callable[[Exception], None] | None = None
+        self.fatal: Exception | None = None
         self.profiler = profiler
         self.metrics = Metrics(cfg.telemetry.window, cfg.telemetry.csv or None)
         self.trials = (TrialLog(cfg.telemetry.trials, cfg.ppe.subject)
@@ -164,22 +180,39 @@ class Pipeline(threading.Thread):
         last_print = now()
         last_cycle = 0.0
         last_offline = 0.0
+        failures = 0
         while not self._halt.is_set():
             frames = self.cameras.sample()
             fresh = [
                 f for i, f in enumerate(frames) if f is not None and f.seq != self._seqs[i]
             ]
-            if not fresh:
-                # Poll cheaply for the next frame, but re-evaluate the offline
-                # state at a human rate rather than a thousand times a second.
-                t = now()
-                if t - last_offline >= OFFLINE_PERIOD and self._all_stale(frames):
-                    last_offline = t
-                    self._go_offline()
-                time.sleep(0.001)  # nothing new; yield rather than spin
+            try:
+                if not fresh:
+                    # Poll cheaply for the next frame, but re-evaluate the offline
+                    # state at a human rate rather than a thousand times a second.
+                    t = now()
+                    if t - last_offline >= OFFLINE_PERIOD and self._all_stale(frames):
+                        last_offline = t
+                        self._go_offline()
+                    time.sleep(0.001)  # nothing new; yield rather than spin
+                    continue
+                self._cycle(self._take(fresh), frames)
+                failures = 0
+            except Exception as exc:  # noqa: BLE001 — any failure must leave the motor safe
+                # An uncaught exception here used to end the thread without
+                # touching the board, leaving a running motor running with
+                # nothing watching it. Now every failure takes the motor away
+                # at once; a run of them gives up and hands the station to
+                # the supervisor.
+                failures += 1
+                log.exception("pipeline cycle failed (%d in a row)", failures)
+                self._fail_safe()
+                if failures >= MAX_CYCLE_FAILURES:
+                    self.fatal = exc
+                    log.critical("pipeline giving up after %d failed cycles", failures)
+                    break
+                time.sleep(0.05)  # do not spin on a failure that repeats at once
                 continue
-
-            self._cycle(self._take(fresh))
             self.cycles += 1
 
             t = now()
@@ -195,6 +228,35 @@ class Pipeline(threading.Thread):
                 print(self.metrics.report(), flush=True)
 
         self._shutdown()
+        if self.fatal is not None and self.on_fatal is not None:
+            self.on_fatal(self.fatal)
+
+    def _fail_safe(self) -> None:
+        """Take the motor away and show DEGRADED, whatever else is broken.
+
+        Each step is guarded on its own: the exception being handled may have
+        come from any of them. If the board cannot be driven normally, closing
+        it blanks every channel, which is the last resort that still stops
+        the motor.
+        """
+        self._focus = [Focus() for _ in self._focus]
+        status = Status.DEGRADED
+        with contextlib.suppress(Exception):
+            status = self.monitor.degrade()
+        try:
+            self.tower.update_belt_grinder(Status.DEGRADED)
+            self.tower.apply(Status.DEGRADED)
+        except Exception:  # noqa: BLE001
+            log.exception("could not drive the board to a safe state; closing it")
+            with contextlib.suppress(Exception):
+                self.tower.close()
+        with contextlib.suppress(Exception):
+            self._publish(status)
+
+    def _stale(self, frames: list[Frame | None]) -> list[int]:
+        """Cameras with no frame for STALE_AFTER seconds, or none yet."""
+        t = now()
+        return [i for i, f in enumerate(frames) if f is None or (t - f.ts) > STALE_AFTER]
 
     def _go_offline(self) -> None:
         """No camera is delivering: clear the overlays and hold the lamp amber.
@@ -209,6 +271,7 @@ class Pipeline(threading.Thread):
         """
         self._focus = [Focus() for _ in self._focus]
         status = self.monitor.degrade()
+        self.monitor.cameras_down = [c.cfg.name for c in self.cameras.cameras]
         self.tower.update_belt_grinder(status)
         # And the lamps, in the same order as a real cycle. Green asserts
         # the grinder is running, so leaving it lit while the feed is dead
@@ -246,7 +309,7 @@ class Pipeline(threading.Thread):
         t = now()
         return all(f is None or (t - f.ts) > STALE_AFTER for f in frames)
 
-    def _cycle(self, fresh: list[Frame]) -> None:
+    def _cycle(self, fresh: list[Frame], frames: list[Frame | None] | None = None) -> None:
         # One cycle per frame, all started at their own capture instant, so
         # end-to-end latency is measured per camera and not averaged away.
         cycles = {f.index: Cycle(f.ts) for f in fresh}
@@ -267,10 +330,20 @@ class Pipeline(threading.Thread):
             )
             self._seqs[f.index] = f.seq
 
+        # A camera that has stopped delivering keeps its last result in
+        # _focus. Counted, that result would credit PPE from a frozen moment
+        # for as long as the other camera kept the loop turning — a worker
+        # who took a glove off after the side camera died stayed compliant.
+        # Its result is discarded and the station is held in DEGRADED.
+        down = self._stale(frames) if frames is not None else []
+        for i in down:
+            self._focus[i] = Focus()
+        names = [self.cameras.cameras[i].cfg.name for i in down]
+
         # Per camera, not flattened: counts are the best single view, since
         # both cameras see the same two gloves on one worker.
         with self._swap:
-            status = self.monitor.update([f.accepted for f in self._focus])
+            status = self.monitor.update([f.accepted for f in self._focus], cameras_down=names)
         for cyc in cycles.values():
             cyc.stamp("logic")
 
@@ -329,6 +402,7 @@ class Pipeline(threading.Thread):
             missing=shown_missing,
             unavailable=self.monitor.unavailable(),
             banned=shown_banned,
+            cameras_down=list(self.monitor.cameras_down),
         )
         self.result = result
         if self.trials is not None:

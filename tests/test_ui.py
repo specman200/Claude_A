@@ -285,6 +285,18 @@ def test_degraded_banner_distinguishes_no_video_from_an_unusable_model(app):
     assert "NO VIDEO" not in banner.text()
 
 
+@pytest.mark.parametrize("compact", [False, True])
+def test_degraded_names_the_camera_that_stopped(app, compact):
+    """One dead camera holds the station in DEGRADED; say which one to check."""
+    banner = StatusBanner()
+    banner.apply(Status.DEGRADED, [], tower_ok=True, cameras_down=["Line B"])
+    assert "NO VIDEO SIGNAL: Line B" in banner.text()
+
+    card = StatusCard(compact=compact)
+    card.apply(Status.DEGRADED, [], True, cameras_down=["Line B"])
+    assert "no video signal: Line B" in card.text()
+
+
 # -- whole window ----------------------------------------------------------
 
 
