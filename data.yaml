@@ -1,0 +1,14 @@
+# written by auto-annotator
+path: C:\Users\270022421\OneDrive - GE Aerospace\Desktop\PPE Dataset YOLO_combined
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: person
+  1: headnet
+  2: Gloves
+  3: Mask
+  4: Safetyglasses
+  5: sleeves
+  6: Wrong Sleeve
+  7: Apron
