@@ -1,5 +1,4 @@
-description: Ultralytics YOLO11s model trained on C:\Users\270019114\Downloads\PPE
-  Dataset YOLO_combined\PPE Dataset YOLO_combined\data.yaml
+description: Ultralytics YOLO11s model fine-tuned on the station's PPE dataset
 author: Ultralytics
 date: '2026-11-02T05:13:21.008941'
 version: 8.3.253

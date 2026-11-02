@@ -1,5 +1,4 @@
-description: Ultralytics YOLO11s model trained on C:\Users\Animesh\Desktop\PPE Detection\Generated
-  scripts\v4 -roboflow only\ppe-yolo11-roboflow-only\datasets\roboflow\data.yaml
+description: Ultralytics YOLO11s model fine-tuned on the station's PPE dataset
 author: Ultralytics
 date: '2026-11-02T05:13:36.042562'
 version: 8.3.253

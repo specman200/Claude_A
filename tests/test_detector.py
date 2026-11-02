@@ -177,10 +177,9 @@ def test_the_shipped_config_and_the_shipped_weights_agree():
 
     from ppe.tower import ComplianceMonitor
 
-    # Configured ahead of the retrained model that will detect them. Allowed
-    # only because the monitor keeps judging without them (last assertion);
-    # once the model has the class, `missing` is simply empty and this passes.
-    pending_retrain = {"Apron"}
+    # Classes configured ahead of a model that does not detect them yet. None
+    # today: best-apron detects Apron.
+    pending_retrain: set[str] = set()
 
     detector = Detector(ModelCfg(weights=cfg.model.weights, warmup=False), cfg.ppe)
     assert set(detector.missing) <= pending_retrain, (

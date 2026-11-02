@@ -24,24 +24,19 @@ def test_the_shipped_config_wires_the_belt_grinder_interlock():
     assert cfg.tower.inputs == {"estop": 0, "push_button": 1}  # DI1, DI2
 
 
-MODEL_CLASSES = {"Gloves", "Mask", "Safetyglasses", "Wrong Sleeve", "headnet", "person", "sleeves"}
+# best-apron, the shipped model: the original seven classes plus Apron.
+MODEL_CLASSES = {"Gloves", "Mask", "Safetyglasses", "Wrong Sleeve", "headnet", "person", "sleeves",
+                 "Apron"}
 
 
 def test_the_shipped_classes_match_the_fine_tuned_model():
-    """Guards the config against drifting from the weights it points at.
-
-    One deliberate exception: Apron is configured ahead of the retrained model
-    that will detect it, as the alternative to sleeves. It may only be there
-    because it cannot stop the station judging on today's model — that is
-    what the last assertion pins. Drop it from the expected difference once
-    the model learns the class.
-    """
+    """Guards the config against drifting from the weights it points at."""
     from ppe.tower import ComplianceMonitor
 
     cfg = Config.load("config.yaml")
     names = {c.name for c in cfg.ppe.classes}
     assert names >= MODEL_CLASSES
-    assert names - MODEL_CLASSES == {"Apron"}
+    assert names == MODEL_CLASSES
     monitor = ComplianceMonitor(cfg.ppe, sorted(names - MODEL_CLASSES))
     assert monitor.unavailable() == [], "a class the model lacks would degrade the station"
 

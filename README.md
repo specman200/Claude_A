@@ -32,9 +32,12 @@ PPE each class is or is not wearing.
 pip install -r requirements.txt
 ```
 
-The station ships with `models/ppe-yolo11s.pt`, a YOLOv11s fine-tuned on PPE
-(150 epochs at 640, `rect=False` — the same square letterbox this code uses at
-inference). Point `model.weights` elsewhere to swap it.
+The station ships with `models/best-apron.pt`, a YOLOv11s fine-tuned on PPE
+(640, `rect=False` — the same square letterbox this code uses at inference),
+and runs its OpenVINO export, `models/best-apron_openvino_model/`. The earlier
+seven-class model, `models/ppe-yolo11s.pt`, is kept beside it, and earlier
+versions are in `model-versions/` for comparison only. Point `model.weights`
+elsewhere to swap it.
 
 ## Run
 
@@ -288,7 +291,7 @@ frame.
 
 ### The shipped model
 
-`models/ppe-yolo11s.pt` detects seven classes, and they are not all the same
+`models/best-apron.pt` detects eight classes, and they are not all the same
 kind of thing:
 
 | Class | Configured as | Why |
@@ -299,6 +302,7 @@ kind of thing:
 | `Gloves` | required, `count: 2` | two hands |
 | `sleeves` | required, `count: 2` | two arms, correct sleeve type |
 | `Wrong Sleeve` | required, `expect: absent` | **a violation class** — see below |
+| `Apron` | required, `any_of: arms` | the alternative to two sleeves |
 | `person` | `subject` | who the checks are applied to |
 
 **`Wrong Sleeve` is inverted.** Detecting it is the fault, not the pass. Listed
