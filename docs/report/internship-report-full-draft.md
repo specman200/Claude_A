@@ -33,6 +33,10 @@ the chair and the examination regulations. Parts of the station software were de
 AI coding assistant, as recorded in the repository's commit history, and this report was drafted
 with AI assistance from the author's project record and the repository.]
 
+**Note on configuration.** This draft describes the first configuration of the station. The
+station has since been retuned, with one glove and one sleeve required, 5–8 s correction windows
+and an apron-retrained model. The RWTH version of the report (`internship-report.md`) is current.
+
 **A note on naming.** Ultralytics, the publisher of the detector family used in this work,
 names it **YOLO11**. My project notes and parts of the source repository write *YOLOv11*. This
 report uses YOLO11 throughout; the two names refer to the same architecture.

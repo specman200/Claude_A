@@ -199,20 +199,22 @@ e-stop does. Section 6.4 returns to this point.
 
 ### 4.1 Class schema and site-specific data
 
-The deployed model detects seven classes (Table 2). They are five items of equipment, the
-person who wears them, and one *non-compliant state*, `Wrong Sleeve`, which the station treats
-as a violation whenever it is detected.
+The model described in this report detects seven classes (Table 2). They are five items of
+equipment, the person who wears them, and one *non-compliant state*, `Wrong Sleeve`, which the
+station treats as a violation whenever it is detected. The station has since moved to a model
+retrained with an `Apron` class. Its training record and metrics are not yet in the repository,
+so the figures in Section 4.3 and Attachment A belong to the seven-class model.
 
 **Table 2.** Class schema and the role of each class.
 
 | Class | Role in the decision | Count required |
 | --- | --- | --- |
-| Gloves | must be worn | 2 |
-| sleeves | must be worn, or an apron instead | 2 |
+| Gloves | must be worn | 1 (2 before station tuning) |
+| sleeves | must be worn, or an apron instead | 1 (2 before station tuning) |
 | Safetyglasses, Mask, headnet | must be worn | 1 each |
 | Wrong Sleeve | forbidden: detecting it is the violation | 0 |
 | person | identifies whom to judge | — |
-| Apron | configured as the sleeves alternative; *not yet trained* | 1 |
+| Apron | the sleeves alternative; in the retrained station model | 1 |
 
 All training images were captured on the shopfloor, and no public PPE dataset was used. Public
 datasets centre on construction-site equipment. The station's lighting, background, operator
@@ -395,8 +397,10 @@ program, the obvious fix, was shown on the hardware not to work. That made it a
 plant, a fix applied host by host is unacceptable. It will be missing on some hosts, lost when IT
 re-images a PC, and fail silently when it is. I kept the raw stream on USB 3.0 ports. This was a
 rejection of a working solution **on deployment grounds**, and Section 8 shows how that choice
-pays off. One caveat: the repository's default configuration still requests 1280 × 720 MJPEG. It
-should be aligned with the validated 640 × 480 setting before rollout.
+pays off. The station now captures at 640 × 480 (front) and 640 × 360 (side) through DirectShow. Its
+configuration still requests MJPEG, which DirectShow was measured to ignore on these cameras, so
+the stream is in effect uncompressed, as intended. The repository's default configuration, which
+the installer ships, still requests 1280 × 720 and must be aligned before rollout.
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
@@ -462,10 +466,23 @@ from the last *full* sighting, so a partial view silently consumed the dropout h
 second of seeing a single glove, the configured 1.0 s hold was zero, on exactly the classes the
 occlusion window was added for. Timing each window from its own evidence fixed it.
 
-The trade-off has an honest cost. **An operator who removes one glove while the other stays
-visible is still credited for up to about 5.4 s**. This bounded exposure is accepted in exchange
-for not stopping operators whose second glove is behind the workpiece, and it belongs in the risk
-assessment. Attachment B tabulates every class's thresholds and timings.
+The trade-off had an honest cost. An operator who removed one glove while the other stayed
+visible was still credited for up to about 5.4 s. This bounded exposure was accepted in exchange
+for not stopping operators whose second glove was behind the workpiece.
+
+**Station tuning has since moved this trade-off further.** The station configuration now requires
+**one** glove and **one** sleeve, not two. That removes the false stops of the side view, which
+can rarely see both hands at once. Because a set of one cannot be partly visible, the occlusion
+window, now 8 s, no longer applies. The cost is that **an operator with one bare hand is judged
+compliant indefinitely**: in simulation, removing one of two gloves never stopped the motor. The
+station also raised:
+
+- the person confidence floor from 0.25 to 0.70, which suppresses background people at the cost
+  of losing the operator more easily;
+- the `Wrong Sleeve` hold from 0.4 s to 1.2 s.
+
+These are risk decisions, not only tuning decisions, and they belong in the risk assessment.
+Attachment B tabulates every class's thresholds and timings.
 
 ### 6.3 Warning before inhibition
 
@@ -476,18 +493,25 @@ back, the machine never stops. Otherwise the permissive is withdrawn at the end 
 This is a **deliberate safety trade-off: for the length of the window the machine runs with a
 detected violation.** As implemented, the window has four properties:
 
-- it lasts 5 s;
-- it is **suppressed (0 s) for safety glasses, gloves and Wrong Sleeve**, whose absence *is* the
-  immediate hazard;
+- it was first set at 5 s, with no window at all for safety glasses, gloves and Wrong Sleeve,
+  whose absence *is* the immediate hazard;
+- on the station it is now **8 s by default, 5 s for safety glasses and gloves**, and still
+  **0 s for Wrong Sleeve**;
 - the shortest window among the current violations applies, so a missing head net cannot shelter
   a missing glove;
 - it is set once and never renewed, so flickering PPE cannot hold the machine open.
 
-Figure 5 shows the measured stop times. My notes motivate the window with "a glove that has
-slipped", but in the code gloves get no window, and I consider that the right choice. The EHS
-position on the 5 s window for head net, mask and sleeves still needs documenting.
+Figure 5 shows the resulting stop times. I obtained them by running the station's compliance and
+latch code on its configuration with simulated detections. The same method reproduces the times
+recorded earlier for the first configuration (1.5 s for gloves, 6.3 s for a mask). A detected
+wrong sleeve still stops a running machine in 0.5 s. But a missing glove or missing safety glasses
+now keep it running for about 6.5 s, and a missing mask, head net or sleeves for about 9.5 s. The
+station is configured as my notes describe, to let "a glove that has slipped" be corrected. That
+is a defensible choice for nuisance stops, but it reverses the earlier decision to give no window
+to the items whose absence is the immediate hazard. **It needs an explicit, documented EHS
+position before rollout.**
 
-![Figure 5. Time from an item leaving view to motor stop.](docs/report/figures/fig-stop-times.png)
+![Figure 5. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
 
 The permissive is a **latch**, like the seal-in contact of a motor starter. Pressing the button
 starts the motor only when four conditions hold:
@@ -637,7 +661,7 @@ operators. Three things emerged.
 - **Posture.** Operators customarily stand *at an angle* to the machine, to inspect the flatness of
   the trim. That is outside the cameras' favourable viewing angle, so items are missed and the
   machine stops falsely.
-- **Aprons.** Operators want to wear aprons against grinding dust, and the model has no apron
+- **Aprons.** Operators want to wear aprons against grinding dust, and the model had no apron
   class.
 - **Large workpieces.** Larger parts force the operator to stand further back, partly out of frame.
   The station then finds nobody, and the machine cannot start.
@@ -646,8 +670,9 @@ Three remedies were identified:
 
 - reposition the cameras for large workpieces;
 - angle them so that every class stays observable in the posture operators actually adopt;
-- retrain with an apron class. The data has been captured, and the configuration already accepts
-  an apron in place of sleeves.
+- retrain with an apron class. This has since been done: the station runs a retrained model, and
+  its configuration accepts an apron in place of sleeves. Its validation results are still to be
+  added.
 
 **This is a requirements failure, not a model failure.** The model correctly reported that it
 could not see a glove turned away from it. The camera placement had been derived from an *assumed*
@@ -663,8 +688,9 @@ part, and one only with qualifications that the rollout must close.
 
 - **It withholds the run permissive.** Met. Only the OK status permits the motor. Every other
   status, an unreadable input and the e-stop all withdraw it. Nothing restarts the motor without
-  a fresh press of the button. The correction window delays the stop on purpose for three of the
-  seven items, and that delay is documented as a trade-off rather than hidden.
+  a fresh press of the button. The correction window delays the stop on purpose for every item except
+  a wrong sleeve, by 5–8 s. That delay is a documented trade-off, but one that still needs its EHS
+  position.
 - **It judges the operator at the machine.** Met, with one known limitation. The largest-person
   filter and the containment test ignore bystanders and their equipment, but the person *nearest
   the camera* is judged. That is usually, though not necessarily, the person at the belt.
@@ -672,8 +698,8 @@ part, and one only with qualifications that the rollout must close.
   response. The station declares a violation in 0.4 s plus the class's hold. Its response time is
   now a choice made in the logic rather than a limit set by the hardware, which is the honest
   answer to management's concern.
-- **It is steady enough to be accepted.** Partly met. The hold and occlusion windows removed the
-  chatter caused by occluded gloves and sleeves. The false stops caused by the angled working
+- **It is steady enough to be accepted.** Partly met. The hold and occlusion windows, and later
+  the single-glove requirement, removed the chatter caused by occluded gloves and sleeves. The false stops caused by the angled working
   posture and by large workpieces remain, until the cameras are repositioned.
 
 Two properties the objective took for granted are not yet met:
@@ -808,9 +834,9 @@ The open items, in order of priority, are:
 2. **Discard stale per-camera results.**
 3. **Switch the outputs off on any pipeline exception.**
 4. **Verify the relay module's communication watchdog.**
-5. Retrain with the apron class.
-6. Reposition the cameras for the observed posture.
-7. Document the EHS position on the correction window.
+5. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
+6. Validate and document the apron model.
+7. Reposition the cameras for the observed posture.
 8. Settle the nano anomaly.
 
 Attachment D lists all open items. Beyond them, the outlook is:
@@ -892,7 +918,9 @@ key `train_args`).
 | Device | CUDA GPU 0 | Duration | 7,180 s (≈ 2 h) |
 | Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
 
-**Table A2.** Validation metrics at the best epoch (75), all classes. The per-class breakdown and
+**Table A2.** Validation metrics of the seven-class model at its best epoch (75), all classes.
+The apron-retrained model now on the station is not in the repository, and its metrics are to be
+added. The per-class breakdown and
 the confusion matrix are to be regenerated with
 `yolo detect val model=models/ppe-yolo11s.pt data=<data.yaml> split=val plots=True`.
 
@@ -906,22 +934,24 @@ the confusion matrix are to be regenerated with
 
 ### Attachment B — Compliance parameters and Modbus map
 
-**Table B1.** Per-class settings of the shipped configuration and the resulting timings. A removal
-is declared after the window plus the 0.4 s violation confirmation.
+**Table B1.** Per-class settings of the station configuration, and the time from an item
+leaving view to the motor stopping, simulated with the station's own logic on a running machine.
+Values from the first configuration are given in brackets where they changed.
 
-| Class | Confidence | Containment | Hold | Occlusion window | Correction window | Removal declared after |
+| Class | Confidence | Containment | Hold | Count | Correction window | Motor stops after |
 | --- | --- | --- | --- | --- | --- | --- |
-| Head net | 0.50 | 0.5 | 0.8 s | — | 5 s | 1.2 s |
-| Safety glasses | 0.60 | 0.5 | 1.1 s | — | 0 s | 1.5 s |
-| Mask | 0.60 | 0.5 | 0.7 s | — | 5 s | 1.1 s |
-| Gloves (×2) | 0.60 | 0.1 | 1.0 s | 5.0 s | 0 s | 1.4 s (none seen); up to 5.4 s (one of two seen) |
-| Sleeves (×2) | 0.75 | 0.3 | 1.2 s | 5.0 s | 5 s | 1.6 s; up to 5.4 s |
-| Apron (not trained) | 0.60 | 0.5 | 1.2 s | — | 5 s | 1.6 s |
-| Wrong Sleeve | 0.90 | 0.5 | 0.4 s | — | 0 s | 0.4 s after first sighting |
-| Person | 0.25 | — | 1.0 s | — | — | STANDBY after 2.0 s |
+| Head net | 0.50 | 0.5 | 0.8 s | 1 | 8 s (5 s) | 9.3 s (6.3 s) |
+| Safety glasses | 0.60 | 0.5 | 1.1 s | 1 | 5 s (0 s) | 6.6 s (1.6 s) |
+| Mask | 0.60 | 0.5 | 0.7 s | 1 | 8 s (5 s) | 9.2 s (6.2 s) |
+| Gloves | 0.67 (0.60) | 0.1 | 1.0 s | 1 (2) | 5 s (0 s) | 6.5 s (1.5 s); one of two removed: never (5.5 s) |
+| Sleeves | 0.75 | 0.3 | 1.2 s | 1 (2) | 8 s (5 s) | 9.7 s (6.7 s); one of two removed: never (10.5 s) |
+| Apron | 0.60 | 0.5 | 1.2 s | 1 | 8 s | as sleeves (alternative) |
+| Wrong Sleeve (forbidden) | 0.90 | 0.5 | 1.2 s (0.4 s) | 0 | 0 s | 0.5 s after it appears |
+| Person (subject) | 0.70 (0.25) | — | 1.0 s | — | — | STANDBY, motor stops after ≈ 2 s |
 
-Confirmation periods: OK 1.0 s, VIOLATION 0.4 s, STANDBY 1.0 s, DEGRADED 0.5 s. Runtime NMS
-IoU 0.50, global confidence floor 0.35.
+Other settings: confirmation periods OK 1.0 s, VIOLATION 0.4 s, STANDBY 1.0 s, DEGRADED 0.5 s;
+occlusion window 8 s (5 s), which no longer applies with a count of one; runtime NMS IoU 0.50;
+global confidence floor 0.35.
 
 **Table B2.** Modbus map of the relay module (addresses 0-based).
 
@@ -967,12 +997,12 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | 3 | Inference exception | Blank the board and exit, so the supervisor restarts |
 | 4 | Module watchdog | Enable; test by pulling the network cable with the motor running |
 | 5 | Modbus on the critical path | Measure the relay stage on the station |
-| 6 | Apron class | Retrain; confirm in the risk assessment that an apron replaces sleeves |
+| 6 | Apron model | Add its validation results; confirm in the risk assessment that an apron replaces sleeves |
 | 7 | Spectacles and carried gloves | Targeted evaluation set; relational hand test |
 | 8 | Camera geometry | Reposition and angle for the observed posture |
-| 9 | Correction window | Document the EHS position, including the 5.4 s one-glove exposure |
+| 9 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the rest, and one glove instead of two |
 | 10 | Nano anomaly | Export both models with one tool; benchmark |
-| 11 | Default capture configuration | Change to 640 × 480 raw before rollout |
+| 11 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
 | 12 | Library version split | Align at the next retraining |
 
 **Table D2.** Discrepancies between the project record and the code.
@@ -980,14 +1010,15 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | Topic | Project record | Code |
 | --- | --- | --- |
 | Emergency stop | hard-wired, independent | NO contact into DI1; no safety relay yet |
-| Correction window | lets a slipped glove be corrected | 0 s for gloves, glasses and Wrong Sleeve |
+| Correction window | lets a slipped glove be corrected | First 0 s for gloves and glasses; now 5 s on the station, as the notes describe |
 | Modbus thread | off the critical path | on the pipeline thread |
 | Required PPE | glasses, gloves, sleeves, mask | also head net; Wrong Sleeve forbidden |
-| Capture | 640 × 480 raw; MJPEG rejected | default config still 1280 × 720 MJPG |
+| Capture | 640 × 480 raw; MJPEG rejected | Station 640 × 480 and 640 × 360 via DirectShow (MJPEG request not applied); shipped default still 1280 × 720 |
 | Original capture size | 1280 × 1080 | 1280 × 720 measured |
 | Scheduler history | freshest-frame selector | batching, then round-robin with a turn-spending fix |
 | Dataset provenance | site data only, no cloud tools | dataset path names a cloud platform's export |
 | Rollout scope | 45 machines | tooling configured for 32 |
+| Required PPE count | gloves and sleeves (pairs) | first 2 each; station now 1 each |
 
 ### Attachment E — Code and configuration
 

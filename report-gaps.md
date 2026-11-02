@@ -36,6 +36,39 @@ submitted:
 
 ---
 
+## 0. Station configuration (received 2 November 2026)
+
+The report now describes the station's own `config.yaml`. These changes from the repository's
+default affect the safety argument and need an EHS position before rollout.
+
+| Setting | First configuration (repository) | Station | Effect, simulated with the station's own logic |
+| --- | --- | --- | --- |
+| Gloves count | 2 | **1** | A worker with **one bare hand is compliant indefinitely**. Before, removing one glove stopped a running machine after 5.5 s. |
+| Sleeves count | 2 | **1** | The same, for one bare forearm |
+| Correction window: gloves, glasses | 0 s | **5 s** | Motor stops 6.5–6.6 s after the item leaves view (was 1.5–1.6 s) |
+| Correction window: default (head net, mask, sleeves, apron) | 5 s | **8 s** | Stops after 9.2–9.7 s (was 6.2–6.7 s) |
+| Wrong Sleeve | hold 0.4 s, window 0 s | hold 1.2 s, window 0 s | Still stops in 0.5 s once it appears |
+| Person confidence floor | 0.25 | 0.70 | Fewer background people; the operator is lost more easily, which means STANDBY and the motor stopping |
+| Occlusion window | 5 s | 8 s | Has no effect with a count of 1 |
+| Model | `ppe-yolo11s_openvino_model` | `best-apron_openvino_model` | **Not in the repository.** Class list, training record and metrics are needed for Attachment A. |
+| Cameras | 1280×720, `api: any` | 640×480 and 640×360, DirectShow | Matches the validated low-resolution setting |
+
+Three things to know about the station file itself:
+
+- **The comments no longer match the values.** The comment above the classes still says that
+  gloves, glasses and Wrong Sleeve get 0 s. Correct it, so the next person reading the file is not
+  misled.
+- **It references files the repository does not have:** `models/best-apron_openvino_model/`,
+  `assets/please_wear_ppe.mp3` and `assets/logo.png`. If it replaced the repository's
+  `config.yaml` as it stands, the installer's self-test and the CI build would fail. Add those
+  files first, or keep the station file local.
+- **It contains the station's relay address.** That address is kept out of the report.
+
+The full draft (`docs/report/internship-report-full-draft.md`) still describes the first
+configuration.
+
+---
+
 ## 1. Placeholders left in the report
 
 ### 1.1 Cover page (RWTH requirements)
@@ -81,7 +114,7 @@ These are stated in the report where they arise, and collected in Attachment D (
 | # | Topic | Project record (Part B) | Code or repository | Report |
 | --- | --- | --- | --- | --- |
 | 2.1 | **Safety:** emergency stop | "Hard-wired to the machine and independent of the detection system" | NO contact into relay module DI1. `config.yaml:198-206` says no safety relay is fitted and this input is the only thing the e-stop does. You told me in this session that the safety relay work is pending, which agrees with the code. | 3, 6.4, 11 |
-| 2.2 | Grace timer and gloves | Grace exists so "an operator whose glove has slipped" can correct | Gloves, safety glasses and Wrong Sleeve have `grace_sec: 0`. Only head net, mask and sleeves get the 5 s. | 6.3 |
+| 2.2 | Grace timer and gloves (**now resolved by the station config**: gloves get 5 s) | Grace exists so "an operator whose glove has slipped" can correct | Gloves, safety glasses and Wrong Sleeve have `grace_sec: 0`. Only head net, mask and sleeves get the 5 s. | 6.3 |
 | 2.3 | Modbus thread | UI and Modbus on their own thread, off the critical path | Modbus reads and writes run on the pipeline thread (`ppe/pipeline.py:282-285`). The UI runs on the Qt main thread. | 5.1 |
 | 2.4 | Required PPE | Glasses, gloves, sleeves, mask | The model and config also require a **head net**, and treat **Wrong Sleeve** as forbidden. Confirm the head-net requirement against the station's risk assessment. | 4.1 |
 | 2.5 | Compliance-state schema | Open question | Resolved for sleeves by the explicit `Wrong Sleeve` class. **Not** resolved for prescription spectacles or carried gloves. The relational test is only "item box inside the person box" (gloves 0.1, sleeves 0.3, others 0.5). | 4.2 |
