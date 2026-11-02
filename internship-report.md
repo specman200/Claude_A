@@ -30,8 +30,9 @@ required PPE is worn. An Ethernet relay module, addressed over Modbus TCP, drive
 buzzer and grants or withholds the grinder motor's run permissive.
 
 Migrating inference from PyTorch to OpenVINO cut end-to-end latency from 300–400 ms to about
-40 ms. The model reached a validation precision of 0.942, a recall of 0.955 and an mAP@0.5 of
-0.966. The system passed two Management of Change approvals, was installed and relocated, and was
+40 ms. Six model versions were trained. The first deployed version reached a validation precision
+of 0.942, a recall of 0.955 and an mAP@0.5 of 0.966, and the station now runs an eight-class
+version that adds the apron. The system passed two Management of Change approvals, was installed and relocated, and was
 approved for deployment on every flat belt grinder at the plant.
 
 The most consequential finding was not a model result. Operators stand at an angle to the machine
@@ -128,9 +129,7 @@ YOLO11; my project notes wrote *YOLOv11*, and this report uses YOLO11 throughout
 as DETR [3] and RF-DETR [4] predict object sets directly and need no non-maximum suppression, but
 their attention layers are costly on a CPU.
 
-OpenVINO [5] compiles a trained network into an intermediate representation for a specific CPU.
-It fuses layers, selects kernels for the available instruction set, and manages its own thread
-pool. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
+OpenVINO [5] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
 mean average precision (mAP) at an IoU threshold of 0.5, and averaged over thresholds from 0.5
 to 0.95 [6].
 
@@ -201,9 +200,9 @@ e-stop does. Section 6.4 returns to this point.
 
 The model described in this report detects seven classes (Table 2). They are five items of
 equipment, the person who wears them, and one *non-compliant state*, `Wrong Sleeve`, which the
-station treats as a violation whenever it is detected. The station has since moved to a model
-retrained with an `Apron` class. Its training record and metrics are not yet in the repository,
-so the figures in Section 4.3 and Attachment A belong to the seven-class model.
+station treats as a violation whenever it is detected. The station now runs a later version,
+`best-apron`, that adds an `Apron` class (Section 4.4). Section 4.3 describes the seven-class
+model that was deployed first and that the repository still ships.
 
 **Table 2.** Class schema and the role of each class.
 
@@ -292,13 +291,8 @@ Early stopping ended training at epoch 105 and kept epoch 75. At that epoch the 
 precision 0.942, recall 0.955, mAP@0.5 0.966 and mAP@0.5:0.95 0.840, averaged over the seven
 classes.
 
-Two settings counted back from the *planned* 150 epochs, so they never took effect:
-
-- the switch-off of mosaic augmentation for the final ten epochs;
-- the final low-learning-rate phase.
-
-Both are free improvements at the next retraining. Per-class metrics and the confusion matrix
-were not retained and must be regenerated (Attachment A).
+Mosaic switch-off and the final low-learning-rate phase were scheduled against the *planned* 150
+epochs, so early stopping meant they never ran. Both are free improvements at the next retraining.
 
 ### 4.4 Model selection
 
@@ -315,18 +309,51 @@ Table 3 lists the configurations evaluated.
 | RF-DETR | — | ≈ 1500 ms | rejected on latency; accuracy good |
 
 The nano anomaly deserves care. YOLO11n needs about a third of the arithmetic of YOLO11s
-(6.5 against 21.5 GFLOPs [2]), so it should have been two to three times faster, not slower.
-There are three candidate explanations:
+(6.5 against 21.5 GFLOPs [2]), so it should have been two to three times *faster*. A fixed
+per-call overhead or graph optimisation favouring wider layers could narrow that gap, but not
+reverse it. Only a precision or configuration mismatch in the nano's export predicts a reversal,
+so it should be ruled out first. The deployed *s* export is pure FP32; the nano export was not
+kept.
 
-- **A fixed per-call overhead.** It can make nano *no faster*, but not *slower*.
-- **Graph optimisation favouring wider layers.** It can narrow the gap, but would struggle to
-  reverse a threefold difference.
-- **A precision or configuration mismatch in the nano export.** This is the only explanation
-  that predicts a reversal, so it should be ruled out first.
+**Model versions.** Table 4 compares the six checkpoints that were kept. The comparison is drawn
+from the training records stored inside each file, and Figure A2 in Attachment A shows their
+training curves. The repository's `ppe-yolo11s.pt` has the same weights as *v2*, bit for bit:
+the v2 file is a re-run on 3 September that, with the fixed seed, reproduced it exactly.
 
-The repository settles half of the question. The deployed *s* export is pure FP32, with every
-weight tensor `f32` and no quantisation. The nano export was not kept, so the experiment of
-exporting both models with the same tool and benchmarking them is still open.
+**Table 4.** Model versions, with validation metrics at each run's best epoch.
+
+| Version | Trained | Classes | Starting weights | Epochs (best) | P | R | mAP@0.5 | mAP@0.5:0.95 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v2 (in repository) | 23 Aug | 7 | COCO `yolo11s` | 105 (75) | 0.942 | 0.955 | 0.966 | 0.840 |
+| nano 3 | 30 Aug | 7 | COCO `yolo11n` | 100 (98) | 0.969 | 0.967 | 0.985 | 0.858 |
+| v4 | 10 Sep | 7 | COCO `yolo11s` | 100 (70) | 0.945 | 0.952 | 0.970 | 0.842 |
+| v5 | 10 Sep | 7 | COCO `yolo11s` | 104 (74) | 0.948 | 0.955 | 0.975 | 0.843 |
+| v6 | 20 Sep | 7 | COCO `yolo11s` | 100 (70) | 0.941 | 0.964 | 0.972 | 0.844 |
+| best-apron (station) | 12 Oct | 8 | an earlier fine-tuned run | 93 (63) | 0.971 | 0.979 | 0.987 | 0.864 |
+
+The table supports three readings:
+
+- **v2 to v6 differ only in their data.** Every training setting is identical. The time per epoch
+  on the same GPU grew from about 60 s to 94 s, which fits a dataset that grew round by round, as
+  Section 4.2 describes. Each version scored marginally higher in mAP@0.5:0.95 (0.840 to 0.844),
+  and v6 had the best recall (0.964). But each was validated on its own, growing, validation
+  split, so differences of a few thousandths are not evidence that one version beats another.
+- **The nano and the apron model were trained on different data and settings.** The nano was
+  trained on a cloud notebook against a separate copy of the dataset, for a fixed 100 epochs,
+  without the cosine schedule or rotation augmentation. Its scores look higher, but its
+  mAP@0.5:0.95 was already 0.78 after the first epoch, against 0.63–0.69 for the small models. A
+  smaller network should not start ahead on the same data. This points to an easier validation
+  split, or to images shared between training and validation, rather than a better model. The
+  apron model was trained on a combined dataset with an eighth class, starting from an earlier
+  fine-tuned run, so its higher figures are not comparable either.
+- **None of the six was compared on common ground.** The comparison that would settle which
+  version is best is a single, fixed test set drawn from station footage, held out from every
+  training set and evaluated per class. It is among the open items in Chapter 11.
+
+The records also narrow the nano anomaly. The nano was trained in a different environment and on
+a different Ultralytics release, so it reached the station by a different export path. How it was
+exported is not recorded. The decisive test remains: export both models with the same tool, then
+time them on the station's PC.
 
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
@@ -352,25 +379,16 @@ Modbus reads and writes run on the pipeline thread** (Figure 3). This fixes thei
 first and lamps second, but puts network round trips inside every cycle. Their cost on the
 station network has not been measured.
 
-The largest gain after the change of runtime came from the interaction between threads. By
-default OpenCV starts a pool of threads inside each capture thread, so the decoders and the model
-competed for four cores. Inference inside the application ran about three times slower than in
-isolation. Pinning capture to one thread per camera removed the gap entirely.
-
 ### 5.2 Camera scheduling
 
 On a CPU, one camera is served per cycle. A batch of two cost 1.89 times a batch of one, and made
 each frame wait for the other. Taking turns therefore halved the latency per frame: 64 ms against
 122 ms on the development host.
 
-My notes describe a freshest-frame scheduler that starved one camera and was replaced by strict
-alternation. The repository's history shows a closely related bug. A round-robin cursor advanced
-only when both cameras had fresh frames, so a camera served alone did not spend its turn and was
-served again on the next contested cycle. A camera fresh on every second cycle was served on 3 of
-its 6 chances. After the fix, a lone frame passes through the same selection and spends its turn.
-Both cameras are then served every time they have a frame, with strict 0-1-0-1 alternation when
-both deliver. The general lesson is that a scheduler's comparison must not let a small, persistent
-asymmetry between its sources compound.
+A scheduling bug starved the slower camera. My notes describe it as a freshest-frame selector;
+the repository records it as a round-robin cursor that a camera served alone did not advance. A
+camera with a fresh frame every second cycle was served on only 3 of its 6 chances. After the fix,
+both cameras are served whenever they have a frame, alternating strictly when both deliver.
 
 ### 5.3 Letterboxing, bandwidth and the rejection of MJPEG
 
@@ -634,7 +652,9 @@ Per-stage instrumentation decided the fix. In the untuned pipeline, inference to
 each cycle, and all the code I had written myself took under 2 %. Only the forward pass was worth
 optimising, through the runtime, the model size or the input size. The second-largest gain came
 from noticing that two measurements which should have agreed did not: inference inside the
-application was three times slower than in the benchmark. One honest qualification applies. The
+application was three times slower than in the benchmark, because the capture threads'
+OpenCV pools competed with the model for the cores. Pinning capture to one thread per camera
+closed the gap. One honest qualification applies. The
 pipeline grew while it was being optimised, so the intermediate measurements are not comparable,
 and I report only the two endpoints measured under identical conditions.
 
@@ -670,9 +690,8 @@ Three remedies were identified:
 
 - reposition the cameras for large workpieces;
 - angle them so that every class stays observable in the posture operators actually adopt;
-- retrain with an apron class. This has since been done: the station runs a retrained model, and
-  its configuration accepts an apron in place of sleeves. Its validation results are still to be
-  added.
+- retrain with an apron class. This has since been done: the station runs `best-apron`, an
+  eight-class version (Table 4), and its configuration accepts an apron in place of sleeves.
 
 **This is a requirements failure, not a model failure.** The model correctly reported that it
 could not see a glove turned away from it. The camera placement had been derived from an *assumed*
@@ -727,13 +746,10 @@ dusty environment. The specification asked for USB 3 direct to the PC on a 2 m c
 distances of 0.5–1.0 m for the front camera and 1.0–1.5 m for the side camera. A **gemba walk**
 surveyed every grinder in the condition in which it actually operates.
 
-Standardisation rests on a single self-testing Windows installer. Its only per-station input is the
-machine number, from which it derives the relay address. Two earlier decisions are justified here.
-
-- **Rejecting the machine-dependent MJPEG setting** cost resolution at one station and saves an
-  operating-system modification at every station.
-- **Keeping annotation local** means that every station can contribute failure cases to training
-  without an exception to the data compliance rules.
+Standardisation rests on a single self-testing Windows installer whose only per-station input is
+the machine number. Here two earlier decisions pay off: rejecting the machine-dependent MJPEG
+setting saves an operating-system change at every station, and local annotation lets every station
+contribute failure cases without an exception to the data rules.
 
 The station was also redesigned as an integrated tower that fits within the grinder's own envelope:
 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in volume. This
@@ -773,12 +789,8 @@ worked well; and what you would have wanted differently.]
 
 ### 10.2 Learning achievements
 
-**Deployment is most of the work.** The model passed 0.96 mAP@0.5. Most of the internship was then
-spent on what stands between that number and an operator starting a machine:
-
-- the capture pipeline and the compliance logic;
-- commissioning and two MOC approvals;
-- a relocation, an SOP and a rollout specification.
+**Deployment is most of the work.** The model passed 0.96 mAP@0.5 early. Most of the internship
+went on what stands between that number and an operator starting a machine.
 
 **Diagnose before optimising.** Instrumentation showed inference at 98.6 % of the cycle. Without it
 I would have optimised my own code, which cost under 2 %.
@@ -793,9 +805,8 @@ and rejecting it still proved the right decision once the rollout was in view.
 described it, not when the code ran. The questions EHS asked (what happens when a camera, the
 network or the PC fails?) led to the analysis that found my own code's weakest points.
 
-**Different audiences need different accounts of the same system.** Operators, EHS, management and
-executives each needed their own. Explaining a part of the system to someone who would never read
-its code was the best test of whether I understood it.
+**Different audiences need different accounts of the same system.** Explaining a part of it to
+someone who would never read its code was the best test of whether I understood it.
 
 ### 10.3 Problems and what I would do differently
 
@@ -835,7 +846,7 @@ The open items, in order of priority, are:
 3. **Switch the outputs off on any pipeline exception.**
 4. **Verify the relay module's communication watchdog.**
 5. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-6. Validate and document the apron model.
+6. Evaluate all model versions on one fixed, held-out test set, per class.
 7. Reposition the cameras for the observed posture.
 8. Settle the nano anomaly.
 
@@ -918,9 +929,9 @@ key `train_args`).
 | Device | CUDA GPU 0 | Duration | 7,180 s (≈ 2 h) |
 | Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
 
-**Table A2.** Validation metrics of the seven-class model at its best epoch (75), all classes.
-The apron-retrained model now on the station is not in the repository, and its metrics are to be
-added. The per-class breakdown and
+**Table A2.** Validation metrics of the seven-class model (v2) at its best epoch (75), all
+classes. Table 4 gives the other versions, including the apron model the station now runs. The
+per-class breakdown and
 the confusion matrix are to be regenerated with
 `yolo detect val model=models/ppe-yolo11s.pt data=<data.yaml> split=val plots=True`.
 
@@ -930,7 +941,9 @@ the confusion matrix are to be regenerated with
 
 [Dataset composition (images per split, instances per class) and per-class metrics: to be added.]
 
-![Figure A1. Training and validation losses; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
+![Figure A1. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
+
+![Figure A2. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
 
 ### Attachment B — Compliance parameters and Modbus map
 

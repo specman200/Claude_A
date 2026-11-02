@@ -15,7 +15,7 @@ These notes go with the RWTH version of the report:
 - a table of contents with page numbers.
 
 Tables, captions and code are set smaller and single-spaced, as is usual. The body, from
-Introduction to Conclusion, is **23 pages**, against the guideline of about 24, excluding the
+Introduction to Conclusion, is **24 pages** (last page half full), against the guideline of about 24, excluding the
 cover, attachments and literature. Filling the placeholders below, the supervision reflection in
 particular, will bring it to about 24. If you add more than about a page, shorten Chapter 2 or
 Section 5.3 first.
@@ -66,6 +66,37 @@ Three things to know about the station file itself:
 
 The full draft (`docs/report/internship-report-full-draft.md`) still describes the first
 configuration.
+
+---
+
+## 0a. Model versions (checkpoints received 2 November 2026)
+
+Table 4 and Figure A2 of the report compare the six checkpoints. The data is in
+`docs/report/data/model-versions.csv`.
+
+- **`ppe-yolo11s.pt` (repository) and `best-yolov11s_v2.pt` are the same model.** Their weights are
+  bit-identical; v2 is a seeded re-run dated 3 September. v1 and v3 were not supplied. If they
+  existed, say so in Section 4.4.
+- **v4, v5 and v6** have identical settings and differ only in their data. Their epoch times grow
+  from about 60 s to 94 s on the same GPU. Their metric gains (mAP@0.5:0.95 from 0.840 to 0.844;
+  v6 recall 0.964) are within what separate validation splits can explain.
+- **`nanobest_3.pt`** was trained on a cloud notebook against a different dataset copy, with
+  different settings and Ultralytics 8.4.135. It scores 0.78 mAP@0.5:0.95 after one epoch, which is
+  implausible for a smaller model on the same data. **Check its training and validation split for
+  overlap** before citing its scores.
+- **`best-apron.pt`** has 8 classes in a *different index order*: person, headnet, Gloves, Mask,
+  Safetyglasses, sleeves, Wrong Sleeve, Apron. The station matches classes by name, so the order
+  is harmless there, but any tool that uses class indices will be wrong. It was trained on a
+  "combined" dataset, fine-tuned from an earlier run, under **another user's Windows profile,
+  named by an employee number**. Add that to the authorship question in 2.10, and keep the number
+  out of anything you publish. It is not in the report or the CSV.
+- **The CPU benchmark of nano against small was not run.** The CPU-only PyTorch index is blocked
+  from this environment, and the standard build, with several gigabytes of GPU libraries,
+  downloaded too slowly. To settle the nano anomaly, run this on the station PC:
+  `python -m ppe.export -w nanobest_3.pt`, then
+  `python -m ppe.bench -w models/ppe-yolo11s_openvino_model/ nanobest_3_openvino_model/`.
+- **The one comparison that would decide between versions is still missing:** all six evaluated on
+  one fixed test set of station footage, per class (open item 6 in the report).
 
 ---
 
