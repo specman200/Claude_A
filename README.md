@@ -700,6 +700,27 @@ matches its isolated benchmark exactly.
 `read()`, but a file or a free-running source will decode flat out and burn a
 core producing frames nobody consumes.
 
+### Comparing models on a common dataset
+
+`ppe.bench` times models; `ppe.evaluate` ranks them. It scores every model on the same labelled
+images (the `test` split of a YOLO dataset, by default), so versions trained on different
+validation splits can finally be compared:
+
+```bash
+python -m ppe.evaluate --data data.yaml --root "D:/PPE Dataset YOLO_combined"
+python -m ppe.evaluate --data data.yaml --root ... --report internship-report.md
+```
+
+For each model it reports per-class precision, recall, AP@0.5 and AP@0.5:0.95. Classes are
+matched by name, so models with different class orders or an extra class (best-apron's `Apron`)
+compare correctly. It also gives mAP over the classes every model has, and the speed per frame
+through the station's own detector. It also runs each image through the station's decision
+logic on the labels and on the model's detections. It then counts **false permits** (the
+station would let the machine run, the labels say PPE is missing) and **false stops**. Tables go
+to `docs/report/data/model-evaluation.md` (+ `.csv`, `.json`). `--report` writes them straight
+into the report's marked blocks. `--root` overrides the `path` in `data.yaml`, which is usually
+a path on the training PC.
+
 ### Measuring it yourself
 
 The right backend depends on your CPU, so measure rather than assume:

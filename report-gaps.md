@@ -108,6 +108,29 @@ Table 4 and Figure A2 of the report compare the six checkpoints. The data is in
 
 ---
 
+## 0b. Table 5: common-dataset comparison (run it yourself)
+
+Run this on the PC that holds the dataset. The images never leave it.
+
+```bash
+python -m ppe.evaluate --data data.yaml --root "<folder that contains images/ and labels/>" \
+       --report internship-report.md
+python docs/report/build_docx.py --pdf
+```
+
+This fills Table 5 (Section 4.4) and Tables A3–A6 (Attachment A). Then write the one-paragraph
+interpretation that follows Table 5. `--limit 50` gives a quick check first.
+
+Two things to know:
+
+- **`data.yaml` names a OneDrive path with an employee number.** The tool doesn't need it,
+  because `--root` overrides it. Consider removing the `path:` line from the committed file.
+- **The test split must be held out from every model's training.** best-apron was trained on
+  this combined dataset; if its `test` images were not held out, its scores here are inflated.
+  Confirm which images were used for training.
+
+---
+
 ## 1. Placeholders left in the report
 
 ### 1.1 Cover page (RWTH requirements)

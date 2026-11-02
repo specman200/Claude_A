@@ -347,9 +347,19 @@ The table supports three readings:
   split, or to images shared between training and validation, rather than a better model. The
   apron model was trained on a combined dataset with an eighth class, starting from an earlier
   fine-tuned run, so its higher figures are not comparable either.
-- **None of the six was compared on common ground.** The comparison that would settle which
-  version is best is a single, fixed test set drawn from station footage, held out from every
-  training set and evaluated per class. It is among the open items in Chapter 11.
+- **None of the six was compared on common ground during training.** Table 5 therefore scores
+  all of them on one test set from station footage, held out from training. The scoring is by
+  class name, so differences in class order or class count do not matter. Each image is also
+  judged with the station's own decision logic, to count false permits and false stops directly.
+
+<!-- evaluation:summary -->
+**Table 5.** All model versions on one common test set. [To be filled by running
+`python -m ppe.evaluate --data data.yaml --root <dataset folder> --report internship-report.md`.]
+<!-- /evaluation:summary -->
+
+[Interpretation of Table 5, to be written once the tool has run: which version detects best on
+the common classes, how the false-permit and false-stop counts compare, and whether best-apron's
+eighth class costs accuracy on the other seven.]
 
 **The nano anomaly is resolved.** All six checkpoints were converted to OpenVINO with the
 station's own export tool and timed on one CPU. The nano took 16.5 ms per call against 34–35 ms
@@ -855,7 +865,7 @@ The open items, in order of priority, are:
 3. **Switch the outputs off on any pipeline exception.**
 4. **Verify the relay module's communication watchdog.**
 5. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-6. Evaluate all model versions on one fixed, held-out test set, per class.
+6. Run `ppe.evaluate` on the held-out test set and fill Table 5.
 7. Reposition the cameras for the observed posture.
 8. Keep model comparisons like for like: one export tool, one benchmark, one test set.
 
@@ -953,6 +963,11 @@ the confusion matrix are to be regenerated with
 ![Figure A1. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
 
 ![Figure A2. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
+
+<!-- evaluation:detail -->
+[Per-class AP@0.5, AP@0.5:0.95, recall and station decisions on the common test set (Tables
+A3–A6): filled by `python -m ppe.evaluate ... --report internship-report.md`.]
+<!-- /evaluation:detail -->
 
 ### Attachment B — Compliance parameters and Modbus map
 

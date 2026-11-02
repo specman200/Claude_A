@@ -1,0 +1,64 @@
+name: Evaluate tool smoke test
+
+# Runs ppe.evaluate end to end against the real models in the repository, on a
+# tiny stand-in dataset: Ultralytics' two sample images, labelled with
+# best-apron's own detections. The numbers mean nothing; the point is that
+# every model (OpenVINO and .pt, seven and eight classes, different class
+# orders) loads, predicts and lands in the tables. The real comparison runs
+# on the station's test split, which never leaves the site.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "ppe/evaluate.py"
+      - "ppe/detector.py"
+      - ".github/workflows/evaluate-smoke.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the pinned stack, CPU-only PyTorch
+        run: |
+          python -m pip install --upgrade pip
+          tv=$(grep -E '^torch==' packaging/constraints.txt | cut -d= -f3)
+          vv=$(grep -E '^torchvision==' packaging/constraints.txt | cut -d= -f3)
+          pip install "torch==$tv" "torchvision==$vv" --index-url https://download.pytorch.org/whl/cpu
+          grep -v -E '^(PySide6|pygame)' requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt -c packaging/constraints.txt pytest
+          sudo apt-get update -qq && sudo apt-get install -y -qq libgl1 libglib2.0-0 >/dev/null
+      - name: Unit tests for the tool
+        run: python -m pytest -q tests/test_evaluate.py
+      - name: Build a two-image stand-in dataset
+        run: |
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+          from ultralytics import YOLO
+          from ultralytics.utils import ASSETS
+          root = Path("/tmp/smoke"); (root / "images/test").mkdir(parents=True); (root / "labels/test").mkdir(parents=True)
+          model = YOLO("models/best-apron_openvino_model/", task="detect")
+          names = [model.names[i] for i in sorted(model.names)]
+          for img in ("bus.jpg", "zidane.jpg"):
+              shutil.copy(ASSETS / img, root / "images/test" / img)
+              r = model.predict(str(ASSETS / img), conf=0.25, verbose=False)[0]
+              lines = [f"{int(c)} {x:.6f} {y:.6f} {w:.6f} {h:.6f}" for c, (x, y, w, h)
+                       in zip(r.boxes.cls.tolist(), r.boxes.xywhn.tolist())]
+              (root / "labels/test" / img).with_suffix(".txt").write_text("\n".join(lines))
+          (root / "data.yaml").write_text("path: /tmp/smoke\ntest: images/test\nnames:\n"
+                                          + "".join(f"  {i}: {n}\n" for i, n in enumerate(names)))
+          print(open(root / "data.yaml").read())
+          PY
+      - name: Evaluate every model and fill a copy of the report
+        run: |
+          cp internship-report.md /tmp/report.md
+          python -m ppe.evaluate --data /tmp/smoke/data.yaml --out /tmp/eval --report /tmp/report.md
+          cat /tmp/eval/model-evaluation.md
+          grep -c "Table A3" /tmp/report.md
