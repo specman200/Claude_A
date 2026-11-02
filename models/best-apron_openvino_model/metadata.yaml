@@ -1,0 +1,30 @@
+description: Ultralytics YOLO11s model trained on C:\Users\270019114\Downloads\PPE
+  Dataset YOLO_combined\PPE Dataset YOLO_combined\data.yaml
+author: Ultralytics
+date: '2026-11-02T05:13:21.008941'
+version: 8.3.253
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: person
+  1: headnet
+  2: Gloves
+  3: Mask
+  4: Safetyglasses
+  5: sleeves
+  6: Wrong Sleeve
+  7: Apron
+args:
+  batch: 1
+  fraction: 1.0
+  half: false
+  int8: false
+  dynamic: false
+  nms: false
+channels: 3
