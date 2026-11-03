@@ -330,16 +330,16 @@ The table supports three readings:
   judged with the station's own decision logic, to count false permits and false stops directly.
 
 <!-- evaluation:summary -->
-**Table 5.** All model versions on one common test set (477 images, split `test`). mAP over the 7 classes every model detects; decisions from the station's own logic at its configured floors, single frame.
+**Table 5.** All model versions on one common test set (477 images, split `test`). mAP over the 7 classes every model detects; decisions from the station's own logic at its configured floors, single frame. *Like for like* leaves out compliant images that need a class the model lacks (an apron worn instead of sleeves).
 
-| Model | Classes | mAP@0.5 | mAP@0.5:0.95 | Mean recall | False permits | False stops | ms/frame |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| best-apron | 8 | 0.948 | 0.835 | 0.951 | 1.4 % (6/428) | 10.4 % (5/48) | 34.5 |
-| v2 (ppe-yolo11s) | 7 | 0.873 | 0.723 | 0.796 | 0.0 % (0/428) | 85.4 % (41/48) | 46.5 |
-| yolo11n-nano3 | 7 | 0.863 | 0.711 | 0.837 | 0.9 % (4/428) | 79.2 % (38/48) | 26.3 |
-| yolo11s-v4 | 7 | 0.909 | 0.770 | 0.857 | 0.0 % (0/428) | 83.3 % (40/48) | 44.7 |
-| yolo11s-v5 | 7 | 0.904 | 0.772 | 0.856 | 0.0 % (0/428) | 77.1 % (37/48) | 46.0 |
-| yolo11s-v6 | 7 | 0.922 | 0.808 | 0.877 | 0.2 % (1/428) | 72.9 % (35/48) | 43.5 |
+| Model | Classes | mAP@0.5 | mAP@0.5:0.95 | Mean recall | False permits | False stops | False stops, like for like | ms/frame |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| best-apron | 8 | 0.948 | 0.835 | 0.951 | 1.4 % (6/428) | 10.4 % (5/48) | 10.4 % (5/48) | 38.4 |
+| v2 (ppe-yolo11s) | 7 | 0.873 | 0.723 | 0.796 | 0.0 % (0/428) | 85.4 % (41/48) | 72.0 % (18/25) | 37.0 |
+| yolo11n-nano3 | 7 | 0.863 | 0.711 | 0.837 | 0.9 % (4/428) | 79.2 % (38/48) | 60.0 % (15/25) | 22.7 |
+| yolo11s-v4 | 7 | 0.909 | 0.770 | 0.857 | 0.0 % (0/428) | 83.3 % (40/48) | 68.0 % (17/25) | 37.1 |
+| yolo11s-v5 | 7 | 0.904 | 0.772 | 0.856 | 0.0 % (0/428) | 77.1 % (37/48) | 56.0 % (14/25) | 36.4 |
+| yolo11s-v6 | 7 | 0.922 | 0.808 | 0.877 | 0.2 % (1/428) | 72.9 % (35/48) | 48.0 % (12/25) | 36.3 |
 <!-- /evaluation:summary -->
 
 Table 5 settles two questions that the validation scores left open.
@@ -355,20 +355,21 @@ class for every model.
 **The decision errors move in opposite directions.** best-apron falsely stops 5 of the 48
 images labelled compliant, against 35 to 41 for the seven-class models. Part of that gap is
 structural: a model without an apron class must stop every compliant operator who wears an apron
-instead of sleeves, however well it detects. [Like-for-like false stops, which the tool now
-separates: to be filled by re-running it.] In the other direction, best-apron falsely permits 6 of
+instead of sleeves, however well it detects. That applies to 23 of the 48 compliant images.
+Leaving them out, the seven-class models still falsely stop 12 to 18 of the remaining 25
+(48–72 %), against at most 5 for best-apron, so its lead is not an artefact of the apron class.
+The like-for-like column also falls steadily from v2 to v6. In the other direction, best-apron falsely permits 6 of
 428 non-compliant images, while v2, v4 and v5 permit none. That zero is no merit when it comes
 with 77–85 % false stops, since a model that rarely permits anything rarely permits wrongly. For a
 safety system, though, the six false permits matter most, and each must be inspected before
 best-apron's lead is accepted.
 
-Four limits apply. The counts are per image, from one camera and one frame, while the station
+Three limits apply. The counts are per image, from one camera and one frame, while the station
 combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
 compliant, so the 10.4 % false-stop rate has a 95 % interval of about 4–22 %, and the 1.4 %
 false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
-the older models are flattered, not best-apron. And the ms column was not measured like for like:
-Table 4 is the speed comparison.
+the older models are flattered, not best-apron.
 
 All five small models cost the same on the CPU (Table 4), so choosing between them is purely a
 question of accuracy. On that, Table 5 favours `best-apron`, which the station runs.
@@ -981,14 +982,14 @@ split): to be added.]
 
 **Table A6.** Station decisions against the labels, per image (single frame, configured floors).
 
-| Model | Agree | False permits | False stops | Other | Labels: OK / violation / nobody |
-| --- | --- | --- | --- | --- | --- |
-| best-apron | 465/477 | 6 | 5 | 1 | 48 / 428 / 1 |
-| v2 (ppe-yolo11s) | 433/477 | 0 | 41 | 3 | 48 / 428 / 1 |
-| yolo11n-nano3 | 434/477 | 4 | 38 | 1 | 48 / 428 / 1 |
-| yolo11s-v4 | 430/477 | 0 | 40 | 7 | 48 / 428 / 1 |
-| yolo11s-v5 | 435/477 | 0 | 37 | 5 | 48 / 428 / 1 |
-| yolo11s-v6 | 436/477 | 1 | 35 | 5 | 48 / 428 / 1 |
+| Model | Agree | False permits | False stops | of which need a missing class | Other | Labels: OK / violation / nobody |
+| --- | --- | --- | --- | --- | --- | --- |
+| best-apron | 465/477 | 6 | 5 | 0 | 1 | 48 / 428 / 1 |
+| v2 (ppe-yolo11s) | 433/477 | 0 | 41 | 23 | 3 | 48 / 428 / 1 |
+| yolo11n-nano3 | 434/477 | 4 | 38 | 23 | 1 | 48 / 428 / 1 |
+| yolo11s-v4 | 430/477 | 0 | 40 | 23 | 7 | 48 / 428 / 1 |
+| yolo11s-v5 | 435/477 | 0 | 37 | 23 | 5 | 48 / 428 / 1 |
+| yolo11s-v6 | 436/477 | 1 | 35 | 23 | 5 | 48 / 428 / 1 |
 <!-- /evaluation:detail -->
 
 ### Attachment B — Compliance parameters and Modbus map

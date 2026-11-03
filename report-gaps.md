@@ -133,23 +133,21 @@ Table 4 and Figure A2 of the report compare the six checkpoints. The data is in
 
 ---
 
-## 0b. Table 5: common-dataset comparison (results received 3 November 2026)
+## 0b. Table 5: common-dataset comparison (re-run received 3 November 2026)
 
-You ran `ppe.evaluate` on the `test` split (477 images) and the tables are in the report. The
-interpretation after Table 5 is written. What is still open:
+You ran `ppe.evaluate` twice on the `test` split (477 images). The second run's tables are in
+the report, and the interpretation after Table 5 is complete. Done:
 
-1. **Re-run once more** for the like-for-like false stops. The seven-class models cannot detect
-   an apron, so they *must* stop every compliant image where the apron is worn instead of
-   sleeves. That inflates their 35–41 false stops regardless of detection quality. The tool now
-   counts those separately (new column in Table 5 and in Table A6). The bracketed placeholder after
-   Table 5 then needs one sentence with the numbers.
+- **Like-for-like false stops** (from the re-run): 23 of the 48 compliant images are compliant
+  only through an apron. On the other 25, the seven-class models still falsely stop 12–18
+  (48–72 %), against at most 5 for best-apron. The report now says this.
+- **The ms column** now reads 36–38 ms for every small model and 23 ms for the nano, in line with
+  the like-for-like benchmark. The first run's spread was a measurement effect, so the caveat is
+  gone from the report.
 
-   ```bash
-   python -m ppe.evaluate --data data.yaml --root "<folder that contains images/ and labels/>" \
-          --report internship-report.md
-   python docs/report/build_docx.py --pdf
-   ```
+Still open:
 
+1. (done, see above)
 2. **Inspect best-apron's six false permits.** They are images the labels call non-compliant and
    the model judged OK. `docs/report/data/model-evaluation.json` now lists every disagreement
    per model (`decisions.disagreements`: image name, labels' verdict, model's verdict). For each,
@@ -158,11 +156,7 @@ interpretation after Table 5 is written. What is still open:
 3. **Test-split independence.** The split is best-apron's. Confirm whether v2–v6 ever trained on
    those images. If they did, the older models are flattered, which only strengthens best-apron's
    lead, but the report should say which it is.
-4. **The ms column.** best-apron ran at 34.5 ms but the other small models at 43–47 ms, although
-   the like-for-like benchmark (Table 4) puts them all at 33.5–35.1 ms. Check the `weights` field
-   of each model in the JSON: if some rows loaded a `.pt` file rather than an `_openvino_model/`
-   folder, they ran in PyTorch. Accuracy is unaffected either way (OpenVINO FP32 matches PyTorch
-   to within 1.2 px), and the report already says Table 4 is the speed comparison.
+4. (done, see above)
 5. **`data.yaml` names a OneDrive path with an employee number.** `--root` overrides it.
    Consider removing the `path:` line from the committed file.
 
