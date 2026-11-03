@@ -32,7 +32,8 @@ buzzer and grants or withholds the grinder motor's run permissive.
 Migrating inference from PyTorch to OpenVINO cut end-to-end latency from 300–400 ms to about
 40 ms. Six model versions were trained. The first deployed version reached a validation precision
 of 0.942, a recall of 0.955 and an mAP@0.5 of 0.966, and the station now runs an eight-class
-version that adds the apron. The system passed two Management of Change approvals, was installed and relocated, and was
+version that adds the apron. On a common test set of 477 station images, that version was the
+most accurate of the six (mAP@0.5 0.948). The system passed two Management of Change approvals, was installed and relocated, and was
 approved for deployment on every flat belt grinder at the plant.
 
 The most consequential finding was not a model result. Operators stand at an angle to the machine
@@ -349,18 +350,53 @@ The table supports three readings:
   apron model was trained on a combined dataset with an eighth class, starting from an earlier
   fine-tuned run, so its higher figures are not comparable either.
 - **None of the six was compared on common ground during training.** Table 5 therefore scores
-  all of them on one test set from station footage, held out from training. The scoring is by
+  all of them on one test set from station footage, held out from best-apron's training. The scoring is by
   class name, so differences in class order or class count do not matter. Each image is also
   judged with the station's own decision logic, to count false permits and false stops directly.
 
 <!-- evaluation:summary -->
-**Table 5.** All model versions on one common test set. [To be filled by running
-`python -m ppe.evaluate --data data.yaml --root <dataset folder> --report internship-report.md`.]
+**Table 5.** All model versions on one common test set (477 images, split `test`). mAP over the 7 classes every model detects; decisions from the station's own logic at its configured floors, single frame.
+
+| Model | Classes | mAP@0.5 | mAP@0.5:0.95 | Mean recall | False permits | False stops | ms/frame |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| best-apron | 8 | 0.948 | 0.835 | 0.951 | 1.4 % (6/428) | 10.4 % (5/48) | 34.5 |
+| v2 (ppe-yolo11s) | 7 | 0.873 | 0.723 | 0.796 | 0.0 % (0/428) | 85.4 % (41/48) | 46.5 |
+| yolo11n-nano3 | 7 | 0.863 | 0.711 | 0.837 | 0.9 % (4/428) | 79.2 % (38/48) | 26.3 |
+| yolo11s-v4 | 7 | 0.909 | 0.770 | 0.857 | 0.0 % (0/428) | 83.3 % (40/48) | 44.7 |
+| yolo11s-v5 | 7 | 0.904 | 0.772 | 0.856 | 0.0 % (0/428) | 77.1 % (37/48) | 46.0 |
+| yolo11s-v6 | 7 | 0.922 | 0.808 | 0.877 | 0.2 % (1/428) | 72.9 % (35/48) | 43.5 |
 <!-- /evaluation:summary -->
 
-[Interpretation of Table 5, to be written once the tool has run: which version detects best on
-the common classes, how the false-permit and false-stop counts compare, and whether best-apron's
-eighth class costs accuracy on the other seven.]
+Table 5 settles three questions the training records left open.
+
+**The data rounds paid off, and the validation splits hid it.** On common ground,
+mAP@0.5:0.95 rises from 0.723 for v2 through 0.770 (v4) and 0.808 (v6) to 0.835 for best-apron,
+where Table 4 showed differences of four thousandths. The gains sit in the classes the rounds
+were aimed at (Tables A3–A5): AP@0.5 for gloves rises from 0.77 to 0.97, and recall for safety
+glasses from 0.55 to 0.90. The eighth class cost the other seven nothing: best-apron leads on five
+of them and is within 0.011 of the leader on the other two. Safety glasses remain the weakest
+class for every model.
+
+**The nano's validation scores were inflated.** First in Table 4, it is last here, at an
+mAP@0.5:0.95 of 0.711, which confirms the easier validation split suspected above.
+
+**The decision errors move in opposite directions.** best-apron falsely stops 5 of the 48
+images labelled compliant, against 35 to 41 for the seven-class models. Part of that gap is
+structural: a model without an apron class must stop every compliant operator who wears an apron
+instead of sleeves, however well it detects. [Like-for-like false stops, which the tool now
+separates: to be filled by re-running it.] In the other direction, best-apron falsely permits 6 of
+428 non-compliant images, while v2, v4 and v5 permit none. That zero is no merit when it comes
+with 77–85 % false stops, since a model that rarely permits anything rarely permits wrongly. For a
+safety system, though, the six false permits matter most, and each must be inspected before
+best-apron's lead is accepted.
+
+Four limits apply. The counts are per image, from one camera and one frame, while the station
+combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
+compliant, so the 10.4 % false-stop rate has a 95 % interval of about 4–22 %, and the 1.4 %
+false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
+also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
+the older models are flattered, not best-apron. And the ms column was not measured like for like:
+Table 4 is the speed comparison.
 
 **The nano anomaly is resolved.** All six checkpoints were converted to OpenVINO with the
 station's own export tool and timed on one CPU. The nano took 16.5 ms per call against 34–35 ms
@@ -369,8 +405,7 @@ was three times as fast (40 ms against 122 ms). The architecture was therefore n
 station measurement came from how that particular nano export was produced or run, the only
 explanation that could reverse the result. All five small models cost the same, so choosing
 between them is purely a question of accuracy. The nano's speed is not needed: the small model
-already fits the budget, and the nano's accuracy cannot be judged until it is evaluated on the
-same test set as the others. The repository's default model is now `best-apron`, converted the
+already fits the budget, and on the common test set the nano is the least accurate of the six. The repository's default model is now `best-apron`, converted the
 same way.
 
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
@@ -695,7 +730,9 @@ detector, but they carry four limits:
 - they share their viewpoints with the training data;
 - they measure detection, not decision.
 
-They say nothing about carried gloves or prescription spectacles. In operation the model is no
+The common test set removes the second limit: on it, v2 scores an mAP@0.5 of 0.873 rather than
+0.966, and best-apron 0.948 (Table 5). Neither set of figures says anything about carried gloves
+or prescription spectacles. In operation the model is no
 longer the main source of risk. The false stops that mattered came from viewpoints it was not
 designed for, and the false permits come from decisions the schema cannot express (Section 4.2)
 and from the software–machine boundary (Section 6.4).
@@ -845,8 +882,8 @@ someone who would never read its code was the best test of whether I understood 
   Keeping one owner for those documents, and a record of each change, would have saved review
   rounds.
 - **Measurements were not archived.** The training run directory, the per-class metrics and the
-  nano export were not kept, so this report cannot show the per-class results. I would archive
-  every run with the model it produced.
+  nano export were not kept, so the per-class results had to be regenerated on a common test set
+  at the end. I would archive every run with the model it produced.
 - **Safety integration lagged behind the software.** The hard-wired e-stop is still pending, and
   two software failure paths were found only in the final review. A failure-mode analysis written
   *before* the first installation, not after it, would have found them earlier.
@@ -860,7 +897,8 @@ someone who would never read its code was the best test of whether I understood 
 The internship delivered a working, approved and replicable PPE interlock:
 
 - a two-camera, CPU-only station with about 40 ms latency;
-- a site-specific seven-class detector;
+- a site-specific detector, now with eight classes, compared with its predecessors on one test
+  set;
 - compliance logic that separates detection from decision and balances responsiveness against
   stability class by class;
 - two MOC approvals, an updated risk assessment and an SOP;
@@ -875,7 +913,8 @@ The open items, in order of priority, are:
 1. **Fit the hard-wired emergency-stop safety relay.**
 2. **Verify the relay module's communication watchdog.**
 3. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-4. Run `ppe.evaluate` on the held-out test set and fill Table 5.
+4. Inspect best-apron's six false permits on the common test set, and re-run the evaluation for
+   the like-for-like false stops.
 5. Reposition the cameras for the observed posture.
 6. Keep model comparisons like for like: one export tool, one benchmark, one test set.
 
@@ -968,15 +1007,63 @@ the confusion matrix are to be regenerated with
 | --- | --- | --- | --- | --- |
 | 0.942 | 0.955 | 0.949 | 0.966 | 0.840 |
 
-[Dataset composition (images per split, instances per class) and per-class metrics: to be added.]
+Per-class results on the common test set are in Tables A3–A5. [Dataset composition (images per
+split): to be added.]
 
 ![Figure A1. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
 
 ![Figure A2. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
 
 <!-- evaluation:detail -->
-[Per-class AP@0.5, AP@0.5:0.95, recall and station decisions on the common test set (Tables
-A3–A6): filled by `python -m ppe.evaluate ... --report internship-report.md`.]
+**Table A3.** AP@0.5 per class on the common test set. — means the model has no such class.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.987 | 0.971 | 0.962 | 0.985 | 0.983 | 0.986 |
+| headnet | 319 | 0.994 | 0.989 | 0.993 | 0.995 | 0.995 | 0.995 |
+| Gloves | 421 | 0.971 | 0.772 | 0.814 | 0.898 | 0.885 | 0.904 |
+| Mask | 281 | 0.965 | 0.944 | 0.916 | 0.976 | 0.959 | 0.970 |
+| Safetyglasses | 296 | 0.866 | 0.724 | 0.658 | 0.791 | 0.769 | 0.822 |
+| sleeves | 378 | 0.923 | 0.828 | 0.784 | 0.842 | 0.838 | 0.883 |
+| Wrong Sleeve | 77 | 0.928 | 0.881 | 0.913 | 0.873 | 0.898 | 0.892 |
+| Apron | 76 | 0.990 | — | — | — | — | — |
+
+**Table A4.** AP@0.5:0.95 per class on the common test set.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.973 | 0.891 | 0.868 | 0.906 | 0.928 | 0.952 |
+| headnet | 319 | 0.922 | 0.862 | 0.871 | 0.901 | 0.867 | 0.917 |
+| Gloves | 421 | 0.866 | 0.651 | 0.680 | 0.758 | 0.756 | 0.803 |
+| Mask | 281 | 0.849 | 0.773 | 0.747 | 0.830 | 0.823 | 0.863 |
+| Safetyglasses | 296 | 0.638 | 0.503 | 0.454 | 0.561 | 0.567 | 0.605 |
+| sleeves | 378 | 0.817 | 0.695 | 0.672 | 0.726 | 0.729 | 0.781 |
+| Wrong Sleeve | 77 | 0.776 | 0.684 | 0.687 | 0.709 | 0.735 | 0.731 |
+| Apron | 76 | 0.934 | — | — | — | — | — |
+
+**Table A5.** Recall per class at each model's best mean-F1 confidence threshold.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.989 | 0.916 | 0.971 | 0.966 | 0.964 | 0.968 |
+| headnet | 319 | 0.997 | 0.950 | 0.981 | 0.997 | 0.988 | 0.989 |
+| Gloves | 421 | 0.967 | 0.670 | 0.753 | 0.804 | 0.815 | 0.862 |
+| Mask | 281 | 0.979 | 0.796 | 0.897 | 0.940 | 0.858 | 0.900 |
+| Safetyglasses | 296 | 0.895 | 0.554 | 0.577 | 0.631 | 0.675 | 0.668 |
+| sleeves | 378 | 0.934 | 0.816 | 0.797 | 0.828 | 0.847 | 0.894 |
+| Wrong Sleeve | 77 | 0.896 | 0.870 | 0.883 | 0.831 | 0.845 | 0.857 |
+| Apron | 76 | 1.000 | — | — | — | — | — |
+
+**Table A6.** Station decisions against the labels, per image (single frame, configured floors).
+
+| Model | Agree | False permits | False stops | Other | Labels: OK / violation / nobody |
+| --- | --- | --- | --- | --- | --- |
+| best-apron | 465/477 | 6 | 5 | 1 | 48 / 428 / 1 |
+| v2 (ppe-yolo11s) | 433/477 | 0 | 41 | 3 | 48 / 428 / 1 |
+| yolo11n-nano3 | 434/477 | 4 | 38 | 1 | 48 / 428 / 1 |
+| yolo11s-v4 | 430/477 | 0 | 40 | 7 | 48 / 428 / 1 |
+| yolo11s-v5 | 435/477 | 0 | 37 | 5 | 48 / 428 / 1 |
+| yolo11s-v6 | 436/477 | 1 | 35 | 5 | 48 / 428 / 1 |
 <!-- /evaluation:detail -->
 
 ### Attachment B — Compliance parameters and Modbus map
@@ -1044,13 +1131,14 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | 3 | Inference exception | Fixed: motor off on every failed cycle; exit after five, so the supervisor restarts |
 | 4 | Module watchdog | Enable; test by pulling the network cable with the motor running |
 | 5 | Modbus on the critical path | Measure the relay stage on the station |
-| 6 | Apron model | Add its validation results; confirm in the risk assessment that an apron replaces sleeves |
+| 6 | Apron model | Inspect its six false permits on the common test set (Table 5); confirm in the risk assessment that an apron replaces sleeves |
 | 7 | Spectacles and carried gloves | Targeted evaluation set; relational hand test |
 | 8 | Camera geometry | Reposition and angle for the observed posture |
 | 9 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the rest, and one glove instead of two |
 | 10 | Nano anomaly | Resolved: nano is 2× faster when exported like the small model |
 | 11 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
 | 12 | Library version split | Align at the next retraining |
+| 13 | Test-split independence | Confirm the common test images were held out from v2–v6 as well |
 
 **Table D2.** Discrepancies between the project record and the code.
 

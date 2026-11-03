@@ -108,26 +108,47 @@ Table 4 and Figure A2 of the report compare the six checkpoints. The data is in
 
 ---
 
-## 0b. Table 5: common-dataset comparison (run it yourself)
+## 0b. Table 5: common-dataset comparison (results received 3 November 2026)
 
-Run this on the PC that holds the dataset. The images never leave it.
+You ran `ppe.evaluate` on the `test` split (477 images) and the tables are in the report. The
+interpretation after Table 5 is written. What is still open:
 
-```bash
-python -m ppe.evaluate --data data.yaml --root "<folder that contains images/ and labels/>" \
-       --report internship-report.md
-python docs/report/build_docx.py --pdf
-```
+1. **Re-run once more** for the like-for-like false stops. The seven-class models cannot detect
+   an apron, so they *must* stop every compliant image where the apron is worn instead of
+   sleeves. That inflates their 35–41 false stops regardless of detection quality. The tool now
+   counts those separately (new column in Table 5 and in Table A6). The bracketed placeholder after
+   Table 5 then needs one sentence with the numbers.
 
-This fills Table 5 (Section 4.4) and Tables A3–A6 (Attachment A). Then write the one-paragraph
-interpretation that follows Table 5. `--limit 50` gives a quick check first.
+   ```bash
+   python -m ppe.evaluate --data data.yaml --root "<folder that contains images/ and labels/>" \
+          --report internship-report.md
+   python docs/report/build_docx.py --pdf
+   ```
 
-Two things to know:
+2. **Inspect best-apron's six false permits.** They are images the labels call non-compliant and
+   the model judged OK. `docs/report/data/model-evaluation.json` now lists every disagreement
+   per model (`decisions.disagreements`: image name, labels' verdict, model's verdict). For each,
+   decide whether the model or the label is wrong, and which item was involved. A missed `Wrong
+   Sleeve` (its floor is 0.90) or a false apron would be the cases to report.
+3. **Test-split independence.** The split is best-apron's. Confirm whether v2–v6 ever trained on
+   those images. If they did, the older models are flattered, which only strengthens best-apron's
+   lead, but the report should say which it is.
+4. **The ms column.** best-apron ran at 34.5 ms but the other small models at 43–47 ms, although
+   the like-for-like benchmark (Table 4) puts them all at 33.5–35.1 ms. Check the `weights` field
+   of each model in the JSON: if some rows loaded a `.pt` file rather than an `_openvino_model/`
+   folder, they ran in PyTorch. Accuracy is unaffected either way (OpenVINO FP32 matches PyTorch
+   to within 1.2 px), and the report already says Table 4 is the speed comparison.
+5. **`data.yaml` names a OneDrive path with an employee number.** `--root` overrides it.
+   Consider removing the `path:` line from the committed file.
 
-- **`data.yaml` names a OneDrive path with an employee number.** The tool doesn't need it,
-  because `--root` overrides it. Consider removing the `path:` line from the committed file.
-- **The test split must be held out from every model's training.** best-apron was trained on
-  this combined dataset; if its `test` images were not held out, its scores here are inflated.
-  Confirm which images were used for training.
+Findings worth knowing before you defend them:
+
+- v2 to v6 improve clearly on common ground (mAP@0.5:0.95 0.723 to 0.808), mostly on gloves,
+  safety glasses and sleeves, the classes the data rounds targeted. The validation splits hid this.
+- The nano, best in Table 4, is worst here: its validation split was easier.
+- v2's zero false permits come with 85 % false stops. It almost never permits, so it is not safer.
+- Only 48 of 477 test images are labelled compliant, so false-stop rates have wide intervals
+  (best-apron 10.4 %, 95 % interval about 4–22 %).
 
 ---
 

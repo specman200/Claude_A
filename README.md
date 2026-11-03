@@ -716,7 +716,11 @@ matched by name, so models with different class orders or an extra class (best-a
 compare correctly. It also gives mAP over the classes every model has, and the speed per frame
 through the station's own detector. It also runs each image through the station's decision
 logic on the labels and on the model's detections. It then counts **false permits** (the
-station would let the machine run, the labels say PPE is missing) and **false stops**. Tables go
+station would let the machine run, the labels say PPE is missing) and **false stops**. A model
+that lacks a class the station accepts (no `Apron`, so an apron cannot stand in for sleeves)
+must stop those compliant images whatever its detection quality; they are counted apart, so the
+*like for like* false-stop rate compares detection alone. The JSON lists every image on which a
+model's verdict and the labels' disagree. Tables go
 to `docs/report/data/model-evaluation.md` (+ `.csv`, `.json`). `--report` writes them straight
 into the report's marked blocks. `--root` overrides the `path` in `data.yaml`, which is usually
 a path on the training PC.

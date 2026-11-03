@@ -221,3 +221,31 @@ def test_discovery_prefers_the_openvino_export(tmp_path):
     found = ev.discover([str(tmp_path / "m")])
     assert found == [f"{tmp_path / 'm' / 'a_openvino_model'}/", str(tmp_path / "m" / "b.pt")]
     assert ev.label_for("models/ppe-yolo11s_openvino_model/") == "v2 (ppe-yolo11s)"
+
+
+def test_an_apron_wearer_is_a_false_stop_the_seven_class_model_cannot_avoid(dataset, cfg):
+    """Labels: compliant through an apron. A model without Apron must stop it, however good."""
+    data, root = dataset
+    ds = ev.load_dataset(data, root=root)
+    apron = [x for x in compliant() if x.name != "sleeves"] + [box("Apron", 4)]
+    seven_classes = ["person", "headnet", "Gloves", "Mask", "Safetyglasses", "sleeves"]
+    seven_classes.append("Wrong Sleeve")
+    names = [*seven_classes, "Apron"]
+    ds.samples = [ev.Sample(ds.samples[0].image, apron)]
+    ds.names = names
+
+    def perfect(image, lacks=()):
+        return [Detection(t.name, 0.99, t.xyxy) for t in apron if t.name not in lacks], 1.0
+
+    seven = ev.evaluate_model(
+        "v6", "v6.pt", seven_classes, ds, cfg,
+        lambda image: perfect(image, lacks=("Apron",)),
+    )
+    d = seven.decisions
+    assert (d.false_stop, d.false_stop_unseeable, d.truth_ok_unseeable) == (1, 1, 1)
+    assert d.false_stop_rate == 1.0 and d.false_stop_rate_seeable != d.false_stop_rate_seeable
+    assert d.disagreements == [(ds.samples[0].image.name, ev.OK, ev.VIOLATION)]
+
+    eight = ev.evaluate_model("apron", "apron.pt", names, ds, cfg, perfect)
+    assert eight.decisions.agree == 1 and eight.decisions.truth_ok_unseeable == 0
+    assert "| 0.0 % (0/1) |" in ev.summary_table([eight], ds)

@@ -313,6 +313,13 @@ class Decisions:
     truth_violation: int = 0
     truth_standby: int = 0
     other: int = 0  # any other disagreement (e.g. STANDBY vs VIOLATION)
+    # Images the labels call compliant only through a class this model cannot detect (an
+    # apron worn instead of sleeves, judged by a model without an Apron class). The model
+    # must stop them whatever its detection quality, so they are counted apart.
+    truth_ok_unseeable: int = 0
+    false_stop_unseeable: int = 0
+    # (image, labels' verdict, model's verdict) for every image they disagree on
+    disagreements: list[tuple[str, str, str]] = field(default_factory=list)
 
     @property
     def false_permit_rate(self) -> float:
@@ -322,17 +329,35 @@ class Decisions:
     def false_stop_rate(self) -> float:
         return self.false_stop / self.truth_ok if self.truth_ok else float("nan")
 
-    def add(self, truth: str, pred: str) -> None:
+    @property
+    def false_stops_seeable(self) -> int:
+        return self.false_stop - self.false_stop_unseeable
+
+    @property
+    def truth_ok_seeable(self) -> int:
+        return self.truth_ok - self.truth_ok_unseeable
+
+    @property
+    def false_stop_rate_seeable(self) -> float:
+        """False stops on the compliant images this model could have judged compliant."""
+        n = self.truth_ok_seeable
+        return self.false_stops_seeable / n if n else float("nan")
+
+    def add(self, truth: str, pred: str, image: str = "", unseeable: bool = False) -> None:
         self.images += 1
         self.truth_ok += truth == OK
         self.truth_violation += truth == VIOLATION
         self.truth_standby += truth == STANDBY
+        self.truth_ok_unseeable += truth == OK and unseeable
         if truth == pred:
             self.agree += 1
-        elif pred == OK and truth == VIOLATION:
+            return
+        self.disagreements.append((image, truth, pred))
+        if pred == OK and truth == VIOLATION:
             self.false_permit += 1
         elif truth == OK and pred != OK:
             self.false_stop += 1
+            self.false_stop_unseeable += unseeable
         else:
             self.other += 1
 
@@ -383,7 +408,11 @@ def evaluate_model(
         tps.append(match(dets, s.truth))
         preds.append(dets)
         truth.append(s.truth)
-        res.decisions.add(verdict(s.truth, cfg), verdict(with_floors(dets, cfg), cfg, missing))
+        truth_v = verdict(s.truth, cfg)
+        unseeable = bool(missing) and truth_v == OK and verdict(s.truth, cfg, missing) != OK
+        res.decisions.add(
+            truth_v, verdict(with_floors(dets, cfg), cfg, missing), s.image.name, unseeable
+        )
     res.scores = score_classes(ds.names, detectable, tps, preds, truth)
     res.ms = float(np.median(times)) if times else float("nan")
     return res
@@ -477,11 +506,13 @@ def summary_table(results: list[ModelResult], ds: Dataset, n: str = "5") -> str:
         f"**Table {n}.** All model versions on one common test set ({len(ds.samples)} "
         f"image{'s' * (len(ds.samples) != 1)}, "
         f"split `{ds.split}`). mAP over the {len(common)} classes every model detects; decisions "
-        f"from the station's own logic at its configured floors, single frame.",
+        f"from the station's own logic at its configured floors, single frame. *Like for "
+        f"like* leaves out compliant images that need a class the model lacks (an apron "
+        f"worn instead of sleeves).",
         "",
         "| Model | Classes | mAP@0.5 | mAP@0.5:0.95 | Mean recall | False permits "
-        "| False stops | ms/frame |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| False stops | False stops, like for like | ms/frame |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:
         d = r.decisions
@@ -489,7 +520,9 @@ def summary_table(results: list[ModelResult], ds: Dataset, n: str = "5") -> str:
             f"| {r.label} | {len(r.classes)} | {_f(r.mean('ap50', common))} "
             f"| {_f(r.mean('ap', common))} | {_f(r.mean('recall', common))} "
             f"| {_pct(d.false_permit_rate)} ({d.false_permit}/{d.truth_violation}) | "
-            f"{_pct(d.false_stop_rate)} ({d.false_stop}/{d.truth_ok}) | {_f(r.ms, 1)} |"
+            f"{_pct(d.false_stop_rate)} ({d.false_stop}/{d.truth_ok}) | "
+            f"{_pct(d.false_stop_rate_seeable)} ({d.false_stops_seeable}/{d.truth_ok_seeable}) "
+            f"| {_f(r.ms, 1)} |"
         )
     return "\n".join(lines)
 
@@ -507,13 +540,15 @@ def detail_tables(results: list[ModelResult], ds: Dataset) -> str:
         rows_ap.append(f"| {n} | {counts[n]} | " + " | ".join(_f(s.ap) for s in by) + " |")
         rows_r.append(f"| {n} | {counts[n]} | " + " | ".join(_f(s.recall) for s in by) + " |")
     dec = [
-        "| Model | Agree | False permits | False stops | Other | Labels: OK / violation / nobody |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Model | Agree | False permits | False stops | of which need a missing class "
+        "| Other | Labels: OK / violation / nobody |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:
         d = r.decisions
         dec.append(
-            f"| {r.label} | {d.agree}/{d.images} | {d.false_permit} | {d.false_stop} | {d.other} | "
+            f"| {r.label} | {d.agree}/{d.images} | {d.false_permit} | {d.false_stop} "
+            f"| {d.false_stop_unseeable} | {d.other} | "
             f"{d.truth_ok} / {d.truth_violation} / {d.truth_standby} |"
         )
     return "\n".join(
@@ -597,6 +632,7 @@ def write_outputs(results: list[ModelResult], ds: Dataset, out: Path, meta: dict
                             **r.decisions.__dict__,
                             "false_permit_rate": r.decisions.false_permit_rate,
                             "false_stop_rate": r.decisions.false_stop_rate,
+                            "false_stop_rate_like_for_like": r.decisions.false_stop_rate_seeable,
                         },
                         "per_class": [s.__dict__ for s in r.scores],
                     }
