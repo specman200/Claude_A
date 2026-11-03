@@ -16,8 +16,8 @@
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
 volumes, cycle times, supplier names, commercial terms, network addresses, hostnames,
-credentials and employee names are excluded throughout. No image shows a component, a drawing
-or an identifiable person.*
+credentials and employee names are excluded throughout. No image shows a component or a
+drawing, and the only person shown is the author, who consented.*
 <!-- /cover -->
 
 ## Abstract
@@ -469,7 +469,17 @@ machine. An item counts only if a large enough share of its box lies inside the 
 
 Bystanders and their equipment are ignored. A missed person gives STANDBY, which darkens the lamp
 but still stops the motor. The same mechanism explains the large-workpiece problem in
-Section 7.4.
+Section 8.3.
+
+Figure 5 shows both rules on photographs of a recreated working pose, taken in an isolated
+environment and annotated with best-apron's detections at the station's confidence floors. The
+side view (a) holds every required item and on its own would permit the motor; only one sleeve
+is visible, which the station's count of one accepts. The front view (b) shows the head net,
+glasses and mask clearly but not the hands, so on its own it would be a violation. Judged
+together, as the station judges its two cameras, the pair is compliant: the gloves and sleeve
+come from the side camera.
+
+![Figure 5. Detections by best-apron on a recreated working pose: (a) side view, (b) front view, each a single frame at the station's confidence floors.](docs/report/figures/fig-example-detections.png)
 
 ### 6.2 The debounce and hold-window trade-off
 
@@ -536,7 +546,7 @@ detected violation.** As implemented, the window has four properties:
   a missing glove;
 - it is set once and never renewed, so flickering PPE cannot hold the machine open.
 
-Figure 5 shows the resulting stop times. I obtained them by running the station's compliance and
+Figure 6 shows the resulting stop times. I obtained them by running the station's compliance and
 latch code on its configuration with simulated detections. The same method reproduces the times
 recorded earlier for the first configuration (1.5 s for gloves, 6.3 s for a mask). A detected
 wrong sleeve still stops a running machine in 0.5 s. But a missing glove or missing safety glasses
@@ -546,7 +556,7 @@ defensible choice for nuisance stops, but it reverses the earlier decision to gi
 to the items whose absence is the immediate hazard. **It needs an explicit, documented EHS
 position before rollout.**
 
-![Figure 5. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
+![Figure 6. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
 
 The permissive is a **latch**, like the seal-in contact of a motor starter. Pressing the button
 starts the motor only when four conditions hold:
@@ -666,12 +676,12 @@ The plant then decided to deploy the system on all flat belt grinders, and to pr
 
 **End-to-end latency on the station fell from 300–400 ms to about 40 ms**, measured from camera
 grab to relay write. A controlled benchmark on a 4-core development host reproduced the effect
-(Figure 6):
+(Figure 7):
 
 - the median fell from 488 ms to 48 ms;
 - the cycles completed in 25 s rose from 56 to 793.
 
-![Figure 6. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
+![Figure 7. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
 
 Per-stage instrumentation decided the fix. In the untuned pipeline, inference took **98.6 %** of
 each cycle, and all the code I had written myself took under 2 %. Only the forward pass was worth
@@ -1100,11 +1110,11 @@ def _evaluate(self) -> Status:
 
 - **F1.** Operator interface in operator mode, with no person in frame.
 - **F2.** The installed station, preferably from the requested 3D model.
-- **F3.** Three-panel examples of correct operation: a compliant front view; an occluded glove
-  credited; a bystander set aside.
+- **F3.** Further examples of correct operation: an occluded glove credited; a bystander set
+  aside. (A compliant pair of views is Figure 5.)
 - **F4.** Three-panel examples of failure cases: a side-view miss; glove–sleeve confusion; the
   angled posture.
 - **F5.** Normalised confusion matrix from the validation run.
 - **F6.** The annotation workflow.
 
-All faces must be blurred, and no component may be visible.
+Faces other than the author's must be blurred, and no component may be visible.

@@ -159,6 +159,14 @@ Still open:
 4. (done, see above)
 5. **`data.yaml` names a OneDrive path with an employee number.** `--root` overrides it.
    Consider removing the `path:` line from the committed file.
+6. **Which config judged the decisions?** `ppe.evaluate` uses `-c config.yaml` by default, and
+   the repository's `config.yaml` is the *first* configuration: 2 gloves and 2 sleeves, gloves
+   floor 0.60. The station's config needs 1 of each, with a gloves floor of 0.67. If you ran
+   without `-c`, the decision columns (false permits and stops, Table A6) reflect the first
+   configuration, not the station's, while the caption says "the station's own logic". The
+   48 compliant images out of 477 suggest exactly that, since a count of 2 fails most side
+   views. The detection columns (mAP, recall) do not depend on the config. To judge with the
+   station's rules, run again with `-c <path to the station config.yaml>`.
 
 Findings worth knowing before you defend them:
 
@@ -281,7 +289,7 @@ face.
 | 3 | Annotation workflow: capture → local pre-labels → correction → split → train → export → deploy → capture | Draw it, or ask me to |
 | 6 | Normalised confusion matrix, 7 classes plus background | `confusion_matrix_normalized.png` from the validation run (see 4.2 below) |
 | 11 | Installed station: panel, tower light, camera stands, monitor | The 3D model requested from design is safest; otherwise a photo with machine and people excluded |
-| 13 | Three panels of correct operation: compliant front view; occluded glove credited; bystander set aside | Capture-mode frames, faces blurred |
+| 13 | Correct operation: occluded glove credited; bystander set aside. **The compliant pair of views is now Figure 5** (your photos, annotated by best-apron, unblurred with your consent) | Capture-mode frames, other faces blurred |
 | 14 | Three panels of failure cases: side-view miss; glove–sleeve confusion; angled posture | Capture-mode `miss` and `violation` frames, faces blurred |
 
 ### 3.3 Existing image assets in the repository (D.12)
