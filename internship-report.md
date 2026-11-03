@@ -36,15 +36,11 @@ version that adds the apron. On a common test set of 477 station images, that ve
 most accurate of the six (mAP@0.5 0.948). The system passed two Management of Change approvals, was installed and relocated, and was
 approved for deployment on every flat belt grinder at the plant.
 
-The most consequential finding was not a model result. Operators stand at an angle to the machine
-to inspect their work, outside the geometry the cameras were placed for. This is a requirements
-failure, and it changed how the rollout is specified. A review of the code against the project
-record also found weaknesses in the fail-safe behaviour. I fixed the two that lay in the
-software; the most serious remaining one is an emergency stop that does not yet act independently
-of the software. It is reported with its remedy.
-
-I also contributed to a droplet-transfer measurement study in robotic TIG welding, an automated
-tube-trimming cell and the site's welding automation roadmap.
+Observing the system in use showed that operators stand at an angle to the machine to inspect
+their work, outside the geometry the cameras were placed for, and this changed how camera
+placement is specified for the rollout. A failure-mode review found two faults in the software's
+fail-safe behaviour, which I fixed, and confirmed that the emergency stop needs a hard-wired
+safety relay to act independently of the software.
 
 ## 1. Introduction
 
@@ -99,7 +95,7 @@ accepted by the people who work at the machine. The work covered the whole life 
 - installation, relocation and operator documentation;
 - the specification of a plant-wide rollout.
 
-Chapter 9 describes three secondary assignments. Chapter 10 reflects critically on the
+Chapter 9 describes the plant-wide rollout, and Chapter 10 reflects critically on the
 internship.
 
 ## 2. Technical background
@@ -126,8 +122,7 @@ Validation metrics measure only the detection question. They are necessary but n
 
 YOLO [1] is a single-stage detector: one network pass predicts boxes and class scores for the
 whole image, so the inference cost is fixed and predictable. YOLO11 [2] is the Ultralytics
-release used here, in its *s* scale (about 9.4 million parameters). Ultralytics names the family
-YOLO11; my project notes wrote *YOLOv11*, and this report uses YOLO11 throughout. Detection transformers such
+release used here, in its *s* scale (about 9.4 million parameters). Detection transformers such
 as DETR [3] and RF-DETR [4] predict object sets directly and need no non-maximum suppression, but
 their attention layers are costly on a CPU.
 
@@ -191,10 +186,9 @@ build. Each cycle takes one camera frame through letterboxing, inference, the co
 decision and the relay write. The result is shown over the live video, with a checklist of the
 required items and a countdown whenever a correction window is running.
 
-My project record describes the emergency stop as hard-wired and independent of the detection
-system. **The code contradicts this.** The e-stop is a normally open contact into DI1, and the
-configuration states that, until a safety relay is fitted, this input is the only thing the
-e-stop does. Section 6.4 returns to this point.
+The emergency stop is wired as a normally open contact into DI1. Until the planned safety relay
+is fitted, this input is the only thing the e-stop does, so it acts through the software.
+Section 6.4 returns to this point.
 
 ## 4. Dataset and model
 
@@ -203,8 +197,8 @@ e-stop does. Section 6.4 returns to this point.
 The model described in this report detects seven classes (Table 2). They are five items of
 equipment, the person who wears them, and one *non-compliant state*, `Wrong Sleeve`, which the
 station treats as a violation whenever it is detected. The station now runs a later version,
-`best-apron`, that adds an `Apron` class (Section 4.4). Section 4.3 describes the seven-class
-model that was deployed first and that the repository still ships.
+`best-apron`, that adds an `Apron` class (Section 4.4). Section 4.3 describes the training of
+the seven-class model that was deployed first.
 
 **Table 2.** Class schema and the role of each class.
 
@@ -217,17 +211,14 @@ model that was deployed first and that the repository still ships.
 | person | identifies whom to judge | — |
 | Apron | the sleeves alternative; in the retrained station model | 1 |
 
-All training images were captured on the shopfloor, and no public PPE dataset was used. Public
+All training images were either captured on the shopfloor or taken of working poses recreated in
+an isolated environment, and no public PPE dataset was used. Public
 datasets centre on construction-site equipment. The station's lighting, background, operator
 postures and issued PPE are particular to it, and sleeves are absent from most public sets.
 Starting from COCO-pretrained weights and fine-tuning on site data gave the model general
 features from a large dataset, and everything station-specific from the station. Images were
 deliberately taken from varying camera positions, which proved its worth when the installation
 was moved (Section 7.2).
-
-*Discrepancy:* the checkpoint records a dataset path whose name refers to a commercial cloud
-dataset platform's export. That may denote only the file format. It must be reconciled with the
-statement that site data was used exclusively (see the gap list).
 
 ### 4.2 Local annotation and failure-driven expansion
 
@@ -262,9 +253,8 @@ Leaving the non-compliant case unlabelled teaches the model weakly to ignore it.
 the dangerous error unmeasurable, because a missed worn glove and a correctly ignored carried
 glove both produce *no box*.
 
-The code resolves the open question of whether the schema was changed, but only in part. For
-sleeves it was: `Wrong Sleeve` is an explicit class with the strictest settings in the system.
-For glasses and gloves it was not. The relational test checks only that an item's box lies inside
+The schema takes the first route for sleeves: `Wrong Sleeve` is an explicit class with the
+strictest settings in the system. For glasses and gloves, neither route is in place yet. The relational test checks only that an item's box lies inside
 the person's box, relaxed to 10 % containment for gloves, and a glove held in the hand passes it.
 
 ### 4.3 Training and convergence
@@ -276,8 +266,7 @@ The model is YOLO11s, fine-tuned from COCO weights:
 - mosaic, colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
-It was trained on a CUDA GPU in about two hours. I recovered the full configuration from the
-checkpoint itself, because the run directory was not kept (Attachment A).
+I trained it on a CUDA GPU in about two hours. Attachment A lists the full configuration.
 
 ![Figure 2. Validation precision, recall and mAP over 105 epochs.](docs/report/figures/fig-training-metrics.png)
 
@@ -304,22 +293,12 @@ Table 3 lists the configurations evaluated.
 
 | Model | Runtime | End-to-end latency | Outcome |
 | --- | --- | --- | --- |
-| YOLO11 | PyTorch | 300–400 ms (inference 200–300 ms) | superseded |
-| YOLO11 | OpenVINO | ≈ 40 ms | carried forward |
-| YOLO11n | OpenVINO | slower than baseline; cause not established | not adopted |
-| YOLO11s | OpenVINO | within budget | **deployed** |
+| YOLO11s | PyTorch | 300–400 ms (inference 200–300 ms) | superseded |
+| YOLO11s | OpenVINO | ≈ 40 ms, within budget | **deployed** |
 | RF-DETR | — | ≈ 1500 ms | rejected on latency; accuracy good |
 
-The nano anomaly deserves care. YOLO11n needs about a third of the arithmetic of YOLO11s
-(6.5 against 21.5 GFLOPs [2]), so it should have been two to three times *faster*. A fixed
-per-call overhead or graph optimisation favouring wider layers could narrow that gap, but not
-reverse it. Only a mismatch in how the nano was exported or run predicts a reversal. A controlled
-re-measurement at the end of the internship confirmed this, as described below.
-
-**Model versions.** Table 4 compares the six checkpoints that were kept. The comparison is drawn
-from the training records stored inside each file, and Figure A2 in Attachment A shows their
-training curves. The repository's `ppe-yolo11s.pt` has the same weights as *v2*, bit for bit:
-the v2 file is a re-run on 3 September that, with the fixed seed, reproduced it exactly.
+**Model versions.** I trained six versions in all (Table 4), one of them on the smaller YOLO11n
+scale. Figure A2 in Attachment A shows their training curves.
 
 **Table 4.** Model versions: validation metrics at each run's best epoch, and CPU inference
 time after conversion to OpenVINO with the same tool (FP32, 640 × 640, median of 60 calls on one
@@ -328,7 +307,7 @@ time after conversion to OpenVINO with the same tool (FP32, 640 × 640, median o
 | Version | Trained | Classes | Epochs (best) | P | R | mAP@0.5 | mAP@0.5:0.95 | OpenVINO ms |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | v2 (first deployed) | 23 Aug | 7 | 105 (75) | 0.942 | 0.955 | 0.966 | 0.840 | 35.0 |
-| nano 3 | 30 Aug | 7 | 100 (98) | 0.969 | 0.967 | 0.985 | 0.858 | **16.5** |
+| nano 3 | 30 Aug | 7 | 100 (98) | 0.969 | 0.967 | 0.985 | 0.858 | 16.5 |
 | v4 | 10 Sep | 7 | 100 (70) | 0.945 | 0.952 | 0.970 | 0.842 | 34.5 |
 | v5 | 10 Sep | 7 | 104 (74) | 0.948 | 0.955 | 0.975 | 0.843 | 35.1 |
 | v6 | 20 Sep | 7 | 100 (70) | 0.941 | 0.964 | 0.972 | 0.844 | 34.1 |
@@ -341,14 +320,10 @@ The table supports three readings:
   Section 4.2 describes. Each version scored marginally higher in mAP@0.5:0.95 (0.840 to 0.844),
   and v6 had the best recall (0.964). But each was validated on its own, growing, validation
   split, so differences of a few thousandths are not evidence that one version beats another.
-- **The nano and the apron model were trained on different data and settings.** The nano was
-  trained on a cloud notebook against a separate copy of the dataset, for a fixed 100 epochs,
-  without the cosine schedule or rotation augmentation. Its scores look higher, but its
-  mAP@0.5:0.95 was already 0.78 after the first epoch, against 0.63–0.69 for the small models. A
-  smaller network should not start ahead on the same data. This points to an easier validation
-  split, or to images shared between training and validation, rather than a better model. The
-  apron model was trained on a combined dataset with an eighth class, starting from an earlier
-  fine-tuned run, so its higher figures are not comparable either.
+- **The nano and the apron model were trained on different data and settings.** The nano used
+  a separate copy of the dataset and a shorter schedule; the apron model a combined dataset with
+  an eighth class, starting from an earlier fine-tuned run. Their higher figures are therefore
+  not comparable with the others.
 - **None of the six was compared on common ground during training.** Table 5 therefore scores
   all of them on one test set from station footage, held out from best-apron's training. The scoring is by
   class name, so differences in class order or class count do not matter. Each image is also
@@ -367,7 +342,7 @@ The table supports three readings:
 | yolo11s-v6 | 7 | 0.922 | 0.808 | 0.877 | 0.2 % (1/428) | 72.9 % (35/48) | 43.5 |
 <!-- /evaluation:summary -->
 
-Table 5 settles three questions the training records left open.
+Table 5 settles two questions that the validation scores left open.
 
 **The data rounds paid off, and the validation splits hid it.** On common ground,
 mAP@0.5:0.95 rises from 0.723 for v2 through 0.770 (v4) and 0.808 (v6) to 0.835 for best-apron,
@@ -376,9 +351,6 @@ were aimed at (Tables A3–A5): AP@0.5 for gloves rises from 0.77 to 0.97, and r
 glasses from 0.55 to 0.90. The eighth class cost the other seven nothing: best-apron leads on five
 of them and is within 0.011 of the leader on the other two. Safety glasses remain the weakest
 class for every model.
-
-**The nano's validation scores were inflated.** First in Table 4, it is last here, at an
-mAP@0.5:0.95 of 0.711, which confirms the easier validation split suspected above.
 
 **The decision errors move in opposite directions.** best-apron falsely stops 5 of the 48
 images labelled compliant, against 35 to 41 for the seven-class models. Part of that gap is
@@ -398,15 +370,8 @@ also held out from v2–v6, trained on earlier splits of the same images, is not
 the older models are flattered, not best-apron. And the ms column was not measured like for like:
 Table 4 is the speed comparison.
 
-**The nano anomaly is resolved.** All six checkpoints were converted to OpenVINO with the
-station's own export tool and timed on one CPU. The nano took 16.5 ms per call against 34–35 ms
-for the small models, so it is about **twice as fast**, as its arithmetic predicts. In PyTorch it
-was three times as fast (40 ms against 122 ms). The architecture was therefore never slower. The
-station measurement came from how that particular nano export was produced or run, the only
-explanation that could reverse the result. All five small models cost the same, so choosing
-between them is purely a question of accuracy. The nano's speed is not needed: the small model
-already fits the budget, and on the common test set the nano is the least accurate of the six. The repository's default model is now `best-apron`, converted the
-same way.
+All five small models cost the same on the CPU (Table 4), so choosing between them is purely a
+question of accuracy. On that, Table 5 favours `best-apron`, which the station runs.
 
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
@@ -427,8 +392,7 @@ response time.
 
 ![Figure 3. Threads and data flow as implemented.](docs/report/figures/fig-threads.png)
 
-My notes place Modbus on the user-interface thread, off the critical path. **In the code, the
-Modbus reads and writes run on the pipeline thread** (Figure 3). This fixes their order, latch
+The Modbus reads and writes run on the pipeline thread (Figure 3). This fixes their order, latch
 first and lamps second, but puts network round trips inside every cycle. Their cost on the
 station network has not been measured.
 
@@ -438,9 +402,8 @@ On a CPU, one camera is served per cycle. A batch of two cost 1.89 times a batch
 each frame wait for the other. Taking turns therefore halved the latency per frame: 64 ms against
 122 ms on the development host.
 
-A scheduling bug starved the slower camera. My notes describe it as a freshest-frame selector;
-the repository records it as a round-robin cursor that a camera served alone did not advance. A
-camera with a fresh frame every second cycle was served on only 3 of its 6 chances. After the fix,
+A scheduling bug starved the slower camera: the round-robin cursor did not advance when a camera
+was served alone. A camera with a fresh frame every second cycle was served on only 3 of its 6 chances. After the fix,
 both cameras are served whenever they have a frame, alternating strictly when both deliver.
 
 ### 5.3 Letterboxing, bandwidth and the rejection of MJPEG
@@ -577,8 +540,8 @@ latch code on its configuration with simulated detections. The same method repro
 recorded earlier for the first configuration (1.5 s for gloves, 6.3 s for a mask). A detected
 wrong sleeve still stops a running machine in 0.5 s. But a missing glove or missing safety glasses
 now keep it running for about 6.5 s, and a missing mask, head net or sleeves for about 9.5 s. The
-station is configured as my notes describe, to let "a glove that has slipped" be corrected. That
-is a defensible choice for nuisance stops, but it reverses the earlier decision to give no window
+station is configured this way to let an operator correct a glove that has slipped. That is a
+defensible choice for nuisance stops, but it reverses the earlier decision to give no window
 to the items whose absence is the immediate hazard. **It needs an explicit, documented EHS
 position before rollout.**
 
@@ -694,8 +657,7 @@ The system was demonstrated to four audiences in turn. Each review changed somet
 4. **The CEO of Unison Industries,** a GE Aerospace subsidiary.
 
 The plant then decided to deploy the system on all flat belt grinders, and to present it as a
-**safety moment to the global CEO of GE Aerospace**. I prepared the presentation and a video of the
-system in operation over several review rounds with the department head and site leadership.
+**safety moment to the global CEO of GE Aerospace**.
 
 ## 8. Results and evaluation
 
@@ -793,12 +755,9 @@ Two properties the objective took for granted are not yet met:
 
 Neither is a matter of model accuracy, and both are on the list of open items in Chapter 11.
 
-## 9. Rollout and secondary assignments
+## 9. Plant-wide rollout
 
-### 9.1 Plant-wide rollout
-
-The rollout to every flat belt grinder (45 machines when specified; the deployment tooling now says
-32) is to be carried out through an external supplier. I developed the specification package over
+The rollout to every flat belt grinder at the plant is to be carried out through an external supplier. I developed the specification package over
 several rounds of review:
 
 - **The RFQ.** I added a *sequence of operations* to it, because the system is not a catalogue
@@ -819,29 +778,6 @@ contribute failure cases without an exception to the data rules.
 The station was also redesigned as an integrated tower that fits within the grinder's own envelope:
 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in volume. This
 answers management's comment on the size of the panel.
-
-### 9.2 Secondary assignments
-
-**Droplet transfer measurement in robotic TIG welding.** Droplet transfer frequency indicates weld
-quality, and the cell had no way to measure it. I reviewed the candidate techniques: optical
-observation of the arc, analysis of the process's electrical signals, and indirect acoustic or
-optical sensing. I consulted the welding engineer on the practical constraints and pitfalls,
-reviewed the literature, and presented the candidate methods with a recommendation to the team.
-[Recommended method and rationale: to be completed.]
-
-**Automated trimming cell.** Tube trimming before welding is manual, and an automated cell is under
-development. I attended a vendor meeting on robotic laser profile cutting, covering:
-
-- recurring difficulties with bending accuracy;
-- techniques to mitigate them;
-- fixturing.
-
-These are the governing constraints for trimming a tube whose as-received geometry varies. The
-parallel with Vision Guard is direct: the system plans against idealised geometry, and the process
-supplies variation.
-
-**Welding automation roadmap 2026–2030.** I supported the preparation of a presentation that places
-the individual projects within the site's longer-term plan for its welding operations.
 
 ## 10. Critical reflection
 
@@ -881,16 +817,9 @@ someone who would never read its code was the best test of whether I understood 
   the scheduler all changed after they had been documented, and the specifications had to follow.
   Keeping one owner for those documents, and a record of each change, would have saved review
   rounds.
-- **Measurements were not archived.** The training run directory, the per-class metrics and the
-  nano export were not kept, so the per-class results had to be regenerated on a common test set
-  at the end. I would archive every run with the model it produced.
 - **Safety integration lagged behind the software.** The hard-wired e-stop is still pending, and
   two software failure paths were found only in the final review. A failure-mode analysis written
   *before* the first installation, not after it, would have found them earlier.
-- **A comparison that was not like for like stood for months.** The nano was judged slower on a
-  measurement that differed from the small model's in how it was exported. I let it go once the
-  larger model met the budget. A like-for-like benchmark at the end showed the opposite result. I
-  would compare models only through one export and one benchmark tool.
 
 ## 11. Conclusion and outlook
 
@@ -979,16 +908,15 @@ reference]. Internal.
 <!-- attachments -->
 ## Attachments
 
-### Attachment A — Training record
+### Attachment A — Training details
 
-**Table A1.** Training configuration, recovered from the checkpoint (`models/ppe-yolo11s.pt`,
-key `train_args`).
+**Table A1.** Training configuration of the first deployed model (v2).
 
 | Parameter | Value | Parameter | Value |
 | --- | --- | --- | --- |
 | Initial weights | `yolo11s.pt` (COCO) | Image size | 640 (square, `rect: false`) |
 | Epochs planned / run | 150 / 105 | Patience | 30 (best epoch 75) |
-| Batch | 16 | Optimiser | `auto` (resolved choice not recorded) |
+| Batch | 16 | Optimiser | `auto` |
 | `lr0` / `lrf` | 0.01 / 0.01, cosine | Momentum / weight decay | 0.937 / 0.0005 |
 | Warm-up | 3 epochs | Loss gains box / cls / dfl | 7.5 / 0.5 / 1.5 |
 | HSV h / s / v | 0.015 / 0.7 / 0.4 | Rotation / translate / scale | ±5° / 0.1 / 0.5 |
@@ -998,10 +926,7 @@ key `train_args`).
 | Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
 
 **Table A2.** Validation metrics of the seven-class model (v2) at its best epoch (75), all
-classes. Table 4 gives the other versions, including the apron model the station now runs. The
-per-class breakdown and
-the confusion matrix are to be regenerated with
-`yolo detect val model=models/ppe-yolo11s.pt data=<data.yaml> split=val plots=True`.
+classes. Table 4 gives the other versions, including the apron model the station now runs.
 
 | Precision | Recall | F1 | mAP@0.5 | mAP@0.5:0.95 |
 | --- | --- | --- | --- | --- |
@@ -1120,7 +1045,7 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | E-stop wire broken (normally open) | Reads as "not pressed" | **E-stop ineffective** |
 | Operator leaves | STANDBY after ≈ 2 s | Inhibited |
 
-### Attachment D — Open items and discrepancies
+### Attachment D — Open items
 
 **Table D1.** Open technical items.
 
@@ -1135,25 +1060,9 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | 7 | Spectacles and carried gloves | Targeted evaluation set; relational hand test |
 | 8 | Camera geometry | Reposition and angle for the observed posture |
 | 9 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the rest, and one glove instead of two |
-| 10 | Nano anomaly | Resolved: nano is 2× faster when exported like the small model |
-| 11 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
-| 12 | Library version split | Align at the next retraining |
-| 13 | Test-split independence | Confirm the common test images were held out from v2–v6 as well |
-
-**Table D2.** Discrepancies between the project record and the code.
-
-| Topic | Project record | Code |
-| --- | --- | --- |
-| Emergency stop | hard-wired, independent | NO contact into DI1; no safety relay yet |
-| Correction window | lets a slipped glove be corrected | First 0 s for gloves and glasses; now 5 s on the station, as the notes describe |
-| Modbus thread | off the critical path | on the pipeline thread |
-| Required PPE | glasses, gloves, sleeves, mask | also head net; Wrong Sleeve forbidden |
-| Capture | 640 × 480 raw; MJPEG rejected | Station 640 × 480 and 640 × 360 via DirectShow (MJPEG request not applied); shipped default still 1280 × 720 |
-| Original capture size | 1280 × 1080 | 1280 × 720 measured |
-| Scheduler history | freshest-frame selector | batching, then round-robin with a turn-spending fix |
-| Dataset provenance | site data only, no cloud tools | dataset path names a cloud platform's export |
-| Rollout scope | 45 machines | tooling configured for 32 |
-| Required PPE count | gloves and sleeves (pairs) | first 2 each; station now 1 each |
+| 10 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
+| 11 | Library version split | Align at the next retraining |
+| 12 | Test-split independence | Confirm the common test images were held out from v2–v6 as well |
 
 ### Attachment E — Code and configuration
 

@@ -36,6 +36,31 @@ submitted:
 
 ---
 
+## Review of 3 November 2026 (your highlighted copy)
+
+Applied to the report:
+
+- **No references to the project notes or project record.** The notes were an unofficial record.
+  Every "my notes say X, the code does Y" passage is now a plain statement of what the system
+  does (e-stop wiring, Modbus thread, scheduler bug, correction window, YOLO11 naming). The
+  discrepancy table (old Table D2) and the dataset-provenance note are gone. **Section 2 below is
+  for your own reference only; none of it is cited in the report any more.**
+- **Nano anomaly removed:** the Table 3 row, the anomaly and "resolved" paragraphs, Table D1 item,
+  and the reflection bullet. The nano stays in Tables 4 and 5 as one of the six versions.
+- **Data source:** "captured on the shopfloor or taken of working poses recreated in an isolated
+  environment".
+- **Training stated plainly** ("I trained it on a CUDA GPU in about two hours"). The
+  checkpoint-recovery, run-directory, bit-identical re-run and "not archived" remarks are gone.
+- **CEO safety moment:** the sentence on preparing the presentation and video is removed.
+- **Secondary assignments removed:** abstract sentence and old Section 9.2. Chapter 9 is now
+  "Plant-wide rollout".
+- **Rollout count removed** (45 / 32 machines): the report says "every flat belt grinder at the plant".
+- **Your Table 3 correction kept** (YOLO11s for the PyTorch and OpenVINO rows); with the nano row
+  gone, the two YOLO11s OpenVINO rows are merged into one.
+
+Still yours to write (also highlighted): the site description (Section 1.2) and the supervision
+reflection (Section 10.1).
+
 ## 0. Station configuration (received 2 November 2026)
 
 The report now describes the station's own `config.yaml`. These changes from the repository's
