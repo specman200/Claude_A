@@ -116,8 +116,8 @@ guideline's ~24 for SPO 2021. Table A2 duplicated the sentence above it and is f
 file use the old labels (Table 5 is now Table 7; A3–A6 are 8–11; B1, C1, D1 are 12, 13, 14).
 `ppe.evaluate --report` keeps whatever table numbers the report uses.
 
-Still open on the cover: the industrial supervisor's name and designation (also in the
-acknowledgements, with the subject-matter expert placeholder).
+**All placeholders are filled** (4 November): supervisors on the cover and in the
+acknowledgements, the subject-matter expert, and the IPC specification.
 
 ## 0. Station configuration (received 2 November 2026)
 

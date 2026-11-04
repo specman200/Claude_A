@@ -74,7 +74,9 @@ def cover_xml(md_cover: str) -> str:
         cells.append(
             '<w:tr>'
             f'<w:tc><w:tcPr><w:tcW w:w="3600" w:type="dxa"/></w:tcPr>{para(k, 24, bold=True, align="left", after=80)}</w:tc>'
-            f'<w:tc><w:tcPr><w:tcW w:w="5470" w:type="dxa"/></w:tcPr>{para(v, 24, align="left", after=80)}</w:tc>'
+            f'<w:tc><w:tcPr><w:tcW w:w="5470" w:type="dxa"/></w:tcPr>'
+            + "".join(para(line.strip(), 24, align="left", after=80) for line in v.split("<br>"))
+            + '</w:tc>'
             '</w:tr>')
     out.append('<w:tbl><w:tblPr><w:tblW w:w="9070" w:type="dxa"/><w:jc w:val="center"/>'
                '<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
@@ -262,7 +264,8 @@ def reference_docx(tmp: Path) -> Path:
 
     heading = f'<w:rFonts w:ascii="{BODY_FONT}" w:hAnsi="{BODY_FONT}"/><w:b/><w:color w:val="000000"/>'
     # Contents and lists headings: the chapter-heading look, but outside the outline.
-    restyle("TOCHeading", '<w:keepNext/><w:spacing w:before="0" w:after="200"/>',
+    restyle("TOCHeading", '<w:keepNext/><w:spacing w:before="0" w:after="200"/>'
+            '<w:outlineLvl w:val="9"/>',
             heading + '<w:sz w:val="30"/><w:szCs w:val="30"/>')
     restyle("Heading1", '<w:keepNext/><w:spacing w:before="360" w:after="120" w:line="300" w:lineRule="auto"/><w:outlineLvl w:val="0"/>',
             heading + '<w:sz w:val="30"/><w:szCs w:val="30"/>')
@@ -330,6 +333,10 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     s = re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr><w:r><w:rPr><w:bCs ?/>'
                r'<w:b ?/></w:rPr><w:t[^>]*>Table [A-Z]?\d+\.</w:t>)',
                r'<w:pStyle w:val="\1"/><w:keepNext/>\2', s)
+    # Front-matter headings stay out of the outline, matching the printed contents.
+    s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>'
+               r'(?:Acknowledgements|Abstract)</w:t>)',
+               r'\1<w:outlineLvl w:val="9"/>\2', s)
     # References start a new page. A break on the heading itself, not a separate break
     # paragraph, which would leave a blank page whenever the body ends at a page foot.
     s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>References</w:t>)',

@@ -10,7 +10,7 @@
 | Company | GE Aerospace |
 | Company address | Plot A, Chakan, 78/1, MIDC, Phase II, Wasuli, Maharashtra 410501, India |
 | Internship period | 10 August 2026 to 10 November 2026 |
-| Industrial supervisor (trainer) | [name, designation] |
+| Industrial supervisors (trainers) | Aslam Mulla, Senior Manager, Manufacturing Engineering (Process Automation)<br>Soham Bhat Dubere, Manufacturing Engineering Development Program, Pune 2026 |
 | Trainer's stamp and signature | [stamp and signature] |
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
@@ -22,10 +22,11 @@ person shown is the author, who consented.*
 
 ## Acknowledgements
 
-I am grateful to my industrial supervisor, [name, designation], for entrusting me with a
+I am grateful to my industrial supervisors, Mr Aslam Mulla and Mr Soham Bhat Dubere, for
+entrusting me with a
 project that began as an observation on the shopfloor rather than a prepared brief, and for
 the freedom to carry it from the first prototype to a plant-wide rollout decision. I thank
-[name, designation of subject-matter expert(s)] for the time they gave to explaining the
+Mr Akshay Baviskar, Deputy Engineer, for the time they gave to explaining the
 grinding operation, and for their candour about what the shopfloor would and would not accept.
 
 The Environment, Health and Safety team reviewed the system through the Management of Change
