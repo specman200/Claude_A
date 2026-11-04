@@ -7,7 +7,7 @@ The Markdown file `internship-report.md` stays the single source. This script:
 
 - replaces the `<!-- cover -->` block with a formatted cover page (title, name, student ID,
   company and address, and a box for the trainer's stamp and signature);
-- puts a table of contents after the abstract;
+- puts a table of contents after the abstract, then a list of figures and a list of tables;
 - starts the attachments on a new page;
 - applies the required body format (12 pt, 1.5 line spacing) on A4 with 2.5 cm margins;
 - numbers the pages in the footer, leaving the cover unnumbered.
@@ -125,18 +125,66 @@ def toc_xml(entries: list[tuple[int, str]], pages: list[str]) -> str:
             f'<w:tab w:val="right" w:leader="dot" w:pos="{right}"/></w:tabs></w:pPr>{start}'
             f'<w:r><w:t xml:space="preserve">{esc(text.replace("`", ""))}</w:t></w:r>'
             f'<w:r><w:tab/></w:r><w:r><w:t>{page}</w:t></w:r>{end}</w:p>')
+    return "".join(paras)
+
+
+def captions(md: str) -> list[tuple[str, str, str]]:
+    """Every figure and table caption: (kind, label, first sentence), in document order."""
+    out = []
+    for para in re.split(r"\n\s*\n", md):
+        line = " ".join(para.split())  # a caption may wrap over several source lines
+        line = re.sub(r"^(?:<!--.*?-->\s*)+", "", line)  # e.g. under an evaluation marker
+        fig = re.match(r"^!\[(Figure [A-Z]?\d+)\.\s*(.+?)\]\(", line)
+        tab = re.match(r"^\*\*(Table [A-Z]?\d+)\.\*\*\s*(.+)$", line)
+        m = fig or tab
+        if m:
+            text = re.sub(r"[`*]", "", m.group(2))
+            first = re.match(r"(.+?[.:])(\s|$)", text)
+            text = (first.group(1) if first else text).rstrip(":.")
+            if len(text) > 75:  # one line in the list: cut at the first comma or bracket
+                cut = re.search(r",| \(", text[30:])
+                text = text[: 30 + cut.start()] if cut else text
+            text += "."
+            out.append(("figure" if fig else "table", m.group(1), text))
+    return out
+
+
+def lists_xml(caps: list[tuple[str, str, str]], pages: list[str]) -> str:
+    """List of figures and list of tables on one new page, then a break to the body."""
+    right = 11906 - 2 * MARGIN
+    paras = []
+    for kind, title in (("figure", "List of figures"), ("table", "List of tables")):
+        brk = "<w:pageBreakBefore/>" if kind == "figure" else '<w:spacing w:before="480"/>'
+        paras.append(f'<w:p><w:pPr><w:pStyle w:val="TOCHeading"/>{brk}</w:pPr>'
+                     f'<w:r><w:t>{title}</w:t></w:r></w:p>')
+        for (k, label, text), page in zip(caps, pages, strict=True):
+            if k != kind:
+                continue
+            paras.append(
+                f'<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs>'
+                f'<w:tab w:val="left" w:pos="1080"/>'
+                f'<w:tab w:val="right" w:leader="dot" w:pos="{right}"/></w:tabs>'
+                f'<w:ind w:left="1080" w:hanging="1080"/></w:pPr>'
+                f'<w:r><w:t xml:space="preserve">{esc(label)}</w:t></w:r><w:r><w:tab/></w:r>'
+                f'<w:r><w:t xml:space="preserve">{esc(text)}</w:t></w:r>'
+                f'<w:r><w:tab/></w:r><w:r><w:t>{page}</w:t></w:r></w:p>')
     paras.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
     return "".join(paras)
 
 
-def pdf_pages(pdf: Path, entries: list[tuple[int, str]]) -> list[str]:
-    """Page on which each heading starts, read from the rendered PDF."""
+def pdf_text(pdf: Path) -> list[str]:
+    """The rendered PDF's text, one string per page."""
     n = int(re.search(r"Pages:\s+(\d+)", subprocess.run(
         ["pdfinfo", str(pdf)], capture_output=True, text=True).stdout).group(1))
-    text = [subprocess.run(["pdftotext", "-layout", "-f", str(i), "-l", str(i), str(pdf), "-"],
+    return [subprocess.run(["pdftotext", "-layout", "-f", str(i), "-l", str(i), str(pdf), "-"],
                            capture_output=True, text=True).stdout for i in range(1, n + 1)]
+
+
+def pdf_pages(text: list[str], keys: list[str]) -> list[str]:
+    """Page on which each key (a heading or caption start) first begins a line, in order."""
+    n = len(text)
     pages, cur = [], 1
-    for _, h in entries:
+    for h in keys:
         key = re.sub(r"\s+", " ", h.replace("`", ""))[:28]
         found = "?"
         for i in range(cur, n + 1):
@@ -195,6 +243,9 @@ def reference_docx(tmp: Path) -> Path:
         s = s[: m.start()] + block + s[m.end():]
 
     heading = f'<w:rFonts w:ascii="{BODY_FONT}" w:hAnsi="{BODY_FONT}"/><w:b/><w:color w:val="000000"/>'
+    # Contents and lists headings: the chapter-heading look, but outside the outline.
+    restyle("TOCHeading", '<w:keepNext/><w:spacing w:before="0" w:after="200"/>',
+            heading + '<w:sz w:val="30"/><w:szCs w:val="30"/>')
     restyle("Heading1", '<w:keepNext/><w:spacing w:before="360" w:after="120" w:line="300" w:lineRule="auto"/><w:outlineLvl w:val="0"/>',
             heading + '<w:sz w:val="30"/><w:szCs w:val="30"/>')
     restyle("Heading2", '<w:keepNext/><w:spacing w:before="240" w:after="80" w:line="300" w:lineRule="auto"/><w:outlineLvl w:val="1"/>',
@@ -337,12 +388,16 @@ def main() -> int:
     raw = SOURCE.read_text(encoding="utf-8")
     md, cover = prepare_markdown(raw)
     entries = headings(raw)
-    # Pass 1 lays out the contents with placeholder numbers of the same width, so the
-    # page on which each heading falls does not change between passes.
-    build(md, cover, toc_xml(entries, ["00"] * len(entries)), args.out)
+    caps = captions(raw)
+    # Pass 1 lays out the contents and lists with placeholder numbers of the same width,
+    # so the page on which each heading or caption falls does not change between passes.
+    build(md, cover, toc_xml(entries, ["00"] * len(entries))
+          + lists_xml(caps, ["00"] * len(caps)), args.out)
     if args.pdf:
-        pages = pdf_pages(render_pdf(args.out), entries)
-        build(md, cover, toc_xml(entries, pages), args.out)
+        text = pdf_text(render_pdf(args.out))
+        pages = pdf_pages(text, [h for _, h in entries])
+        cap_pages = pdf_pages(text, [f"{label}. {cap}".rstrip(".") for _, label, cap in caps])
+        build(md, cover, toc_xml(entries, pages) + lists_xml(caps, cap_pages), args.out)
         render_pdf(args.out)
         print("wrote", args.out.with_suffix(".pdf"))
     print("wrote", args.out)
