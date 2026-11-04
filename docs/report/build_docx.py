@@ -304,6 +304,10 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     doc = tmp / "word" / "document.xml"
     s = doc.read_text(encoding="utf-8")
     s = s.replace("<w:body>", "<w:body>" + cover_xml(cover), 1)
+    # A table caption is a bold "Table N." paragraph: keep it on the page of its table.
+    s = re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr><w:r><w:rPr><w:bCs ?/>'
+               r'<w:b ?/></w:rPr><w:t[^>]*>Table [A-Z]?\d+\.</w:t>)',
+               r'<w:pStyle w:val="\1"/><w:keepNext/>\2', s)
     # References start a new page. A break on the heading itself, not a separate break
     # paragraph, which would leave a blank page whenever the body ends at a page foot.
     s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>References</w:t>)',

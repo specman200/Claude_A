@@ -722,8 +722,8 @@ detector, but they carry four limits:
 - they share their viewpoints with the training data;
 - they measure detection, not decision.
 
-The common test set removes the second limit: on it, v2 scores an mAP@0.5 of 0.873 rather than
-0.966, and best-apron 0.948 (Table 5). Neither set of figures says anything about carried gloves
+Attachment A removes the first limit with per-class results, and the common test set the
+second: there, v2 scores an mAP@0.5 of 0.873 rather than 0.966, and best-apron 0.948 (Table 5). Neither set of figures says anything about carried gloves
 or prescription spectacles. In operation the model is no
 longer the main source of risk. The false stops that mattered came from viewpoints it was not
 designed for, and the false permits come from decisions the schema cannot express (Section 4.2)
@@ -996,6 +996,32 @@ split): to be added.]
 
 ![Figure A2. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
 
+**Validation of best-apron.** Figures A3 to A5 show the final validation of the eight-class
+model the station runs. Per-class AP@0.5 ranges from 0.972 for safety glasses to 0.995 for the
+head net and mask, with a mean of 0.986 (Table 4 records 0.987 at the best epoch during
+training). The F1 score over all classes peaks at 0.97 at a confidence of 0.46 and stays within a
+few hundredths of that value between about 0.1 and 0.7, so the result is not sensitive to the
+exact threshold. Safety glasses are the exception: their F1 score is the lowest at every
+threshold and the first to fall away, and their precision drops below about 0.9 at confidences
+under 0.3, as does that of `Wrong Sleeve` to a lesser degree. The station's floors for these two
+classes, 0.60 and 0.90 (Table B1), lie well above that region.
+
+The confusion matrix shows almost no confusion between classes: at least 97 % of the instances
+of each class are detected as that class. The errors lie with the background. Up to 3 % of gloves
+and wrong sleeves are missed, and of the false detections on background, 35 % are safety glasses
+and a quarter each are gloves and sleeves. A false detection of a required item is the error that
+can credit missing PPE; the containment test of Section 6.1 discards those outside the operator.
+The only confusion between two classes is that 1 % of wrong sleeves are detected as sleeves. It is
+small but safety-relevant, because a wrong sleeve read as a sleeve is a path to a false permit.
+The training curves (Figure A5) show the validation losses levelling off after about 60 epochs,
+consistent with the best epoch of 63.
+
+![Figure A3. Precision–recall and F1–confidence curves of best-apron. Validation split.](docs/report/figures/fig-apron-pr-f1.png)
+
+![Figure A4. Normalised confusion matrix of best-apron. Validation split; each column is a true class.](docs/report/figures/fig-apron-confusion.png){width=70%}
+
+![Figure A5. Training curves of best-apron over 93 epochs: losses and validation metrics.](docs/report/figures/fig-apron-training.png)
+
 <!-- evaluation:detail -->
 **Table A3.** AP@0.5 per class on the common test set. — means the model has no such class.
 
@@ -1161,7 +1187,6 @@ def _evaluate(self) -> Status:
   aside. (A compliant pair of views is Figure 5.)
 - **F4.** Three-panel examples of failure cases: a side-view miss; glove–sleeve confusion; the
   angled posture.
-- **F5.** Normalised confusion matrix from the validation run.
-- **F6.** The annotation workflow.
+- **F5.** The annotation workflow.
 
 Faces other than the author's must be blurred, and no component may be visible.
