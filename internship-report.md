@@ -16,8 +16,9 @@
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
 volumes, cycle times, supplier names, commercial terms, network addresses, hostnames,
-credentials and employee names are excluded throughout. No image shows a component or a
-drawing, and the only person shown is the author, who consented.*
+credentials and employee names are excluded throughout. No image shows a manufactured
+component or an engineering drawing: the station layouts are simplified models, and the only
+person shown is the author, who consented.*
 <!-- /cover -->
 
 ## Abstract
@@ -786,9 +787,13 @@ the machine number. Here two earlier decisions pay off: rejecting the machine-de
 setting saves an operating-system change at every station, and local annotation lets every station
 contribute failure cases without an exception to the data rules.
 
-The station was also redesigned as an integrated tower that fits within the grinder's own envelope:
-0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in volume. This
-answers management's comment on the size of the panel.
+The station was also redesigned as an integrated tower that fits within the grinder's own envelope
+(Figure 8): 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in
+volume. The monitor and tower light move onto the grinder, and the control panel onto its
+pedestal, so nothing stands on the floor beside the machine. This answers management's comment
+on the size of the panel.
+
+![Figure 8. Layout models of the station. (a) Prototype: control panel and monitor on their own stand, and a separate camera stand beside the grinder. (b, c) Integrated version, in perspective and from the front: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png)
 
 ## 10. Critical reflection
 
@@ -1109,7 +1114,8 @@ def _evaluate(self) -> Status:
 ### Attachment F — Figures still required
 
 - **F1.** Operator interface in operator mode, with no person in frame.
-- **F2.** The installed station, preferably from the requested 3D model.
+- **F2.** A photograph of the installed station, if the site permits one (the layout models are
+  Figure 8).
 - **F3.** Further examples of correct operation: an occluded glove credited; a bystander set
   aside. (A compliant pair of views is Figure 5.)
 - **F4.** Three-panel examples of failure cases: a side-view miss; glove–sleeve confusion; the

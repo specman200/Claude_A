@@ -288,7 +288,7 @@ face.
 | 2 | Operator UI in operator mode: status headline, checklist, both camera views | Screenshot at the station with nobody in frame, or cropped or blurred |
 | 3 | Annotation workflow: capture → local pre-labels → correction → split → train → export → deploy → capture | Draw it, or ask me to |
 | 6 | Normalised confusion matrix, 7 classes plus background | `confusion_matrix_normalized.png` from the validation run (see 4.2 below) |
-| 11 | Installed station: panel, tower light, camera stands, monitor | The 3D model requested from design is safest; otherwise a photo with machine and people excluded |
+| 11 | Installed station. **Layout models of both versions are now Figure 8** (prototype; integrated tower). A photograph is optional | Only if the site permits; machine and other people excluded |
 | 13 | Correct operation: occluded glove credited; bystander set aside. **The compliant pair of views is now Figure 5** (your photos, annotated by best-apron, unblurred with your consent) | Capture-mode frames, other faces blurred |
 | 14 | Three panels of failure cases: side-view miss; glove–sleeve confusion; angled posture | Capture-mode `miss` and `violation` frames, faces blurred |
 
