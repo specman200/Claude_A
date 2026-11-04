@@ -114,7 +114,7 @@ def toc_xml(entries: list[tuple[int, str]], pages: list[str]) -> str:
     which a second build pass fills with the page numbers measured from the rendered PDF.
     """
     right = 11906 - 2 * MARGIN
-    paras = ['<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Contents</w:t></w:r></w:p>']
+    paras = ['<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/></w:pPr><w:r><w:t>Contents</w:t></w:r></w:p>']
     for i, ((level, text), page) in enumerate(zip(entries, pages)):
         start = ('<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">'
                  ' TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r>'
@@ -156,6 +156,9 @@ def prepare_markdown(text: str) -> tuple[str, str]:
     # Contents after the abstract, i.e. before the first numbered chapter.
     text = text.replace("## 1. Introduction", TOC + "\n## 1. Introduction", 1)
     text = text.replace("## References", PAGE_BREAK + "\n## References", 1)
+    # The acknowledgements, like the abstract, get a page of their own.
+    if "## Acknowledgements" in text:
+        text = text.replace("## Abstract", PAGE_BREAK + "\n## Abstract", 1)
     text = text.replace("<!-- attachments -->", PAGE_BREAK)
     return text, cover
 
@@ -210,7 +213,7 @@ def reference_docx(tmp: Path) -> Path:
         s = s.replace("</w:styles>",
                       f'<w:style w:type="paragraph" w:styleId="TOC{lvl}"><w:name w:val="toc {lvl}"/>'
                       '<w:basedOn w:val="Normal"/><w:uiPriority w:val="39"/>'
-                      f'<w:pPr><w:spacing w:before="{60 if lvl == 1 else 0}" w:after="20" w:line="260" '
+                      f'<w:pPr><w:spacing w:before="{20 if lvl == 1 else 0}" w:after="0" w:line="240" '
                       f'w:lineRule="auto"/><w:ind w:left="{ind}"/></w:pPr>'
                       f'<w:rPr>{"<w:b/>" if lvl == 1 else ""}</w:rPr></w:style></w:styles>')
     # Tables, captions and code: single-spaced and smaller, as is usual.

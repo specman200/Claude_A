@@ -21,6 +21,29 @@ component or an engineering drawing: the station layouts are simplified models, 
 person shown is the author, who consented.*
 <!-- /cover -->
 
+## Acknowledgements
+
+I am grateful to my industrial supervisor, [name, designation], for entrusting me with a
+project that began as an observation on the shopfloor rather than a prepared brief, and for
+the freedom to carry it from the first prototype to a plant-wide rollout decision. I thank
+[name, designation of subject-matter expert(s)] for the time they gave to explaining the
+grinding operation, and for their candour about what the shopfloor would and would not accept.
+
+The Environment, Health and Safety team reviewed the system through the Management of Change
+process and helped me see it as a control within a wider safety system rather than as a
+stand-alone device; their questions led to the failure analysis in Section 6.4. The maintenance
+department carried out the electrical commissioning, the installation and the later relocation of
+the station, and their practical knowledge of the machines saved me from more than one error. The
+IT department helped me fit the industrial PC into the site's standard configuration.
+
+I owe a particular debt to the operators of the flat belt grinders. They tolerated a camera
+system watching them work, told me plainly when it stopped them for no reason, and showed me how
+the operation is actually performed. The most consequential finding of this project
+(Section 8.3) came from them.
+
+Finally, I thank my academic supervisor, [name, chair], for supervising this internship on
+behalf of RWTH Aachen University.
+
 ## Abstract
 
 During my internship at GE Aerospace in Pune, India, I designed, built and commissioned **Vision
