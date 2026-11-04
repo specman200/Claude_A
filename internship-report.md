@@ -408,7 +408,7 @@ A scheduling bug starved the slower camera: the round-robin cursor did not advan
 was served alone. A camera with a fresh frame every second cycle was served on only 3 of its 6 chances. After the fix,
 both cameras are served whenever they have a frame, alternating strictly when both deliver.
 
-### 5.3 Letterboxing, bandwidth and the rejection of MJPEG
+### 5.3 Letterboxing and USB bandwidth
 
 Frames are *letterboxed* to the square 640 × 640 model input:
 
@@ -425,18 +425,11 @@ produces about 55 MB/s. Measured on the cameras, 1280 × 720 delivered only 10 f
 improvement in temporal resolution, and **detection accuracy was verified to be unaffected**. That
 is expected: the letterbox scales a 1280-pixel-wide frame down by half before inference anyway.
 
-Compressed MJPEG transport would have allowed the higher resolution. I established a working
-method through the Media Foundation (MSMF) backend, which reached 30 fps at 720p. It required an
-operating-system environment variable set before the program starts. Setting it from inside the
-program, the obvious fix, was shown on the hardware not to work. That made it a
-**machine-dependent, system-level modification**. For a system meant to be reproduced across the
-plant, a fix applied host by host is unacceptable. It will be missing on some hosts, lost when IT
-re-images a PC, and fail silently when it is. I kept the raw stream on USB 3.0 ports. This was a
-rejection of a working solution **on deployment grounds**, and Section 8 shows how that choice
-pays off. The station now captures at 640 × 480 (front) and 640 × 360 (side) through DirectShow. Its
-configuration still requests MJPEG, which DirectShow was measured to ignore on these cameras, so
-the stream is in effect uncompressed, as intended. The repository's default configuration, which
-the installer ships, still requests 1280 × 720 and must be aligned before rollout.
+Compressed MJPEG transport would have allowed the higher resolution, and I made it work at
+30 fps and 720p through the Media Foundation (MSMF) backend. But it needed an operating-system
+setting on every PC, which would be lost silently whenever IT re-imaged one, so for a system to
+be replicated across the plant I kept the raw stream. The station captures at 640 × 480 (front)
+and 640 × 360 (side).
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
