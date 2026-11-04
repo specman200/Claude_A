@@ -249,7 +249,8 @@ was moved (Section 7.2).
 
 Company data compliance rules forbid uploading shopfloor images to cloud annotation services. I
 therefore built an **auto-annotation tool** that pre-labels images locally with the current
-model. An annotator corrects the boxes rather than drawing them all, which is several times
+model. An annotator corrects the boxes, following written annotation guidelines, rather than drawing
+them all, which is several times
 faster. One remote day yielded 200 annotated images. The station software later gained a
 **capture mode** that keeps frames worth training on during normal operation, pre-labelled, and
 never sends them off the site network. Its triggers are:
@@ -259,7 +260,7 @@ never sends them off the site network. Its triggers are:
 - a motor start or stop;
 - a required item going out of sight.
 
-The dataset grew in rounds, each aimed at failures found in systematic testing of the previous
+The dataset grew in rounds to about 5,000 images, each round aimed at failures found in systematic testing of the previous
 model. The failures fall into two categories, and the distinction is the conceptual core of the
 data work.
 
@@ -878,7 +879,9 @@ Further work would build on these results, in order of priority:
 5. **Camera placement:** repositioning the cameras for the observed working posture.
 
 Attachment D details each of these. In the longer term, the latency headroom could be used to
-capture the accuracy that RF-DETR showed is available; decision failures could be made
+capture the accuracy that RF-DETR showed is available; a longer shop-floor trial that logs false
+stops and false permits would measure what the per-image evaluation can only estimate; decision
+failures could be made
 measurable with a targeted evaluation set and then addressed with a relational test of each glove
 against the detected hands; the capture mode could feed periodic retraining; stop records
 aggregated across the fleet could inform tuning; and the approach could be applied to other manual
@@ -989,8 +992,8 @@ classes. Table 4 gives the other versions, including the apron model the station
 | --- | --- | --- | --- | --- |
 | 0.942 | 0.955 | 0.949 | 0.966 | 0.840 |
 
-Per-class results on the common test set are in Tables A3–A5. [Dataset composition (images per
-split): to be added.]
+The final dataset holds about 5,000 annotated images; its test split, used for Table 5, holds
+477. Per-class results on the common test set are in Tables A3–A5.
 
 ![Figure A1. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
 

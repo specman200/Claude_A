@@ -89,6 +89,19 @@ hand-drawn circle that cannot be removed without altering the curves; its point 
 and Wrong Sleeve precision fall at low confidence, well below the station's floors) is made in the
 text. If you want that plot too, export a clean `P_curve.png` from the training run folder.
 
+**Presentation draft (4 November):** reviewed for usable facts. Added: about 5,000 images
+(Section 4.2 and Attachment A, replacing the dataset placeholder), written annotation
+guidelines, and a longer shop-floor trial as further work. Deliberately not added:
+
+- *Google Colab, NVIDIA T4.* The v2 checkpoint records a local Windows training PC, and the
+  report states that shopfloor images may not go to cloud services. Training on Colab would
+  contradict both. If some runs did use Colab (the nano was trained on a separate copy of the
+  data), clarify with your supervisor how that fits the data rules before mentioning it.
+- *The relay board's brand.* Supplier names are excluded by the cover note.
+- *The generic safety and limitations text.* Sections 2.3, 6.4 and Attachment C already say
+  more precisely that the system is a permissive layered on the machine's safety functions.
+- Placeholders (split percentages, functional-test counts, memory use): no measured values.
+
 Still open on the cover: the industrial supervisor's name and designation (also in the
 acknowledgements, with the subject-matter expert placeholder).
 
