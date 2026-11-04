@@ -93,10 +93,8 @@ text. If you want that plot too, export a clean `P_curve.png` from the training 
 (Section 4.2 and Attachment A, replacing the dataset placeholder), written annotation
 guidelines, and a longer shop-floor trial as further work. Deliberately not added:
 
-- *Google Colab, NVIDIA T4.* The v2 checkpoint records a local Windows training PC, and the
-  report states that shopfloor images may not go to cloud services. Training on Colab would
-  contradict both. If some runs did use Colab (the nano was trained on a separate copy of the
-  data), clarify with your supervisor how that fits the data rules before mentioning it.
+- *Google Colab, NVIDIA T4:* **now in the report** (Section 4.4), after you confirmed that only
+  the nano was trained on Colab, on a dataset of recreated poses with no shopfloor images.
 - *The relay board's brand.* Supplier names are excluded by the cover note.
 - *The generic safety and limitations text.* Sections 2.3, 6.4 and Attachment C already say
   more precisely that the system is a permissive layered on the machine's safety functions.

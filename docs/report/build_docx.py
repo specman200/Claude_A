@@ -35,6 +35,9 @@ LINE = 360            # 1.5 line spacing (240 = single)
 MARGIN = 1418         # 2.5 cm in twips
 
 PAGE_BREAK = '```{=openxml}\n<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n```\n'
+# A placeholder for the author is any bracketed text that is not a citation, a link or "[Online]".
+PLACEHOLDER = re.compile(r"\[(?!Online\])[^\]\d][^\]]*\]")
+HIGHLIGHT = '<w:highlight w:val="yellow"/>'
 TOC_MARK = "VGTOCMARKER"
 TOC = '```{=openxml}\n<w:p><w:r><w:t>' + TOC_MARK + '</w:t></w:r></w:p>\n```\n'
 
@@ -52,8 +55,10 @@ def cover_xml(md_cover: str) -> str:
     note = re.search(r"^\*(Confidential.+?)\*$", md_cover, re.M | re.S)
 
     def para(text, size=24, bold=False, align="center", before=0, after=120, italic=False):
-        rpr = f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>' + ("<w:b/>" if bold else "") \
-            + ("<w:i/>" if italic else "")
+        # Property order follows the schema: b, i, sz, szCs, highlight.
+        rpr = ("<w:b/>" if bold else "") + ("<w:i/>" if italic else "") \
+            + f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>' \
+            + (HIGHLIGHT if PLACEHOLDER.fullmatch(text) else "")
         return (f'<w:p><w:pPr><w:spacing w:before="{before}" '
                 f'w:after="{after}" w:line="276" w:lineRule="auto"/><w:jc w:val="{align}"/></w:pPr>'
                 f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{esc(text)}</w:t></w:r></w:p>')
@@ -207,7 +212,21 @@ def prepare_markdown(text: str) -> tuple[str, str]:
     if "## Acknowledgements" in text:
         text = text.replace("## Abstract", PAGE_BREAK + "\n## Abstract", 1)
     text = text.replace("<!-- attachments -->", PAGE_BREAK)
-    return text, cover
+    return mark_placeholders(text), cover
+
+
+def mark_placeholders(text: str) -> str:
+    """Give every placeholder outside code the Placeholder style, highlighted in the output."""
+    out, code = [], False
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            code = not code
+        elif not code:
+            line = re.sub(r"(?<![!\]])" + PLACEHOLDER.pattern + r"(?![(\[{])",
+                          lambda m: "[" + m.group(0).replace("[", "\\[").replace("]", "\\]")
+                          + ']{custom-style="Placeholder"}', line)
+        out.append(line)
+    return "\n".join(out)
 
 
 def reference_docx(tmp: Path) -> Path:
@@ -304,6 +323,8 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     doc = tmp / "word" / "document.xml"
     s = doc.read_text(encoding="utf-8")
     s = s.replace("<w:body>", "<w:body>" + cover_xml(cover), 1)
+    # Placeholders: the character style pandoc made, plus a real highlight the author can clear.
+    s = re.sub(r'<w:rStyle w:val="Placeholder" ?/>', '<w:rStyle w:val="Placeholder"/>' + HIGHLIGHT, s)
     # A table caption is a bold "Table N." paragraph: keep it on the page of its table.
     s = re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr><w:r><w:rPr><w:bCs ?/>'
                r'<w:b ?/></w:rPr><w:t[^>]*>Table [A-Z]?\d+\.</w:t>)',

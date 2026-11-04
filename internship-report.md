@@ -346,10 +346,12 @@ The table supports three readings:
   Section 4.2 describes. Each version scored marginally higher in mAP@0.5:0.95 (0.840 to 0.844),
   and v6 had the best recall (0.964). But each was validated on its own, growing, validation
   split, so differences of a few thousandths are not evidence that one version beats another.
-- **The nano and the apron model were trained on different data and settings.** The nano used
-  a separate copy of the dataset and a shorter schedule; the apron model a combined dataset with
-  an eighth class, starting from an earlier fine-tuned run. Their higher figures are therefore
-  not comparable with the others.
+- **The nano and the apron model were trained on different data and settings.** The nano was
+  trained on Google Colab (NVIDIA T4 GPU) with a shorter schedule, on a separate dataset made
+  up entirely of working poses recreated in an isolated environment. It contained no shopfloor
+  images, so training in the cloud remained within the company's data policy. The apron model
+  was trained on a combined dataset with an eighth class, starting from an earlier fine-tuned
+  run. The higher figures of both are therefore not comparable with the others.
 - **None of the six was compared on common ground during training.** Table 5 therefore scores
   all of them on one test set from station footage, held out from best-apron's training. The scoring is by
   class name, so differences in class order or class count do not matter. Each image is also
