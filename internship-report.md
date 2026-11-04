@@ -16,7 +16,7 @@
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
 volumes, cycle times, supplier names, commercial terms, network addresses, hostnames,
-credentials and employee names are excluded throughout. No image shows a manufactured
+credentials and other employee names are excluded throughout. No image shows a manufactured
 component or an engineering drawing: the station layouts are simplified models, and the only
 person shown is the author, who consented.*
 <!-- /cover -->

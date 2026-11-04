@@ -62,9 +62,8 @@ Still yours to write (also highlighted): the site description (Section 1.2) and 
 reflection (Section 10.1).
 
 **Acknowledgements (added 4 November):** fill the three name placeholders: industrial
-supervisor, subject-matter expert(s) and academic supervisor. The cover note says employee names
-are excluded; naming your supervisors here is customary and your choice, but if you name them,
-adjust the cover note to "other employee names are excluded".
+supervisor, subject-matter expert(s) and academic supervisor. The cover note already reads
+"other employee names are excluded" (changed 4 November).
 
 ## 0. Station configuration (received 2 November 2026)
 
