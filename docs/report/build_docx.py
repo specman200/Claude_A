@@ -203,7 +203,6 @@ def prepare_markdown(text: str) -> tuple[str, str]:
     text = text[: m.start()] + text[m.end():]
     # Contents after the abstract, i.e. before the first numbered chapter.
     text = text.replace("## 1. Introduction", TOC + "\n## 1. Introduction", 1)
-    text = text.replace("## References", PAGE_BREAK + "\n## References", 1)
     # The acknowledgements, like the abstract, get a page of their own.
     if "## Acknowledgements" in text:
         text = text.replace("## Abstract", PAGE_BREAK + "\n## Abstract", 1)
@@ -305,6 +304,10 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     doc = tmp / "word" / "document.xml"
     s = doc.read_text(encoding="utf-8")
     s = s.replace("<w:body>", "<w:body>" + cover_xml(cover), 1)
+    # References start a new page. A break on the heading itself, not a separate break
+    # paragraph, which would leave a blank page whenever the body ends at a page foot.
+    s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>References</w:t>)',
+               r"\1<w:pageBreakBefore/>\2", s, count=1)
     s = re.sub(r"<w:p>(?:(?!<w:p>).)*?" + TOC_MARK + r".*?</w:p>", lambda _: toc, s, count=1, flags=re.S)
     # Pandoc gives tight lists and table cells the same "Compact" style. Tables keep it
     # (small, single-spaced); list items outside tables get the body format.

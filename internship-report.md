@@ -6,12 +6,11 @@
 | | |
 | --- | --- |
 | Student | Arun Nair |
-| Student ID (matriculation number) | [matriculation number] |
+| Student ID (matriculation number) | 442027 |
 | Company | GE Aerospace |
-| Company address | [company address, Pune, India] |
-| Internship period | [start date] to [end date] |
+| Company address | Plot A, Chakan, 78/1, MIDC, Phase II, Wasuli, Maharashtra 410501, India |
+| Internship period | 10 August 2026 to 10 November 2026 |
 | Industrial supervisor (trainer) | [name, designation] |
-| Academic supervisor | [name, chair] |
 | Trainer's stamp and signature | [stamp and signature] |
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
@@ -33,7 +32,7 @@ The Environment, Health and Safety team reviewed the system through the Manageme
 process and helped me see it as a control within a wider safety system rather than as a
 stand-alone device; their questions led to the failure analysis in Section 6.4. The maintenance
 department carried out the electrical commissioning, the installation and the later relocation of
-the station, and their practical knowledge of the machines saved me from more than one error. The
+the station, and their practical knowledge of the machines helped me avoid several errors. The
 IT department helped me fit the industrial PC into the site's standard configuration.
 
 I owe a particular debt to the operators of the flat belt grinders. They tolerated a camera
@@ -41,13 +40,10 @@ system watching them work, told me plainly when it stopped them for no reason, a
 the operation is actually performed. The most consequential finding of this project
 (Section 8.3) came from them.
 
-Finally, I thank my academic supervisor, [name, chair], for supervising this internship on
-behalf of RWTH Aachen University.
-
 ## Abstract
 
-During my internship at GE Aerospace in Pune, India, I designed, built and commissioned **Vision
-Guard**, a camera-based interlock that turns PPE compliance at a flat belt grinding station from
+During my internship at GE Aerospace in Pune, India, I contributed to the design, development and commissioning
+of **Vision Guard**, a camera-based interlock that turns PPE compliance at a flat belt grinding station from
 an administrative control into an engineering control. Two cameras observe the operator. An
 industrial PC without a GPU runs a YOLO11s detector compiled with OpenVINO and decides whether the
 required PPE is worn. An Ethernet relay module, addressed over Modbus TCP, drives a tower light and
@@ -81,7 +77,7 @@ The station's required PPE answers each of them: safety glasses, gloves, sleeves
 deployed system also checks a head net, which the site requires at the station.
 
 Before this project, compliance was assured by training, signage and supervision. In the
-hierarchy of controls these are all *administrative* controls. Each depends on a person's
+hierarchy of controls [1] these are all *administrative* controls. Each depends on a person's
 decision at the moment of use, and on a supervisor being present. None of them acts on the
 machine. When the decision goes the wrong way, the grinder runs regardless. Vision Guard moves
 the control one tier up: it detects missing PPE from camera images and inhibits the machine. It
@@ -93,8 +89,13 @@ rule that PPE must be worn and the fact of the machine running.
 GE Aerospace designs and manufactures commercial and military aircraft engines, components and
 systems. It has operated as an independent, publicly listed company since April 2024.
 
-[Site-specific description of the Pune facility: its role, products and processes, and the
-department in which the internship took place. To be written and verified by the author.]
+The GE Aerospace Multi-modal Manufacturing Facility (MMF) in Pune is a global centre of
+excellence for high-precision, mission-critical structural components, such as ducts and
+manifolds, for commercial jet engines including the LEAP, GEnx and GE9X. Its processes include
+five-axis CNC machining, specialised welding, hydroforming and a digitally connected production
+infrastructure. I completed the internship in the Manufacturing Engineering section of the
+Fabrication Center of Excellence (FCOE) department, which programs, optimises and deploys robotic
+and automated cells on the shopfloor.
 
 ### 1.3 Origin, scope and objective
 
@@ -144,15 +145,15 @@ Validation metrics measure only the detection question. They are necessary but n
 
 ### 2.2 Detector and runtime
 
-YOLO [1] is a single-stage detector: one network pass predicts boxes and class scores for the
-whole image, so the inference cost is fixed and predictable. YOLO11 [2] is the Ultralytics
+YOLO [2] is a single-stage detector: one network pass predicts boxes and class scores for the
+whole image, so the inference cost is fixed and predictable. YOLO11 [3] is the Ultralytics
 release used here, in its *s* scale (about 9.4 million parameters). Detection transformers such
-as DETR [3] and RF-DETR [4] predict object sets directly and need no non-maximum suppression, but
+as DETR [4] and RF-DETR [5] predict object sets directly and need no non-maximum suppression [6], but
 their attention layers are costly on a CPU.
 
-OpenVINO [5] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
+OpenVINO [7] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
 mean average precision (mAP) at an IoU threshold of 0.5, and averaged over thresholds from 0.5
-to 0.95 [6].
+to 0.95 [8], [9], [10].
 
 ### 2.3 Two error directions
 
@@ -172,8 +173,8 @@ people gets worked around. A false permit is the exposure the system exists to p
 parameter in Chapter 6 is a position on this trade-off.
 
 Such a system is a **permissive**: a condition that must hold before the machine may run, layered
-on top of the machine's safety functions and never in place of them [7]. It talks to the relay
-module over Modbus TCP [8], with the `pymodbus` library [9]. Modbus is stateless and driven by the
+on top of the machine's safety functions and never in place of them [11]. It talks to the relay
+module over Modbus TCP [12], with the `pymodbus` library [13]. Modbus is stateless and driven by the
 client. A device keeps its outputs as last written until it is told otherwise, unless it has its
 own communication watchdog.
 
@@ -237,11 +238,11 @@ the seven-class model that was deployed first.
 
 All training images were either captured on the shopfloor or taken of working poses recreated in
 an isolated environment, and no public PPE dataset was used. Public
-datasets centre on construction-site equipment. The station's lighting, background, operator
+datasets centre on construction-site equipment [14], [15], [16]. The station's lighting, background, operator
 postures and issued PPE are particular to it, and sleeves are absent from most public sets.
 Starting from COCO-pretrained weights and fine-tuning on site data gave the model general
 features from a large dataset, and everything station-specific from the station. Images were
-deliberately taken from varying camera positions, which proved its worth when the installation
+deliberately taken from varying camera positions, which proved valuable when the installation
 was moved (Section 7.2).
 
 ### 4.2 Local annotation and failure-driven expansion
@@ -273,7 +274,7 @@ data work.
   non-compliant state explicitly, or the decision can test whether the item lies on the body
   part it should cover.
 
-Leaving the non-compliant case unlabelled teaches the model weakly to ignore it. Worse, it makes
+Leaving the non-compliant case unlabelled teaches the model weakly to ignore it. More seriously, it makes
 the dangerous error unmeasurable, because a missed worn glove and a correctly ignored carried
 glove both produce *no box*.
 
@@ -286,8 +287,8 @@ the person's box, relaxed to 10 % containment for gloves, and a glove held in th
 The model is YOLO11s, fine-tuned from COCO weights:
 
 - input 640 × 640, batch size 16;
-- cosine learning-rate schedule from 0.01;
-- mosaic, colour and ±5° rotation augmentation;
+- cosine learning-rate schedule from 0.01 [17];
+- mosaic [18], colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
 I trained it on a CUDA GPU in about two hours. Attachment A lists the full configuration.
@@ -300,14 +301,14 @@ Figure 2 shows the convergence in three phases:
 2. **Steady gains in localisation.** mAP@0.5 reached 0.96 by about epoch 40, and mAP@0.5:0.95
    kept rising until epoch 75.
 3. **Plateau.** The validation losses stopped improving while the training losses kept falling,
-   the classic onset of over-fitting.
+   the characteristic onset of over-fitting.
 
 Early stopping ended training at epoch 105 and kept epoch 75. At that epoch the model reached
 precision 0.942, recall 0.955, mAP@0.5 0.966 and mAP@0.5:0.95 0.840, averaged over the seven
 classes.
 
 Mosaic switch-off and the final low-learning-rate phase were scheduled against the *planned* 150
-epochs, so early stopping meant they never ran. Both are free improvements at the next retraining.
+epochs, so early stopping meant they never ran. Both can be recovered at no cost at the next retraining.
 
 ### 4.4 Model selection
 
@@ -390,7 +391,7 @@ best-apron's lead is accepted.
 
 Three limits apply. The counts are per image, from one camera and one frame, while the station
 combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
-compliant, so the 10.4 % false-stop rate has a 95 % interval of about 4–22 %, and the 1.4 %
+compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [19] of about 4–22 %, and the 1.4 %
 false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
 the older models are flattered, not best-apron.
@@ -401,7 +402,7 @@ question of accuracy. On that, Table 5 favours `best-apron`, which the station r
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
 It is that RF-DETR's accuracy shows **headroom the deployed model does not reach**. The open
-question is how to capture that headroom inside the latency budget, for example by distillation.
+question is how to capture that headroom inside the latency budget, for example by distillation [20].
 
 ## 5. Inference pipeline
 
@@ -411,7 +412,7 @@ The pipeline rests on one principle: **no stage waits for a slower one, and no s
 stale input.** Each camera thread keeps only its newest frame in a one-frame slot, and older
 frames are overwritten, never queued. The pipeline thread takes only frames it has not processed
 before. When no camera has delivered for 1.5 s, the station switches to DEGRADED and withdraws the
-permissive. A queue would have been the obvious design and the wrong one. Under load it fills, so
+permissive. A queue would have been the conventional design, but the wrong one here. Under load it fills, so
 every decision is made on an older frame, and for an interlock the age of the frame *is* the
 response time.
 
@@ -456,7 +457,7 @@ and 640 × 360 (side).
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
-stays at FP32. INT8 quantisation remains available, but it needs calibration on site images.
+stays at FP32. INT8 quantisation [21] remains available, but it needs calibration on site images.
 
 ## 6. Compliance logic and interlock
 
@@ -528,7 +529,7 @@ from the last *full* sighting, so a partial view silently consumed the dropout h
 second of seeing a single glove, the configured 1.0 s hold was zero, on exactly the classes the
 occlusion window was added for. Timing each window from its own evidence fixed it.
 
-The trade-off had an honest cost. An operator who removed one glove while the other stayed
+The trade-off has a cost. An operator who removed one glove while the other stayed
 visible was still credited for up to about 5.4 s. This bounded exposure was accepted in exchange
 for not stopping operators whose second glove was behind the workpiece.
 
@@ -620,8 +621,9 @@ configuration rather than code:
    that watchdog, but nothing records that it was tested.
 4. **The emergency stop depends on the software path.** Whenever that path fails or stalls, the e-stop
    cannot stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
-   [10], IEC 60204-1 [11] and IEC 60947-5-5 [12] require a hard-wired e-stop with normally closed,
-   direct-opening contacts. **Until the pending safety relay is fitted, the station's e-stop
+   [22], IEC 60204-1 [23] and IEC 60947-5-5 [24] require a hard-wired e-stop with normally closed,
+   direct-opening contacts, and the safety-relay circuit should be designed and validated to a
+   performance level determined under ISO 13849-1 [25]. **Until the safety relay is fitted, the station's e-stop
    should not be relied upon as an emergency stop.**
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
@@ -669,12 +671,12 @@ damage, but did not eliminate it.
 
 ### 7.3 Safety approval, documentation and reviews
 
-The system went through the site's **Management of Change** (MOC) process [14]. An EHS meeting
+The system went through the site's **Management of Change** (MOC) process. An EHS meeting
 reviewed its features, the station's existing safety practices and the expected requirements, and
-identified scope for further development. A **second MOC** covered the relocation [15]. I obtained
+identified scope for further development. A **second MOC** covered the relocation. I obtained
 the station's **EHS Risk Assessment** from the responsible High Performance Team, updated it to
-reflect the system, and submitted it for approval [13]. I wrote a **Standard Operating Procedure**
-for operator training, which was reviewed and revised [16]. A 3D model of the installation was
+reflect the system, and submitted it for approval. I wrote a **Standard Operating Procedure**
+for operator training, which was reviewed and revised. A 3D model of the installation was
 requested from the design department.
 
 The system was demonstrated to four audiences in turn. Each review changed something.
@@ -706,7 +708,7 @@ optimising, through the runtime, the model size or the input size. The second-la
 from noticing that two measurements which should have agreed did not: inference inside the
 application was three times slower than in the benchmark, because the capture threads'
 OpenCV pools competed with the model for the cores. Pinning capture to one thread per camera
-closed the gap. One honest qualification applies. The
+closed the gap. One qualification applies. The
 pipeline grew while it was being optimised, so the intermediate measurements are not comparable,
 and I report only the two endpoints measured under identical conditions.
 
@@ -769,8 +771,8 @@ part, and one only with qualifications that the rollout must close.
   the camera* is judged. That is usually, though not necessarily, the person at the belt.
 - **It responds quickly enough.** Met. At about 40 ms, the pipeline is no longer what limits the
   response. The station declares a violation in 0.4 s plus the class's hold. Its response time is
-  now a choice made in the logic rather than a limit set by the hardware, which is the honest
-  answer to management's concern.
+  now a choice made in the logic rather than a limit set by the hardware, which answers
+  management's concern directly.
 - **It is steady enough to be accepted.** Partly met. The hold and occlusion windows, and later
   the single-glove requirement, removed the chatter caused by occluded gloves and sleeves. The false stops caused by the angled working
   posture and by large workpieces remain, until the cameras are repositioned.
@@ -799,7 +801,7 @@ distances of 0.5–1.0 m for the front camera and 1.0–1.5 m for the side camer
 surveyed every grinder in the condition in which it actually operates.
 
 Standardisation rests on a single self-testing Windows installer whose only per-station input is
-the machine number. Here two earlier decisions pay off: rejecting the machine-dependent MJPEG
+the machine number. Here two earlier decisions prove their value: rejecting the machine-dependent MJPEG
 setting saves an operating-system change at every station, and local annotation lets every station
 contribute failure cases without an exception to the data rules.
 
@@ -809,21 +811,22 @@ volume. The monitor and tower light move onto the grinder, and the control panel
 pedestal, so nothing stands on the floor beside the machine. This answers management's comment
 on the size of the panel.
 
-![Figure 8. Layout models of the station. (a) Prototype: control panel and monitor on their own stand, and a separate camera stand beside the grinder. (b, c) Integrated version, in perspective and from the front: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png)
+![Figure 8. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=80%}
 
 ## 10. Critical reflection
 
 ### 10.1 Supervision
 
-[To be written by the author. The guidelines ask for a critical reflection on supervision. For
-example: how often and in what form you met your industrial supervisor; how much independence you
-had, and whether it suited the project; the support you received from EHS, maintenance and IT; what
-worked well; and what you would have wanted differently.]
+I worked closely with my industrial supervisors. The work was divided into smaller tasks, each
+reviewed before the next phase began. Because the system acts on a machine on the shopfloor and
+is safety-critical, this close supervision was both appropriate and necessary. I also worked
+within a cross-functional team with members from EHS, maintenance, IT and lean management, whose
+contributions shaped the project throughout and were essential to its success.
 
 ### 10.2 Learning achievements
 
 **Deployment is most of the work.** The model passed 0.96 mAP@0.5 early. Most of the internship
-went on what stands between that number and an operator starting a machine.
+was spent on what lies between that number and an operator starting a machine.
 
 **Diagnose before optimising.** Instrumentation showed inference at 98.6 % of the cycle. Without it
 I would have optimised my own code, which cost under 2 %.
@@ -866,76 +869,98 @@ The internship delivered a working, approved and replicable PPE interlock:
 - two fail-safe faults found in review and fixed, each with a test;
 - a rollout package for every flat belt grinder at the plant.
 
-It also produced a finding that changed how the rollout is specified, and an honest list of what
-must be fixed before the system is relied upon.
-
-The open items, in order of priority, are:
+Before the system is relied upon, the following items remain open, in order of priority:
 
 1. **Fit the hard-wired emergency-stop safety relay.**
 2. **Verify the relay module's communication watchdog.**
 3. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-4. Inspect best-apron's six false permits on the common test set, and re-run the evaluation for
-   the like-for-like false stops.
+4. Inspect best-apron's six false permits on the common test set.
 5. Reposition the cameras for the observed posture.
-6. Keep model comparisons like for like: one export tool, one benchmark, one test set.
 
-Attachment D lists all open items. Beyond them, the outlook is:
-
-- use the latency headroom to capture the accuracy that RF-DETR showed is available;
-- make the decision failures measurable with a targeted evaluation set, then fix them with a
-  relational test of each glove against the detected hands;
-- close the loop from the capture mode to periodic retraining;
-- aggregate stop records across the fleet into evidence for tuning;
-- apply the approach to other manual operations, starting each time from how the operation is
-  actually performed.
+Attachment D lists all open items. Beyond them, the outlook is to use the latency headroom to
+capture the accuracy that RF-DETR showed is available; to make decision failures measurable with
+a targeted evaluation set and then address them with a relational test of each glove against the
+detected hands; to close the loop from the capture mode to periodic retraining; to aggregate stop
+records across the fleet into evidence for tuning; and to apply the approach to other manual
+operations, starting each time from how the operation is actually performed.
 
 ## References
 
-[1] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
+[1] *Occupational health and safety management systems — Requirements with guidance for
+use*, ISO 45001:2018.
+
+[2] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
 Object Detection," in *Proc. IEEE CVPR*, 2016, pp. 779–788. arXiv:1506.02640.
 
-[2] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
+[3] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
 https://docs.ultralytics.com/models/yolo11/
 
-[3] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
+[4] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
 Object Detection with Transformers," in *Proc. ECCV*, 2020, pp. 213–229. arXiv:2005.12872.
 
-[4] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
+[5] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
 Available: https://github.com/roboflow/rf-detr
 
-[5] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
+[6] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
+Pattern Recognition (ICPR)*, 2006, pp. 850–855.
+
+[7] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
 https://docs.openvino.ai/
 
-[6] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
+[8] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
 pp. 740–755. arXiv:1405.0312.
 
-[7] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
+[9] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
+Object Classes (VOC) Challenge," *Int. J. Computer Vision*, vol. 88, no. 2, pp. 303–338, 2010.
+
+[10] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
+Object-Detection Algorithms," in *Proc. Int. Conf. Systems, Signals and Image Processing
+(IWSSIP)*, 2020, pp. 237–242.
+
+[11] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
 ISO 12100:2010.
 
-[8] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
+[12] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
 
-[9] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
+[13] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
 https://github.com/pymodbus-dev/pymodbus
 
-[10] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
+[14] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
+surveillance videos," *Automation in Construction*, vol. 85, pp. 1–9, 2018.
 
-[11] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
+[15] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
+construction personnel: A deep learning approach and benchmark dataset," *Automation in
+Construction*, vol. 106, art. 102894, 2019.
+
+[16] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
+detection of personal protective equipment," *Automation in Construction*, vol. 112,
+art. 103085, 2020.
+
+[17] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
+*Proc. Int. Conf. Learning Representations (ICLR)*, 2017. arXiv:1608.03983.
+
+[18] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
+Detection," arXiv:2004.10934, 2020.
+
+[19] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
+*J. American Statistical Association*, vol. 22, no. 158, pp. 209–212, 1927.
+
+[20] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
+arXiv:1503.02531, 2015.
+
+[21] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
+Integer-Arithmetic-Only Inference," in *Proc. IEEE/CVF CVPR*, 2018, pp. 2704–2713.
+
+[22] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
+
+[23] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
 IEC 60204-1:2016+A1:2021.
 
-[12] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
+[24] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
 mechanical latching function*, IEC 60947-5-5.
 
-[13] GE Aerospace, Pune, "EHS Risk Assessment, flat belt grinding station," doc. no. [EHSRA
-reference]. Internal.
-
-[14] GE Aerospace, Pune, "Management of Change record: PPE detection interlock," no. [MOC
-reference 1]. Internal.
-
-[15] GE Aerospace, Pune, "Management of Change record: relocation," no. [MOC reference 2].
-Internal.
-
-[16] GE Aerospace, Pune, "Standard Operating Procedure: PPE detection station," doc. no. [SOP
-reference]. Internal.
+[25] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
+for design*, ISO 13849-1:2023.
 
 <!-- attachments -->
 ## Attachments

@@ -65,6 +65,27 @@ reflection (Section 10.1).
 supervisor, subject-matter expert(s) and academic supervisor. The cover note already reads
 "other employee names are excluded" (changed 4 November).
 
+## Your edits of 4 November (internship-report_2.docx)
+
+Incorporated, with the wording made more formal:
+
+- **Cover:** student ID, company address and internship period filled in; the academic
+  supervisor row removed. The academic supervisor is therefore also gone from the
+  acknowledgements. Say if you want either back.
+- **Abstract:** "contributed to the design, development and commissioning".
+- **Section 1.2** (site description) and **Section 10.1** (supervision) written from your text.
+- **References:** the four internal documents (risk assessment, two MOC records, SOP) removed,
+  with their citations in Section 7.3. Following your note, 13 references were added where the
+  report already makes the claim (hierarchy of controls, NMS, AP metric, PPE-detection work,
+  cosine schedule, mosaic, Wilson interval, distillation, INT8, ISO 13849-1). All 25 are
+  renumbered in order of first citation. Check the details against the sources before
+  submission.
+- To stay at 24 pages: the outlook is one paragraph, the "like for like" open item (its
+  rationale went with the nano section) is gone, and Figure 8 is a little smaller.
+
+Still open on the cover: the industrial supervisor's name and designation (also in the
+acknowledgements, with the subject-matter expert placeholder).
+
 ## 0. Station configuration (received 2 November 2026)
 
 The report now describes the station's own `config.yaml`. These changes from the repository's
