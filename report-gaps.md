@@ -309,7 +309,9 @@ These are generated from repository data and stored in `docs/report/figures/`.
 
 Each SVG has a PNG copy, which the Word build uses.
 
-### 3.2 Still required
+### 3.2 Still required (no longer listed in the report)
+
+Attachment F was removed from the report on 4 November. Add any of these as figures if you obtain them.
 
 These are placeholders in the report. None can contain a part, a drawing or an identifiable
 face.

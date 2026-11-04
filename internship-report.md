@@ -1176,16 +1176,3 @@ def _evaluate(self) -> Status:
         return Status.STANDBY
     return Status.OK if all(c.satisfied for c in required) else Status.VIOLATION
 ```
-
-### Attachment F — Figures still required
-
-- **F1.** Operator interface in operator mode, with no person in frame.
-- **F2.** A photograph of the installed station, if the site permits one (the layout models are
-  Figure 8).
-- **F3.** Further examples of correct operation: an occluded glove credited; a bystander set
-  aside. (A compliant pair of views is Figure 5.)
-- **F4.** Three-panel examples of failure cases: a side-view miss; glove–sleeve confusion; the
-  angled posture.
-- **F5.** The annotation workflow.
-
-Faces other than the author's must be blurred, and no component may be visible.
