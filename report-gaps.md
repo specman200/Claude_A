@@ -100,6 +100,14 @@ guidelines, and a longer shop-floor trial as further work. Deliberately not adde
   more precisely that the system is a permissive layered on the machine's safety functions.
 - Placeholders (split percentages, functional-test counts, memory use): no measured values.
 
+**IPC specification (4 November):** filled in Section 7.1 from the System Information
+screenshot: processor, cores, RAM and OS. Left out: the PC's hostname and the logged-in user
+(an employee ID), both excluded by the cover note, and the manufacturer and model (supplier
+names are excluded). The CPU has integrated graphics that OpenVINO can use but the station
+does not; that is now further work (Table D1, item 12), and "without a GPU" now reads "without
+a discrete GPU". Note also that the PC enforces an App Control for Business (WDAC) policy:
+check with IT that the station installer is allowed by it before the rollout.
+
 Still open on the cover: the industrial supervisor's name and designation (also in the
 acknowledgements, with the subject-matter expert placeholder).
 

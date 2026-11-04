@@ -45,7 +45,7 @@ the operation is actually performed. The most consequential finding of this proj
 During my internship at GE Aerospace in Pune, India, I contributed to the design, development and commissioning
 of **Vision Guard**, a camera-based interlock that turns PPE compliance at a flat belt grinding station from
 an administrative control into an engineering control. Two cameras observe the operator. An
-industrial PC without a GPU runs a YOLO11s detector compiled with OpenVINO and decides whether the
+industrial PC without a discrete GPU runs a YOLO11s detector compiled with OpenVINO and decides whether the
 required PPE is worn. An Ethernet relay module, addressed over Modbus TCP, drives a tower light and
 buzzer and grants or withholds the grinder motor's run permissive.
 
@@ -67,11 +67,8 @@ safety relay to act independently of the software.
 ### 1.1 Motivation
 
 Flat belt grinding is a manual finishing operation. The operator holds a component by hand
-against a moving abrasive belt. The hazards are three:
-
-- abrasive dust;
-- sparks;
-- contact injury to the hands and forearms.
+against a moving abrasive belt. The hazards are three: abrasive
+dust, sparks, and contact injury to the hands and forearms.
 
 The station's required PPE answers each of them: safety glasses, gloves, sleeves and a mask. The
 deployed system also checks a head net, which the site requires at the station.
@@ -347,11 +344,10 @@ The table supports three readings:
   and v6 had the best recall (0.964). But each was validated on its own, growing, validation
   split, so differences of a few thousandths are not evidence that one version beats another.
 - **The nano and the apron model were trained on different data and settings.** The nano was
-  trained on Google Colab (NVIDIA T4 GPU) with a shorter schedule, on a separate dataset made
-  up entirely of working poses recreated in an isolated environment. It contained no shopfloor
-  images, so training in the cloud remained within the company's data policy. The apron model
-  was trained on a combined dataset with an eighth class, starting from an earlier fine-tuned
-  run. The higher figures of both are therefore not comparable with the others.
+  trained on Google Colab (NVIDIA T4 GPU) with a shorter schedule, on a separate dataset of
+  recreated working poses only; with no shopfloor images, cloud training stayed within the
+  company's data policy. The apron model used a combined dataset with an eighth class, starting
+  from an earlier fine-tuned run. Neither is directly comparable with the others.
 - **None of the six was compared on common ground during training.** Table 5 therefore scores
   all of them on one test set from station footage, held out from best-apron's training. The scoring is by
   class name, so differences in class order or class count do not matter. Each image is also
@@ -419,7 +415,7 @@ permissive. A queue would have been the conventional design, but the wrong one h
 every decision is made on an older frame, and for an interlock the age of the frame *is* the
 response time.
 
-![Figure 3. Threads and data flow as implemented.](docs/report/figures/fig-threads.png)
+![Figure 3. Threads and data flow as implemented.](docs/report/figures/fig-threads.png){width=80%}
 
 The Modbus reads and writes run on the pipeline thread (Figure 3). This fixes their order, latch
 first and lamps second, but puts network round trips inside every cycle. Their cost on the
@@ -638,12 +634,13 @@ a permissive must be most conservative.
 
 I researched industrial PCs against two sets of requirements:
 
-- **compute:** a multi-core x86 CPU without a GPU, as the measurements had shown;
+- **compute:** a multi-core x86 CPU without a discrete GPU, as the measurements had shown;
 - **the shopfloor:** dust, panel mounting, and two separate USB ports for the cameras.
 
 I obtained quotations, and evaluated the IT department's standard configuration so that the
 station would sit inside existing support arrangements. The chosen unit was tested on the
-shopfloor before commissioning. [IPC specification: to be completed.]
+shopfloor before commissioning: a compact PC from the IT standard range (Intel Core i5-13500T,
+14 cores, 16 GB RAM, Windows 11 Enterprise), whose processor cores run the inference.
 
 Electrical commissioning was done with the maintenance department. I verified the wiring of the
 vendor-built panel (tower light, relay module, e-stop and push button) before installation.
@@ -718,12 +715,9 @@ and I report only the two endpoints measured under identical conditions.
 ### 8.2 Detection performance
 
 The validation figures (P 0.942, R 0.955, mAP@0.5 0.966) are strong for a seven-class site
-detector, but they carry four limits:
-
-- they are averages over the classes;
-- they come from the split used to select the model;
-- they share their viewpoints with the training data;
-- they measure detection, not decision.
+detector, but they carry four limits: they are averages over the classes, they come from the
+split used to select the model, they share their viewpoints with the training data, and they
+measure detection, not decision.
 
 Attachment A removes the first limit with per-class results, and the common test set the
 second: there, v2 scores an mAP@0.5 of 0.873 rather than 0.966, and best-apron 0.948 (Table 5). Neither set of figures says anything about carried gloves
@@ -798,6 +792,8 @@ several rounds of review:
 - **A Bill of Quantities and Scope of Work** for each station.
 - **Acceptance test protocols**, with a pulled-wire test on each switch input.
 
+![Figure 8. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=75%}
+
 I also evaluated industrial cameras to replace the consumer webcams, which are not defensible in a
 dusty environment. The specification asked for USB 3 direct to the PC on a 2 m cable, and working
 distances of 0.5–1.0 m for the front camera and 1.0–1.5 m for the side camera. A **gemba walk**
@@ -814,7 +810,6 @@ volume. The monitor and tower light move onto the grinder, and the control panel
 pedestal, so nothing stands on the floor beside the machine. This answers management's comment
 on the size of the panel.
 
-![Figure 8. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=80%}
 
 ## 10. Critical reflection
 
@@ -1150,6 +1145,7 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | 9 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
 | 10 | Library versions | Align the training, export and runtime versions at the next retraining |
 | 11 | Test-split independence | Confirm that the common test images were also held out from v2–v6 |
+| 12 | Integrated graphics | Benchmark OpenVINO on the processor's integrated GPU, which the station does not yet use |
 
 ### Attachment E — Code and configuration
 
