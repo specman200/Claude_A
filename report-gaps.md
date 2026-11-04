@@ -361,6 +361,6 @@ These are the D items determined from the code.
   - training settings and all-class metrics: Attachment A;
   - per-class thresholds and timings, and the Modbus map: Attachment B;
   - failure behaviour: Attachment C;
-  - discrepancies: Attachment D.
+  - further work: Attachment D.
 - **In the full draft** (`docs/report/internship-report-full-draft.md`): every value cited by file
   and line, with the code listings and the configuration in its Appendices A and B.

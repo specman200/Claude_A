@@ -783,7 +783,7 @@ Two properties the objective took for granted are not yet met:
   software faults are fixed; the hard-wired e-stop and the relay watchdog are not.
 - **Detection of decision failures** such as carried gloves (Section 4.2).
 
-Neither is a matter of model accuracy, and both are on the list of open items in Chapter 11.
+Neither is a matter of model accuracy, and both are taken up as further work in Chapter 11.
 
 ## 9. Plant-wide rollout
 
@@ -852,11 +852,11 @@ someone who would never read its code was the best test of whether I understood 
   the scheduler all changed after they had been documented, and the specifications had to follow.
   Keeping one owner for those documents, and a record of each change, would have saved review
   rounds.
-- **Safety integration lagged behind the software.** The hard-wired e-stop is still pending, and
+- **Safety integration lagged behind the software.** The hard-wired e-stop remains further work, and
   two software failure paths were found only in the final review. A failure-mode analysis written
   *before* the first installation, not after it, would have found them earlier.
 
-## 11. Conclusion and outlook
+## 11. Conclusion and further work
 
 The internship delivered a working, approved and replicable PPE interlock:
 
@@ -869,19 +869,19 @@ The internship delivered a working, approved and replicable PPE interlock:
 - two fail-safe faults found in review and fixed, each with a test;
 - a rollout package for every flat belt grinder at the plant.
 
-Before the system is relied upon, the following items remain open, in order of priority:
+Further work would build on these results, in order of priority:
 
-1. **Fit the hard-wired emergency-stop safety relay.**
-2. **Verify the relay module's communication watchdog.**
-3. Document the EHS position on the 5–8 s correction windows and the single-glove requirement.
-4. Inspect best-apron's six false permits on the common test set.
-5. Reposition the cameras for the observed posture.
+1. **Emergency stop:** a hard-wired safety relay, independent of the software.
+2. **Watchdog:** enabling and testing the relay module's communication watchdog.
+3. **Correction windows:** an EHS position on the 5–8 s windows and the single-glove rule.
+4. **Model validation:** examining best-apron's six false permits on the common test set.
+5. **Camera placement:** repositioning the cameras for the observed working posture.
 
-Attachment D lists all open items. Beyond them, the outlook is to use the latency headroom to
-capture the accuracy that RF-DETR showed is available; to make decision failures measurable with
-a targeted evaluation set and then address them with a relational test of each glove against the
-detected hands; to close the loop from the capture mode to periodic retraining; to aggregate stop
-records across the fleet into evidence for tuning; and to apply the approach to other manual
+Attachment D details each of these. In the longer term, the latency headroom could be used to
+capture the accuracy that RF-DETR showed is available; decision failures could be made
+measurable with a targeted evaluation set and then addressed with a relational test of each glove
+against the detected hands; the capture mode could feed periodic retraining; stop records
+aggregated across the fleet could inform tuning; and the approach could be applied to other manual
 operations, starting each time from how the operation is actually performed.
 
 ## References
@@ -1128,24 +1128,23 @@ compliant and idle, or DEGRADED; dark means STANDBY.
 | E-stop wire broken (normally open) | Reads as "not pressed" | **E-stop ineffective** |
 | Operator leaves | STANDBY after ≈ 2 s | Inhibited |
 
-### Attachment D — Open items
+### Attachment D — Further work
 
-**Table D1.** Open technical items.
+**Table D1.** Further work, in order of priority.
 
-| # | Item | Next action |
+| # | Area | Proposed work |
 | --- | --- | --- |
-| 1 | Hard-wired e-stop | Fit the safety relay; normally closed, direct-opening contacts in the contactor circuit |
-| 2 | Single stopped camera | Fixed: results older than 1.5 s discarded, station DEGRADED. A camera streaming a frozen image is not yet detected |
-| 3 | Inference exception | Fixed: motor off on every failed cycle; exit after five, so the supervisor restarts |
-| 4 | Module watchdog | Enable; test by pulling the network cable with the motor running |
-| 5 | Modbus on the critical path | Measure the relay stage on the station |
-| 6 | Apron model | Inspect its six false permits on the common test set (Table 5); confirm in the risk assessment that an apron replaces sleeves |
-| 7 | Spectacles and carried gloves | Targeted evaluation set; relational hand test |
-| 8 | Camera geometry | Reposition and angle for the observed posture |
-| 9 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the rest, and one glove instead of two |
-| 10 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
-| 11 | Library version split | Align at the next retraining |
-| 12 | Test-split independence | Confirm the common test images were held out from v2–v6 as well |
+| 1 | Hard-wired emergency stop | Fit the safety relay, with normally closed, direct-opening contacts in the contactor circuit |
+| 2 | Communication watchdog | Enable the relay module's watchdog and test it by disconnecting the network cable with the motor running |
+| 3 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the other items, and one glove instead of two |
+| 4 | Apron model | Examine its six false permits on the common test set (Table 5); confirm in the risk assessment that an apron may replace sleeves |
+| 5 | Camera geometry | Reposition and angle the cameras for the observed working posture |
+| 6 | Frozen camera image | Detect a camera that keeps streaming an unchanging image, for example by checking that consecutive frames differ |
+| 7 | Spectacles and carried gloves | Build a targeted evaluation set; add a relational test of each glove against the detected hands |
+| 8 | Modbus timing | Measure the relay stage's contribution to latency on the station |
+| 9 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
+| 10 | Library versions | Align the training, export and runtime versions at the next retraining |
+| 11 | Test-split independence | Confirm that the common test images were also held out from v2–v6 |
 
 ### Attachment E — Code and configuration
 
