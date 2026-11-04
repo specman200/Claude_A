@@ -324,7 +324,8 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     s = doc.read_text(encoding="utf-8")
     s = s.replace("<w:body>", "<w:body>" + cover_xml(cover), 1)
     # Placeholders: the character style pandoc made, plus a real highlight the author can clear.
-    s = re.sub(r'<w:rStyle w:val="Placeholder" ?/>', '<w:rStyle w:val="Placeholder"/>' + HIGHLIGHT, s)
+    s = re.sub(r'<w:rStyle w:val="Placeholder" ?/>',
+               '<w:rStyle w:val="Placeholder"/>' + HIGHLIGHT, s)
     # A table caption is a bold "Table N." paragraph: keep it on the page of its table.
     s = re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr><w:r><w:rPr><w:bCs ?/>'
                r'<w:b ?/></w:rPr><w:t[^>]*>Table [A-Z]?\d+\.</w:t>)',
