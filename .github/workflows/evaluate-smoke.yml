@@ -61,4 +61,4 @@ jobs:
           cp internship-report.md /tmp/report.md
           python -m ppe.evaluate --data /tmp/smoke/data.yaml --out /tmp/eval --report /tmp/report.md
           cat /tmp/eval/model-evaluation.md
-          grep -c "Table A3" /tmp/report.md
+          grep -c "AP@0.5 per class on the common test set" /tmp/report.md

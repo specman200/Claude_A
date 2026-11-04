@@ -8,7 +8,7 @@ The Markdown file `internship-report.md` stays the single source. This script:
 - replaces the `<!-- cover -->` block with a formatted cover page (title, name, student ID,
   company and address, and a box for the trainer's stamp and signature);
 - puts a table of contents after the abstract, then a list of figures and a list of tables;
-- starts the attachments on a new page;
+- starts the attachments, if the report has any, on a new page;
 - applies the required body format (12 pt, 1.5 line spacing) on A4 with 2.5 cm margins;
 - numbers the pages in the footer, leaving the cover unnumbered.
 

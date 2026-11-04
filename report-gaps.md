@@ -108,6 +108,14 @@ does not; that is now further work (Table D1, item 12), and "without a GPU" now 
 a discrete GPU". Note also that the PC enforces an App Control for Business (WDAC) policy:
 check with IT that the station installer is allowed by it before the rollout.
 
+**Attachments moved inline (4 November):** at your request every attachment now sits beside
+its first mention, and tables and figures are renumbered in order of appearance (14 of each).
+The body is therefore about 30 pages (Introduction p. 6, References p. 36) against the
+guideline's ~24 for SPO 2021. Table A2 duplicated the sentence above it and is folded into it
+(F1 0.949). The two code excerpts now carry their current line numbers. Older notes in this
+file use the old labels (Table 5 is now Table 7; A3–A6 are 8–11; B1, C1, D1 are 12, 13, 14).
+`ppe.evaluate --report` keeps whatever table numbers the report uses.
+
 Still open on the cover: the industrial supervisor's name and designation (also in the
 acknowledgements, with the subject-matter expert placeholder).
 

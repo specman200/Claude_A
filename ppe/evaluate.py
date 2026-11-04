@@ -646,10 +646,24 @@ def write_outputs(results: list[ModelResult], ds: Dataset, out: Path, meta: dict
     return md
 
 
+TABLE_LABEL = re.compile(r"\*\*Table ([A-Z]?\d+)\.\*\*")
+
+
+def keep_table_numbers(old: str, new: str) -> str:
+    """Give the new block's tables the numbers the old block used, in order, if they match up."""
+    labels = TABLE_LABEL.findall(old)
+    if len(labels) != len(TABLE_LABEL.findall(new)):
+        return new
+    it = iter(labels)
+    return TABLE_LABEL.sub(lambda _: f"**Table {next(it)}.**", new)
+
+
 def fill_report(report: Path, blocks: dict[str, str]) -> list[str]:
     """Replace each <!-- evaluation:NAME --> ... <!-- /evaluation:NAME --> block.
 
-    Returns the names filled.
+    Returns the names filled. Table numbers already in a block are kept, so a report that
+    numbers its tables differently (they moved, or others were added before them) stays
+    consistent with its own cross-references.
     """
     text = report.read_text(encoding="utf-8")
     done = []
@@ -659,6 +673,7 @@ def fill_report(report: Path, blocks: dict[str, str]) -> list[str]:
         if a < 0 or b < a:
             log.warning("no %s ... %s block in %s; left it out", start, end, report)
             continue
+        body = keep_table_numbers(text[a + len(start) : b], body)
         text = text[: a + len(start)] + "\n" + body.strip() + "\n" + text[b:]
         done.append(name)
     report.write_text(text, encoding="utf-8")

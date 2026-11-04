@@ -1,5 +1,7 @@
 """The common-dataset model comparison: metrics, decisions, dataset loading, report filling."""
 
+import re
+
 import cv2
 import numpy as np
 import pytest
@@ -249,3 +251,20 @@ def test_an_apron_wearer_is_a_false_stop_the_seven_class_model_cannot_avoid(data
     eight = ev.evaluate_model("apron", "apron.pt", names, ds, cfg, perfect)
     assert eight.decisions.agree == 1 and eight.decisions.truth_ok_unseeable == 0
     assert "| 0.0 % (0/1) |" in ev.summary_table([eight], ds)
+
+
+def test_refilling_keeps_the_table_numbers_the_report_uses(dataset, cfg, tmp_path):
+    """Tables moved and renumbered in the report must keep their numbers on a re-run."""
+    data, root = dataset
+    ds = ev.load_dataset(data, root=root)
+    r = ev.evaluate_model("fake", "fake.pt", ["Mask", "person"], ds, cfg, lambda image: ([], 1.0))
+    report = tmp_path / "report.md"
+    report.write_text(
+        "<!-- evaluation:summary -->\n**Table 7.** old\n<!-- /evaluation:summary -->\n"
+        "<!-- evaluation:detail -->\n**Table 8.** a\n**Table 9.** b\n**Table 10.** c\n"
+        "**Table 11.** d\n<!-- /evaluation:detail -->\n"
+    )
+    blocks = {"summary": ev.summary_table([r], ds), "detail": ev.detail_tables([r], ds)}
+    ev.fill_report(report, blocks)
+    labels = re.findall(r"\*\*Table (\w+)\.\*\*", report.read_text())
+    assert labels == ["7", "8", "9", "10", "11"]

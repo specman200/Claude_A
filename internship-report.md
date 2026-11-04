@@ -190,11 +190,25 @@ The relay module's outputs drive the green, amber and red lamps, the buzzer and 
 permissive (DO1–DO5). Its inputs read the emergency stop and a start/stop push button (DI1,
 DI2). A control panel houses the relay module, its power supply, the e-stop, the push button and
 the PC. An overload relay protects the motor, and the camera stands were fabricated to measured
-dimensions.
+dimensions. Table 2 gives the module's Modbus map.
+
+**Table 2.** Modbus map of the relay module (addresses 0-based).
+
+| Signal | Object | Address | Channel | 1 means |
+| --- | --- | --- | --- | --- |
+| Green / amber / red lamp | Coil | 0 / 1 / 2 | DO1–DO3 | lamp on |
+| Buzzer | Coil | 3 | DO4 | sounding |
+| Motor permissive | Coil | 4 | DO5 | permissive granted |
+| E-stop | Discrete input | 0 | DI1 | operated (normally open) |
+| Push button | Discrete input | 1 | DI2 | pressed (normally open) |
+
+Lamps: red means an e-stop or a violation; green means compliant and running; amber means
+compliant and idle, or DEGRADED; dark means STANDBY.
 
 ![Figure 1. System architecture.](docs/report/figures/fig-architecture.png)
 
-The software is a Python application of about 5,800 lines, with a test suite. Its main
+The software is a Python application of about 5,800 lines, with a test suite, held in the project
+repository (`ppe/`, `main.py`, `config.yaml`). Its main
 dependencies are:
 
 - Ultralytics;
@@ -216,13 +230,13 @@ Section 6.4 returns to this point.
 
 ### 4.1 Class schema and site-specific data
 
-The model described in this report detects seven classes (Table 2). They are five items of
+The model described in this report detects seven classes (Table 3). They are five items of
 equipment, the person who wears them, and one *non-compliant state*, `Wrong Sleeve`, which the
 station treats as a violation whenever it is detected. The station now runs a later version,
 `best-apron`, that adds an `Apron` class (Section 4.4). Section 4.3 describes the training of
 the seven-class model that was deployed first.
 
-**Table 2.** Class schema and the role of each class.
+**Table 3.** Class schema and the role of each class.
 
 | Class | Role in the decision | Count required |
 | --- | --- | --- |
@@ -289,7 +303,22 @@ The model is YOLO11s, fine-tuned from COCO weights:
 - mosaic [18], colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
-I trained it on a CUDA GPU in about two hours. Attachment A lists the full configuration.
+I trained it on a CUDA GPU in about two hours. Table 4 lists the full configuration.
+
+**Table 4.** Training configuration of the first deployed model (v2).
+
+| Parameter | Value | Parameter | Value |
+| --- | --- | --- | --- |
+| Initial weights | `yolo11s.pt` (COCO) | Image size | 640 (square, `rect: false`) |
+| Epochs planned / run | 150 / 105 | Patience | 30 (best epoch 75) |
+| Batch | 16 | Optimiser | `auto` |
+| `lr0` / `lrf` | 0.01 / 0.01, cosine | Momentum / weight decay | 0.937 / 0.0005 |
+| Warm-up | 3 epochs | Loss gains box / cls / dfl | 7.5 / 0.5 / 1.5 |
+| HSV h / s / v | 0.015 / 0.7 / 0.4 | Rotation / translate / scale | ±5° / 0.1 / 0.5 |
+| Flip left–right / up–down | 0.5 / 0 | Mosaic / mixup / copy-paste | 1.0 / 0 / 0 |
+| Auto-augment / erasing | RandAugment / 0.4 | AMP / seed | on / 0 (deterministic) |
+| Device | CUDA GPU 0 | Duration | 7,180 s (≈ 2 h) |
+| Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
 
 ![Figure 2. Validation precision, recall and mAP over 105 epochs.](docs/report/figures/fig-training-metrics.png)
 
@@ -298,11 +327,13 @@ Figure 2 shows the convergence in three phases:
 1. **Rapid adaptation.** The pretrained network reached an mAP@0.5 of 0.867 after one epoch.
 2. **Steady gains in localisation.** mAP@0.5 reached 0.96 by about epoch 40, and mAP@0.5:0.95
    kept rising until epoch 75.
-3. **Plateau.** The validation losses stopped improving while the training losses kept falling,
-   the characteristic onset of over-fitting.
+3. **Plateau.** The validation losses stopped improving while the training losses kept falling
+   (Figure 3), the characteristic onset of over-fitting.
+
+![Figure 3. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
 
 Early stopping ended training at epoch 105 and kept epoch 75. At that epoch the model reached
-precision 0.942, recall 0.955, mAP@0.5 0.966 and mAP@0.5:0.95 0.840, averaged over the seven
+precision 0.942, recall 0.955 (F1 0.949), mAP@0.5 0.966 and mAP@0.5:0.95 0.840, averaged over the seven
 classes.
 
 Mosaic switch-off and the final low-learning-rate phase were scheduled against the *planned* 150
@@ -310,9 +341,9 @@ epochs, so early stopping meant they never ran. Both can be recovered at no cost
 
 ### 4.4 Model selection
 
-Table 3 lists the configurations evaluated.
+Table 5 lists the configurations evaluated.
 
-**Table 3.** Configurations evaluated on the station hardware.
+**Table 5.** Configurations evaluated on the station hardware.
 
 | Model | Runtime | End-to-end latency | Outcome |
 | --- | --- | --- | --- |
@@ -320,10 +351,12 @@ Table 3 lists the configurations evaluated.
 | YOLO11s | OpenVINO | ≈ 40 ms, within budget | **deployed** |
 | RF-DETR | — | ≈ 1500 ms | rejected on latency; accuracy good |
 
-**Model versions.** I trained six versions in all (Table 4), one of them on the smaller YOLO11n
-scale. Figure A2 in Attachment A shows their training curves.
+**Model versions.** I trained six versions in all (Table 6), one of them on the smaller YOLO11n
+scale. Figure 4 shows their training curves.
 
-**Table 4.** Model versions: validation metrics at each run's best epoch, and CPU inference
+![Figure 4. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
+
+**Table 6.** Model versions: validation metrics at each run's best epoch, and CPU inference
 time after conversion to OpenVINO with the same tool (FP32, 640 × 640, median of 60 calls on one
 4-core CPU).
 
@@ -348,13 +381,13 @@ The table supports three readings:
   recreated working poses only; with no shopfloor images, cloud training stayed within the
   company's data policy. The apron model used a combined dataset with an eighth class, starting
   from an earlier fine-tuned run. Neither is directly comparable with the others.
-- **None of the six was compared on common ground during training.** Table 5 therefore scores
+- **None of the six was compared on common ground during training.** Table 7 therefore scores
   all of them on one test set from station footage, held out from best-apron's training. The scoring is by
   class name, so differences in class order or class count do not matter. Each image is also
   judged with the station's own decision logic, to count false permits and false stops directly.
 
 <!-- evaluation:summary -->
-**Table 5.** All model versions on one common test set (477 images, split `test`). mAP over the 7 classes every model detects; decisions from the station's own logic at its configured floors, single frame. *Like for like* leaves out compliant images that need a class the model lacks (an apron worn instead of sleeves).
+**Table 7.** All model versions on one common test set (477 images, split `test`). mAP over the 7 classes every model detects; decisions from the station's own logic at its configured floors, single frame. *Like for like* leaves out compliant images that need a class the model lacks (an apron worn instead of sleeves).
 
 | Model | Classes | mAP@0.5 | mAP@0.5:0.95 | Mean recall | False permits | False stops | False stops, like for like | ms/frame |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -366,18 +399,18 @@ The table supports three readings:
 | yolo11s-v6 | 7 | 0.922 | 0.808 | 0.877 | 0.2 % (1/428) | 72.9 % (35/48) | 48.0 % (12/25) | 36.3 |
 <!-- /evaluation:summary -->
 
-Table 5 settles two questions that the validation scores left open.
+Table 7 settles two questions that the validation scores left open.
 
 **The data rounds paid off, and the validation splits hid it.** On common ground,
 mAP@0.5:0.95 rises from 0.723 for v2 through 0.770 (v4) and 0.808 (v6) to 0.835 for best-apron,
-where Table 4 showed differences of four thousandths. The gains sit in the classes the rounds
-were aimed at (Tables A3–A5): AP@0.5 for gloves rises from 0.77 to 0.97, and recall for safety
+where Table 6 showed differences of four thousandths. The gains sit in the classes the rounds
+were aimed at (Tables 8–10): AP@0.5 for gloves rises from 0.77 to 0.97, and recall for safety
 glasses from 0.55 to 0.90. The eighth class cost the other seven nothing: best-apron leads on five
 of them and is within 0.011 of the leader on the other two. Safety glasses remain the weakest
 class for every model.
 
 **The decision errors move in opposite directions.** best-apron falsely stops 5 of the 48
-images labelled compliant, against 35 to 41 for the seven-class models. Part of that gap is
+images labelled compliant (Table 11), against 35 to 41 for the seven-class models. Part of that gap is
 structural: a model without an apron class must stop every compliant operator who wears an apron
 instead of sleeves, however well it detects. That applies to 23 of the 48 compliant images.
 Leaving them out, the seven-class models still falsely stop 12 to 18 of the remaining 25
@@ -395,8 +428,60 @@ false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
 the older models are flattered, not best-apron.
 
-All five small models cost the same on the CPU (Table 4), so choosing between them is purely a
-question of accuracy. On that, Table 5 favours `best-apron`, which the station runs.
+<!-- evaluation:detail -->
+**Table 8.** AP@0.5 per class on the common test set. — means the model has no such class.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.987 | 0.971 | 0.962 | 0.985 | 0.983 | 0.986 |
+| headnet | 319 | 0.994 | 0.989 | 0.993 | 0.995 | 0.995 | 0.995 |
+| Gloves | 421 | 0.971 | 0.772 | 0.814 | 0.898 | 0.885 | 0.904 |
+| Mask | 281 | 0.965 | 0.944 | 0.916 | 0.976 | 0.959 | 0.970 |
+| Safetyglasses | 296 | 0.866 | 0.724 | 0.658 | 0.791 | 0.769 | 0.822 |
+| sleeves | 378 | 0.923 | 0.828 | 0.784 | 0.842 | 0.838 | 0.883 |
+| Wrong Sleeve | 77 | 0.928 | 0.881 | 0.913 | 0.873 | 0.898 | 0.892 |
+| Apron | 76 | 0.990 | — | — | — | — | — |
+
+**Table 9.** AP@0.5:0.95 per class on the common test set.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.973 | 0.891 | 0.868 | 0.906 | 0.928 | 0.952 |
+| headnet | 319 | 0.922 | 0.862 | 0.871 | 0.901 | 0.867 | 0.917 |
+| Gloves | 421 | 0.866 | 0.651 | 0.680 | 0.758 | 0.756 | 0.803 |
+| Mask | 281 | 0.849 | 0.773 | 0.747 | 0.830 | 0.823 | 0.863 |
+| Safetyglasses | 296 | 0.638 | 0.503 | 0.454 | 0.561 | 0.567 | 0.605 |
+| sleeves | 378 | 0.817 | 0.695 | 0.672 | 0.726 | 0.729 | 0.781 |
+| Wrong Sleeve | 77 | 0.776 | 0.684 | 0.687 | 0.709 | 0.735 | 0.731 |
+| Apron | 76 | 0.934 | — | — | — | — | — |
+
+**Table 10.** Recall per class at each model's best mean-F1 confidence threshold.
+
+| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| person | 476 | 0.989 | 0.916 | 0.971 | 0.966 | 0.964 | 0.968 |
+| headnet | 319 | 0.997 | 0.950 | 0.981 | 0.997 | 0.988 | 0.989 |
+| Gloves | 421 | 0.967 | 0.670 | 0.753 | 0.804 | 0.815 | 0.862 |
+| Mask | 281 | 0.979 | 0.796 | 0.897 | 0.940 | 0.858 | 0.900 |
+| Safetyglasses | 296 | 0.895 | 0.554 | 0.577 | 0.631 | 0.675 | 0.668 |
+| sleeves | 378 | 0.934 | 0.816 | 0.797 | 0.828 | 0.847 | 0.894 |
+| Wrong Sleeve | 77 | 0.896 | 0.870 | 0.883 | 0.831 | 0.845 | 0.857 |
+| Apron | 76 | 1.000 | — | — | — | — | — |
+
+**Table 11.** Station decisions against the labels, per image (single frame, configured floors).
+
+| Model | Agree | False permits | False stops | of which need a missing class | Other | Labels: OK / violation / nobody |
+| --- | --- | --- | --- | --- | --- | --- |
+| best-apron | 465/477 | 6 | 5 | 0 | 1 | 48 / 428 / 1 |
+| v2 (ppe-yolo11s) | 433/477 | 0 | 41 | 23 | 3 | 48 / 428 / 1 |
+| yolo11n-nano3 | 434/477 | 4 | 38 | 23 | 1 | 48 / 428 / 1 |
+| yolo11s-v4 | 430/477 | 0 | 40 | 23 | 7 | 48 / 428 / 1 |
+| yolo11s-v5 | 435/477 | 0 | 37 | 23 | 5 | 48 / 428 / 1 |
+| yolo11s-v6 | 436/477 | 1 | 35 | 23 | 5 | 48 / 428 / 1 |
+<!-- /evaluation:detail -->
+
+All five small models cost the same on the CPU (Table 6), so choosing between them is purely a
+question of accuracy. On that, Table 7 favours `best-apron`, which the station runs.
 
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
@@ -415,9 +500,9 @@ permissive. A queue would have been the conventional design, but the wrong one h
 every decision is made on an older frame, and for an interlock the age of the frame *is* the
 response time.
 
-![Figure 3. Threads and data flow as implemented.](docs/report/figures/fig-threads.png){width=80%}
+![Figure 5. Threads and data flow as implemented.](docs/report/figures/fig-threads.png){width=80%}
 
-The Modbus reads and writes run on the pipeline thread (Figure 3). This fixes their order, latch
+The Modbus reads and writes run on the pipeline thread (Figure 5). This fixes their order, latch
 first and lamps second, but puts network round trips inside every cycle. Their cost on the
 station network has not been measured.
 
@@ -429,7 +514,18 @@ each frame wait for the other. Taking turns therefore halved the latency per fra
 
 A scheduling bug starved the slower camera: the round-robin cursor did not advance when a camera
 was served alone. A camera with a fresh frame every second cycle was served on only 3 of its 6 chances. After the fix,
-both cameras are served whenever they have a frame, alternating strictly when both deliver.
+both cameras are served whenever they have a frame, alternating strictly when both deliver. The
+resulting scheduler is short:
+
+```python
+# ppe/pipeline.py:301-306 — camera scheduler (one camera per cycle on a CPU)
+if self.detector.batches:
+    return fresh
+n = len(self.cameras)
+chosen = min(fresh, key=lambda f: (f.index - self._turn) % n)
+self._turn = (chosen.index + 1) % n
+return [chosen]
+```
 
 ### 5.3 Letterboxing and USB bandwidth
 
@@ -462,9 +558,7 @@ stays at FP32. INT8 quantisation [21] remains available, but it needs calibratio
 
 ### 6.1 From detections to a verdict
 
-Figure 4 shows the decision path from detections to the motor permissive.
-
-![Figure 4. Decision flow from detections to the motor permissive.](docs/report/figures/fig-decision-flow.png)
+Figure 6 shows the decision path from detections to the motor permissive.
 
 The verdict takes one of four values:
 
@@ -473,7 +567,20 @@ The verdict takes one of four values:
 - **STANDBY:** nobody is present;
 - **DEGRADED:** the station cannot judge.
 
-Only OK permits the motor.
+Only OK permits the motor. In code, the verdict reduces to a few lines:
+
+```python
+# ppe/tower.py:224-231 — the verdict
+def _evaluate(self) -> Status:
+    required = [c for c in self.classes if c.required]
+    if not required or self.unavailable():
+        return Status.DEGRADED
+    if self._subject is not None and not self._subject.present:
+        return Status.STANDBY
+    return Status.OK if all(c.satisfied for c in required) else Status.VIOLATION
+```
+
+![Figure 6. Decision flow from detections to the motor permissive.](docs/report/figures/fig-decision-flow.png)
 
 Two choices recur throughout. First, **counts come from the best single camera, never the sum**:
 two cameras that each see the same two gloves must not report four. Second, **the operator is the
@@ -488,7 +595,7 @@ Bystanders and their equipment are ignored. A missed person gives STANDBY, which
 but still stops the motor. The same mechanism explains the large-workpiece problem in
 Section 8.3.
 
-Figure 5 shows both rules on photographs of a recreated working pose, taken in an isolated
+Figure 7 shows both rules on photographs of a recreated working pose, taken in an isolated
 environment and annotated with best-apron's detections at the station's confidence floors. The
 side view (a) holds every required item and on its own would permit the motor; only one sleeve
 is visible, which the station's count of one accepts. The front view (b) shows the head net,
@@ -496,7 +603,7 @@ glasses and mask clearly but not the hands, so on its own it would be a violatio
 together, as the station judges its two cameras, the pair is compliant: the gloves and sleeve
 come from the side camera.
 
-![Figure 5. Detections by best-apron on a recreated working pose: (a) side view, (b) front view, each a single frame at the station's confidence floors.](docs/report/figures/fig-example-detections.png)
+![Figure 7. Detections by best-apron on a recreated working pose: (a) side view, (b) front view, each a single frame at the station's confidence floors.](docs/report/figures/fig-example-detections.png)
 
 ### 6.2 The debounce and hold-window trade-off
 
@@ -521,7 +628,10 @@ out keeps its credited count for its hold period, from 0.4 s to 1.2 s. **Gloves 
 get a separate 5 s *occlusion window* that applies only while *some but not all* of the pair are
 visible. One visible glove is evidence that the pair is worn, so the tolerance is granted on
 evidence. Safety glasses, rarely occluded the same way, get only their 1.1 s hold. Tests confirmed
-that the revised logic handles occlusion of gloves and sleeves well.
+that the revised logic handles occlusion of gloves and sleeves well. Figure 8 shows both windows
+for a pair of gloves.
+
+![Figure 8. The two windows for a pair of gloves.](docs/report/figures/fig-hold-windows.png)
 
 Testing also found a defect, which I measured rather than assumed. Both windows had been timed
 from the last *full* sighting, so a partial view silently consumed the dropout hold. After one
@@ -544,7 +654,26 @@ station also raised:
 - the `Wrong Sleeve` hold from 0.4 s to 1.2 s.
 
 These are risk decisions, not only tuning decisions, and they belong in the risk assessment.
-Attachment B tabulates every class's thresholds and timings.
+Table 12 lists every class's thresholds and timings.
+
+**Table 12.** Per-class settings of the station configuration, and the time from an item
+leaving view to the motor stopping, simulated with the station's own logic on a running machine.
+Values from the first configuration are given in brackets where they changed.
+
+| Class | Confidence | Containment | Hold | Count | Correction window | Motor stops after |
+| --- | --- | --- | --- | --- | --- | --- |
+| Head net | 0.50 | 0.5 | 0.8 s | 1 | 8 s (5 s) | 9.3 s (6.3 s) |
+| Safety glasses | 0.60 | 0.5 | 1.1 s | 1 | 5 s (0 s) | 6.6 s (1.6 s) |
+| Mask | 0.60 | 0.5 | 0.7 s | 1 | 8 s (5 s) | 9.2 s (6.2 s) |
+| Gloves | 0.67 (0.60) | 0.1 | 1.0 s | 1 (2) | 5 s (0 s) | 6.5 s (1.5 s); one of two removed: never (5.5 s) |
+| Sleeves | 0.75 | 0.3 | 1.2 s | 1 (2) | 8 s (5 s) | 9.7 s (6.7 s); one of two removed: never (10.5 s) |
+| Apron | 0.60 | 0.5 | 1.2 s | 1 | 8 s | as sleeves (alternative) |
+| Wrong Sleeve (forbidden) | 0.90 | 0.5 | 1.2 s (0.4 s) | 0 | 0 s | 0.5 s after it appears |
+| Person (subject) | 0.70 (0.25) | — | 1.0 s | — | — | STANDBY, motor stops after ≈ 2 s |
+
+Other settings: confirmation periods OK 1.0 s, VIOLATION 0.4 s, STANDBY 1.0 s, DEGRADED 0.5 s;
+occlusion window 8 s (5 s), which no longer applies with a count of one; runtime NMS IoU 0.50;
+global confidence floor 0.35.
 
 ### 6.3 Warning before inhibition
 
@@ -563,7 +692,7 @@ detected violation.** As implemented, the window has four properties:
   a missing glove;
 - it is set once and never renewed, so flickering PPE cannot hold the machine open.
 
-Figure 6 shows the resulting stop times. I obtained them by running the station's compliance and
+Figure 9 shows the resulting stop times. I obtained them by running the station's compliance and
 latch code on its configuration with simulated detections. The same method reproduces the times
 recorded earlier for the first configuration (1.5 s for gloves, 6.3 s for a mask). A detected
 wrong sleeve still stops a running machine in 0.5 s. But a missing glove or missing safety glasses
@@ -573,7 +702,7 @@ defensible choice for nuisance stops, but it reverses the earlier decision to gi
 to the items whose absence is the immediate hazard. **It needs an explicit, documented EHS
 position before rollout.**
 
-![Figure 6. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
+![Figure 9. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
 
 The permissive is a **latch**, like the seal-in contact of a motor starter. Pressing the button
 starts the motor only when four conditions hold:
@@ -589,7 +718,7 @@ switched off at connection and at shutdown.
 
 ### 6.4 Failure behaviour
 
-I analysed what the code does when each part fails (Attachment C), and confirmed two paths by
+I analysed what the code does when each part fails (Table 13), and confirmed two paths by
 running the real pipeline against a stubbed model. Both were software faults, and I fixed them.
 The behaviour divides as follows.
 
@@ -627,6 +756,22 @@ configuration rather than code:
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
 a permissive must be most conservative.
+
+**Table 13.** Behaviour of the implemented code under failure.
+
+| Failure | What the code does | Grinder ends up |
+| ---------- | ------------------ | --------- |
+| Both cameras stop | DEGRADED after 1.5 s stale + 0.5 s confirm; latch dropped | Inhibited (≈ 2 s) |
+| One camera stops, other runs | Camera counted down after 1.5 s; its results discarded; DEGRADED, camera named | Inhibited (≈ 2 s; fixed) |
+| Camera streams a frozen image | Treated as fresh frames | **Can stay enabled** |
+| Model fails to load | Board blanked before load; pipeline closes the board | Inhibited |
+| Inference throws mid-run | Each failed cycle sets DEGRADED; after 5 in a row, board closed and process exits | Inhibited; supervisor restarts (fixed) |
+| Relay unreachable | Latch dropped in software; write cannot arrive | **Last state** unless module watchdog |
+| Crash or kill | Supervisor restarts after ≥ 2 s; board blanked on connect | **Enabled until restart** |
+| Hang, PC power loss, cable pulled | Nothing detects it | **Last state** unless module watchdog |
+| E-stop pressed | Read on DI1; latch dropped | Inhibited, via software only |
+| E-stop wire broken (normally open) | Reads as "not pressed" | **E-stop ineffective** |
+| Operator leaves | STANDBY after ≈ 2 s | Inhibited |
 
 ## 7. Deployment and commissioning
 
@@ -695,12 +840,12 @@ The plant then decided to deploy the system on all flat belt grinders, and to pr
 
 **End-to-end latency on the station fell from 300–400 ms to about 40 ms**, measured from camera
 grab to relay write. A controlled benchmark on a 4-core development host reproduced the effect
-(Figure 7):
+(Figure 10):
 
 - the median fell from 488 ms to 48 ms;
 - the cycles completed in 25 s rose from 56 to 793.
 
-![Figure 7. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
+![Figure 10. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
 
 Per-stage instrumentation decided the fix. In the untuned pipeline, inference took **98.6 %** of
 each cycle, and all the code I had written myself took under 2 %. Only the forward pass was worth
@@ -719,12 +864,38 @@ detector, but they carry four limits: they are averages over the classes, they c
 split used to select the model, they share their viewpoints with the training data, and they
 measure detection, not decision.
 
-Attachment A removes the first limit with per-class results, and the common test set the
-second: there, v2 scores an mAP@0.5 of 0.873 rather than 0.966, and best-apron 0.948 (Table 5). Neither set of figures says anything about carried gloves
+The per-class results remove the first limit (Tables 8–10, and best-apron's validation below),
+and the common test set the second: there, v2 scores an mAP@0.5 of 0.873 rather than 0.966, and best-apron 0.948 (Table 7). Neither set of figures says anything about carried gloves
 or prescription spectacles. In operation the model is no
 longer the main source of risk. The false stops that mattered came from viewpoints it was not
 designed for, and the false permits come from decisions the schema cannot express (Section 4.2)
 and from the software–machine boundary (Section 6.4).
+
+**Validation of best-apron.** Figures 11 to 13 show the final validation of the eight-class
+model the station runs. Per-class AP@0.5 ranges from 0.972 for safety glasses to 0.995 for the
+head net and mask, with a mean of 0.986 (Table 6 records 0.987 at the best epoch during
+training). The F1 score over all classes peaks at 0.97 at a confidence of 0.46 and stays within a
+few hundredths of that value between about 0.1 and 0.7, so the result is not sensitive to the
+exact threshold. Safety glasses are the exception: their F1 score is the lowest at every
+threshold and the first to fall away, and their precision drops below about 0.9 at confidences
+under 0.3, as does that of `Wrong Sleeve` to a lesser degree. The station's floors for these two
+classes, 0.60 and 0.90 (Table 12), lie well above that region.
+
+The confusion matrix shows almost no confusion between classes: at least 97 % of the instances
+of each class are detected as that class. The errors lie with the background. Up to 3 % of gloves
+and wrong sleeves are missed, and of the false detections on background, 35 % are safety glasses
+and a quarter each are gloves and sleeves. A false detection of a required item is the error that
+can credit missing PPE; the containment test of Section 6.1 discards those outside the operator.
+The only confusion between two classes is that 1 % of wrong sleeves are detected as sleeves. It is
+small but safety-relevant, because a wrong sleeve read as a sleeve is a path to a false permit.
+The training curves (Figure 13) show the validation losses levelling off after about 60 epochs,
+consistent with the best epoch of 63.
+
+![Figure 11. Precision–recall and F1–confidence curves of best-apron. Validation split.](docs/report/figures/fig-apron-pr-f1.png)
+
+![Figure 12. Normalised confusion matrix of best-apron. Validation split; each column is a true class.](docs/report/figures/fig-apron-confusion.png){width=70%}
+
+![Figure 13. Training curves of best-apron over 93 epochs: losses and validation metrics.](docs/report/figures/fig-apron-training.png)
 
 ### 8.3 The operator feedback finding
 
@@ -744,7 +915,7 @@ Three remedies were identified:
 - reposition the cameras for large workpieces;
 - angle them so that every class stays observable in the posture operators actually adopt;
 - retrain with an apron class. This has since been done: the station runs `best-apron`, an
-  eight-class version (Table 4), and its configuration accepts an apron in place of sleeves.
+  eight-class version (Table 6), and its configuration accepts an apron in place of sleeves.
 
 **This is a requirements failure, not a model failure.** The model correctly reported that it
 could not see a glove turned away from it. The camera placement had been derived from an *assumed*
@@ -792,7 +963,7 @@ several rounds of review:
 - **A Bill of Quantities and Scope of Work** for each station.
 - **Acceptance test protocols**, with a pulled-wire test on each switch input.
 
-![Figure 8. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=75%}
+![Figure 14. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=75%}
 
 I also evaluated industrial cameras to replace the consumer webcams, which are not defensible in a
 dusty environment. The specification asked for USB 3 direct to the PC on a 2 m cable, and working
@@ -805,7 +976,7 @@ setting saves an operating-system change at every station, and local annotation 
 contribute failure cases without an exception to the data rules.
 
 The station was also redesigned as an integrated tower that fits within the grinder's own envelope
-(Figure 8): 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in
+(Figure 14): 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in
 volume. The monitor and tower light move onto the grinder, and the control panel onto its
 pedestal, so nothing stands on the floor beside the machine. This answers management's comment
 on the size of the panel.
@@ -867,15 +1038,26 @@ The internship delivered a working, approved and replicable PPE interlock:
 - two fail-safe faults found in review and fixed, each with a test;
 - a rollout package for every flat belt grinder at the plant.
 
-Further work would build on these results, in order of priority:
+Further work would build on these results; Table 14 lists it in order of priority.
 
-1. **Emergency stop:** a hard-wired safety relay, independent of the software.
-2. **Watchdog:** enabling and testing the relay module's communication watchdog.
-3. **Correction windows:** an EHS position on the 5–8 s windows and the single-glove rule.
-4. **Model validation:** examining best-apron's six false permits on the common test set.
-5. **Camera placement:** repositioning the cameras for the observed working posture.
+**Table 14.** Further work, in order of priority.
 
-Attachment D details each of these. In the longer term, the latency headroom could be used to
+| # | Area | Proposed work |
+| --- | ------- | ----------------------- |
+| 1 | Hard-wired emergency stop | Fit the safety relay, with normally closed, direct-opening contacts in the contactor circuit |
+| 2 | Communication watchdog | Enable the relay module's watchdog and test it by disconnecting the network cable with the motor running |
+| 3 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the other items, and one glove instead of two |
+| 4 | Apron model | Examine its six false permits on the common test set (Table 7); confirm in the risk assessment that an apron may replace sleeves |
+| 5 | Camera geometry | Reposition and angle the cameras for the observed working posture |
+| 6 | Frozen camera image | Detect a camera that keeps streaming an unchanging image, for example by checking that consecutive frames differ |
+| 7 | Spectacles and carried gloves | Build a targeted evaluation set; add a relational test of each glove against the detected hands |
+| 8 | Modbus timing | Measure the relay stage's contribution to latency on the station |
+| 9 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
+| 10 | Library versions | Align the training, export and runtime versions at the next retraining |
+| 11 | Test-split independence | Confirm that the common test images were also held out from v2–v6 |
+| 12 | Integrated graphics | Benchmark OpenVINO on the processor's integrated GPU, which the station does not yet use |
+
+In the longer term, the latency headroom could be used to
 capture the accuracy that RF-DETR showed is available; a longer shop-floor trial that logs false
 stops and false permits would measure what the per-image evaluation can only estimate; decision
 failures could be made
@@ -961,219 +1143,3 @@ mechanical latching function*, IEC 60947-5-5.
 
 [25] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
 for design*, ISO 13849-1:2023.
-
-<!-- attachments -->
-## Attachments
-
-### Attachment A — Training details
-
-**Table A1.** Training configuration of the first deployed model (v2).
-
-| Parameter | Value | Parameter | Value |
-| --- | --- | --- | --- |
-| Initial weights | `yolo11s.pt` (COCO) | Image size | 640 (square, `rect: false`) |
-| Epochs planned / run | 150 / 105 | Patience | 30 (best epoch 75) |
-| Batch | 16 | Optimiser | `auto` |
-| `lr0` / `lrf` | 0.01 / 0.01, cosine | Momentum / weight decay | 0.937 / 0.0005 |
-| Warm-up | 3 epochs | Loss gains box / cls / dfl | 7.5 / 0.5 / 1.5 |
-| HSV h / s / v | 0.015 / 0.7 / 0.4 | Rotation / translate / scale | ±5° / 0.1 / 0.5 |
-| Flip left–right / up–down | 0.5 / 0 | Mosaic / mixup / copy-paste | 1.0 / 0 / 0 |
-| Auto-augment / erasing | RandAugment / 0.4 | AMP / seed | on / 0 (deterministic) |
-| Device | CUDA GPU 0 | Duration | 7,180 s (≈ 2 h) |
-| Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
-
-**Table A2.** Validation metrics of the seven-class model (v2) at its best epoch (75), all
-classes. Table 4 gives the other versions, including the apron model the station now runs.
-
-| Precision | Recall | F1 | mAP@0.5 | mAP@0.5:0.95 |
-| --- | --- | --- | --- | --- |
-| 0.942 | 0.955 | 0.949 | 0.966 | 0.840 |
-
-The final dataset holds about 5,000 annotated images; its test split, used for Table 5, holds
-477. Per-class results on the common test set are in Tables A3–A5.
-
-![Figure A1. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
-
-![Figure A2. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
-
-**Validation of best-apron.** Figures A3 to A5 show the final validation of the eight-class
-model the station runs. Per-class AP@0.5 ranges from 0.972 for safety glasses to 0.995 for the
-head net and mask, with a mean of 0.986 (Table 4 records 0.987 at the best epoch during
-training). The F1 score over all classes peaks at 0.97 at a confidence of 0.46 and stays within a
-few hundredths of that value between about 0.1 and 0.7, so the result is not sensitive to the
-exact threshold. Safety glasses are the exception: their F1 score is the lowest at every
-threshold and the first to fall away, and their precision drops below about 0.9 at confidences
-under 0.3, as does that of `Wrong Sleeve` to a lesser degree. The station's floors for these two
-classes, 0.60 and 0.90 (Table B1), lie well above that region.
-
-The confusion matrix shows almost no confusion between classes: at least 97 % of the instances
-of each class are detected as that class. The errors lie with the background. Up to 3 % of gloves
-and wrong sleeves are missed, and of the false detections on background, 35 % are safety glasses
-and a quarter each are gloves and sleeves. A false detection of a required item is the error that
-can credit missing PPE; the containment test of Section 6.1 discards those outside the operator.
-The only confusion between two classes is that 1 % of wrong sleeves are detected as sleeves. It is
-small but safety-relevant, because a wrong sleeve read as a sleeve is a path to a false permit.
-The training curves (Figure A5) show the validation losses levelling off after about 60 epochs,
-consistent with the best epoch of 63.
-
-![Figure A3. Precision–recall and F1–confidence curves of best-apron. Validation split.](docs/report/figures/fig-apron-pr-f1.png)
-
-![Figure A4. Normalised confusion matrix of best-apron. Validation split; each column is a true class.](docs/report/figures/fig-apron-confusion.png){width=70%}
-
-![Figure A5. Training curves of best-apron over 93 epochs: losses and validation metrics.](docs/report/figures/fig-apron-training.png)
-
-<!-- evaluation:detail -->
-**Table A3.** AP@0.5 per class on the common test set. — means the model has no such class.
-
-| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| person | 476 | 0.987 | 0.971 | 0.962 | 0.985 | 0.983 | 0.986 |
-| headnet | 319 | 0.994 | 0.989 | 0.993 | 0.995 | 0.995 | 0.995 |
-| Gloves | 421 | 0.971 | 0.772 | 0.814 | 0.898 | 0.885 | 0.904 |
-| Mask | 281 | 0.965 | 0.944 | 0.916 | 0.976 | 0.959 | 0.970 |
-| Safetyglasses | 296 | 0.866 | 0.724 | 0.658 | 0.791 | 0.769 | 0.822 |
-| sleeves | 378 | 0.923 | 0.828 | 0.784 | 0.842 | 0.838 | 0.883 |
-| Wrong Sleeve | 77 | 0.928 | 0.881 | 0.913 | 0.873 | 0.898 | 0.892 |
-| Apron | 76 | 0.990 | — | — | — | — | — |
-
-**Table A4.** AP@0.5:0.95 per class on the common test set.
-
-| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| person | 476 | 0.973 | 0.891 | 0.868 | 0.906 | 0.928 | 0.952 |
-| headnet | 319 | 0.922 | 0.862 | 0.871 | 0.901 | 0.867 | 0.917 |
-| Gloves | 421 | 0.866 | 0.651 | 0.680 | 0.758 | 0.756 | 0.803 |
-| Mask | 281 | 0.849 | 0.773 | 0.747 | 0.830 | 0.823 | 0.863 |
-| Safetyglasses | 296 | 0.638 | 0.503 | 0.454 | 0.561 | 0.567 | 0.605 |
-| sleeves | 378 | 0.817 | 0.695 | 0.672 | 0.726 | 0.729 | 0.781 |
-| Wrong Sleeve | 77 | 0.776 | 0.684 | 0.687 | 0.709 | 0.735 | 0.731 |
-| Apron | 76 | 0.934 | — | — | — | — | — |
-
-**Table A5.** Recall per class at each model's best mean-F1 confidence threshold.
-
-| Class | Instances | best-apron | v2 (ppe-yolo11s) | yolo11n-nano3 | yolo11s-v4 | yolo11s-v5 | yolo11s-v6 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| person | 476 | 0.989 | 0.916 | 0.971 | 0.966 | 0.964 | 0.968 |
-| headnet | 319 | 0.997 | 0.950 | 0.981 | 0.997 | 0.988 | 0.989 |
-| Gloves | 421 | 0.967 | 0.670 | 0.753 | 0.804 | 0.815 | 0.862 |
-| Mask | 281 | 0.979 | 0.796 | 0.897 | 0.940 | 0.858 | 0.900 |
-| Safetyglasses | 296 | 0.895 | 0.554 | 0.577 | 0.631 | 0.675 | 0.668 |
-| sleeves | 378 | 0.934 | 0.816 | 0.797 | 0.828 | 0.847 | 0.894 |
-| Wrong Sleeve | 77 | 0.896 | 0.870 | 0.883 | 0.831 | 0.845 | 0.857 |
-| Apron | 76 | 1.000 | — | — | — | — | — |
-
-**Table A6.** Station decisions against the labels, per image (single frame, configured floors).
-
-| Model | Agree | False permits | False stops | of which need a missing class | Other | Labels: OK / violation / nobody |
-| --- | --- | --- | --- | --- | --- | --- |
-| best-apron | 465/477 | 6 | 5 | 0 | 1 | 48 / 428 / 1 |
-| v2 (ppe-yolo11s) | 433/477 | 0 | 41 | 23 | 3 | 48 / 428 / 1 |
-| yolo11n-nano3 | 434/477 | 4 | 38 | 23 | 1 | 48 / 428 / 1 |
-| yolo11s-v4 | 430/477 | 0 | 40 | 23 | 7 | 48 / 428 / 1 |
-| yolo11s-v5 | 435/477 | 0 | 37 | 23 | 5 | 48 / 428 / 1 |
-| yolo11s-v6 | 436/477 | 1 | 35 | 23 | 5 | 48 / 428 / 1 |
-<!-- /evaluation:detail -->
-
-### Attachment B — Compliance parameters and Modbus map
-
-**Table B1.** Per-class settings of the station configuration, and the time from an item
-leaving view to the motor stopping, simulated with the station's own logic on a running machine.
-Values from the first configuration are given in brackets where they changed.
-
-| Class | Confidence | Containment | Hold | Count | Correction window | Motor stops after |
-| --- | --- | --- | --- | --- | --- | --- |
-| Head net | 0.50 | 0.5 | 0.8 s | 1 | 8 s (5 s) | 9.3 s (6.3 s) |
-| Safety glasses | 0.60 | 0.5 | 1.1 s | 1 | 5 s (0 s) | 6.6 s (1.6 s) |
-| Mask | 0.60 | 0.5 | 0.7 s | 1 | 8 s (5 s) | 9.2 s (6.2 s) |
-| Gloves | 0.67 (0.60) | 0.1 | 1.0 s | 1 (2) | 5 s (0 s) | 6.5 s (1.5 s); one of two removed: never (5.5 s) |
-| Sleeves | 0.75 | 0.3 | 1.2 s | 1 (2) | 8 s (5 s) | 9.7 s (6.7 s); one of two removed: never (10.5 s) |
-| Apron | 0.60 | 0.5 | 1.2 s | 1 | 8 s | as sleeves (alternative) |
-| Wrong Sleeve (forbidden) | 0.90 | 0.5 | 1.2 s (0.4 s) | 0 | 0 s | 0.5 s after it appears |
-| Person (subject) | 0.70 (0.25) | — | 1.0 s | — | — | STANDBY, motor stops after ≈ 2 s |
-
-Other settings: confirmation periods OK 1.0 s, VIOLATION 0.4 s, STANDBY 1.0 s, DEGRADED 0.5 s;
-occlusion window 8 s (5 s), which no longer applies with a count of one; runtime NMS IoU 0.50;
-global confidence floor 0.35.
-
-**Table B2.** Modbus map of the relay module (addresses 0-based).
-
-| Signal | Object | Address | Channel | 1 means |
-| --- | --- | --- | --- | --- |
-| Green / amber / red lamp | Coil | 0 / 1 / 2 | DO1–DO3 | lamp on |
-| Buzzer | Coil | 3 | DO4 | sounding |
-| Motor permissive | Coil | 4 | DO5 | permissive granted |
-| E-stop | Discrete input | 0 | DI1 | operated (normally open) |
-| Push button | Discrete input | 1 | DI2 | pressed (normally open) |
-
-Lamps: red means an e-stop or a violation; green means compliant and running; amber means
-compliant and idle, or DEGRADED; dark means STANDBY.
-
-![Figure B1. The two windows for a pair of gloves.](docs/report/figures/fig-hold-windows.png)
-
-### Attachment C — Fail-safe analysis
-
-**Table C1.** Behaviour of the implemented code under failure.
-
-| Failure | What the code does | Grinder ends up |
-| --- | --- | --- |
-| Both cameras stop | DEGRADED after 1.5 s stale + 0.5 s confirm; latch dropped | Inhibited (≈ 2 s) |
-| One camera stops, other runs | Camera counted down after 1.5 s; its results discarded; DEGRADED, camera named | Inhibited (≈ 2 s; fixed) |
-| Camera streams a frozen image | Treated as fresh frames | **Can stay enabled** |
-| Model fails to load | Board blanked before load; pipeline closes the board | Inhibited |
-| Inference throws mid-run | Each failed cycle sets DEGRADED; after 5 in a row, board closed and process exits | Inhibited; supervisor restarts (fixed) |
-| Relay unreachable | Latch dropped in software; write cannot arrive | **Last state** unless module watchdog |
-| Crash or kill | Supervisor restarts after ≥ 2 s; board blanked on connect | **Enabled until restart** |
-| Hang, PC power loss, cable pulled | Nothing detects it | **Last state** unless module watchdog |
-| E-stop pressed | Read on DI1; latch dropped | Inhibited, via software only |
-| E-stop wire broken (normally open) | Reads as "not pressed" | **E-stop ineffective** |
-| Operator leaves | STANDBY after ≈ 2 s | Inhibited |
-
-### Attachment D — Further work
-
-**Table D1.** Further work, in order of priority.
-
-| # | Area | Proposed work |
-| --- | --- | --- |
-| 1 | Hard-wired emergency stop | Fit the safety relay, with normally closed, direct-opening contacts in the contactor circuit |
-| 2 | Communication watchdog | Enable the relay module's watchdog and test it by disconnecting the network cable with the motor running |
-| 3 | Correction windows and counts | Document the EHS position on 5 s for gloves and glasses, 8 s for the other items, and one glove instead of two |
-| 4 | Apron model | Examine its six false permits on the common test set (Table 5); confirm in the risk assessment that an apron may replace sleeves |
-| 5 | Camera geometry | Reposition and angle the cameras for the observed working posture |
-| 6 | Frozen camera image | Detect a camera that keeps streaming an unchanging image, for example by checking that consecutive frames differ |
-| 7 | Spectacles and carried gloves | Build a targeted evaluation set; add a relational test of each glove against the detected hands |
-| 8 | Modbus timing | Measure the relay stage's contribution to latency on the station |
-| 9 | Default capture configuration | Align the shipped default with the station (640 × 480) before rollout |
-| 10 | Library versions | Align the training, export and runtime versions at the next retraining |
-| 11 | Test-split independence | Confirm that the common test images were also held out from v2–v6 |
-| 12 | Integrated graphics | Benchmark OpenVINO on the processor's integrated GPU, which the station does not yet use |
-
-### Attachment E — Code and configuration
-
-The station software is held in the project repository (`ppe/`, `main.py`, `config.yaml`).
-The key excerpts are the compliance decision (`ppe/tower.py:209-216`), the Modbus write
-(`ppe/tower.py:557-577`), the camera scheduler (`ppe/pipeline.py:238-243`) and the letterbox
-(`ppe/letterbox.py:45-65`). They are reproduced, with the configuration and the training
-hyperparameters, in Appendices A and B of the full working draft
-(`docs/report/internship-report-full-draft.md`). The relay module's network address is redacted
-there.
-
-```python
-# ppe/pipeline.py:238-243 — camera scheduler (one camera per cycle on a CPU)
-if self.detector.batches:
-    return fresh
-n = len(self.cameras)
-chosen = min(fresh, key=lambda f: (f.index - self._turn) % n)
-self._turn = (chosen.index + 1) % n
-return [chosen]
-```
-
-```python
-# ppe/tower.py:209-216 — the verdict
-def _evaluate(self) -> Status:
-    required = [c for c in self.classes if c.required]
-    if not required or self.unavailable():
-        return Status.DEGRADED
-    if self._subject is not None and not self._subject.present:
-        return Status.STANDBY
-    return Status.OK if all(c.satisfied for c in required) else Status.VIOLATION
-```
