@@ -111,7 +111,9 @@ CFM International's LEAP [5], [2]. The site works with more than 300 suppliers, 
 trained more than 5,000 production associates in precision manufacturing, and is certified to ISO
 14001 and ISO 45001, with 30 % of its power drawn from renewable sources [2], [7]. After
 US $30 million in 2024, a further US $14 million for capacity and automation was announced in
-November 2025 [7]. Figure 1 shows the facility and its shopfloor.
+November 2025 [7], and INR 100 crore for welding technology, inspection equipment and tooling in
+May 2026, bringing the investment announced over three years to more than INR 510 crore
+[8]. Figure 1 shows the facility and its shopfloor.
 
 ![Figure 1. The GE Aerospace facility in Pune (a), and TIG welding of a tube component on its shopfloor (b). Source: GE Aerospace [5], [4].](docs/report/figures/fig-pune-photos.jpg)
 
@@ -130,8 +132,9 @@ by fusion welding, largely TIG, to aerospace welding specifications. The weld pr
 welding and robotic TIG welding that I studied in my first two weeks (Section 1.3), and the flat
 belt grinding station at which this project was deployed, belong to this fabrication flow.
 
-**Organisation and department.** The facility is headed by the plant leader, to whom the
-Fabrication Center of Excellence (FCOE) department reports (Figure 2). FCOE, led by
+**Organisation and department.** The facility is headed by the plant leader, to whom three
+centres of excellence report: the Machining COE, the Assembly COE and the Fabrication Center of
+Excellence (FCOE), in which the internship took place (Figure 2). FCOE, led by
 [title of the FCOE head], is responsible for the fabricated components described above, with
 [its other sections, e.g. production, quality] alongside Manufacturing Engineering. The
 Manufacturing Engineering (ME) section develops and industrialises the processes by which the
@@ -192,15 +195,15 @@ Validation metrics measure only the detection question. They are necessary but n
 
 ### 2.2 Detector and runtime
 
-YOLO [8] is a single-stage detector: one network pass predicts boxes and class scores for the
-whole image, so the inference cost is fixed and predictable. YOLO11 [9] is the Ultralytics
+YOLO [9] is a single-stage detector: one network pass predicts boxes and class scores for the
+whole image, so the inference cost is fixed and predictable. YOLO11 [10] is the Ultralytics
 release used here, in its *s* scale (about 9.4 million parameters). Detection transformers such
-as DETR [10] and RF-DETR [11] predict object sets directly and need no non-maximum suppression [12], but
+as DETR [11] and RF-DETR [12] predict object sets directly and need no non-maximum suppression [13], but
 their attention layers are costly on a CPU.
 
-OpenVINO [13] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
+OpenVINO [14] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
 mean average precision (mAP) at an IoU threshold of 0.5, and averaged over thresholds from 0.5
-to 0.95 [14], [15], [16].
+to 0.95 [15], [16], [17].
 
 ### 2.3 Two error directions
 
@@ -220,8 +223,8 @@ people gets worked around. A false permit is the exposure the system exists to p
 parameter in Chapter 6 is a position on this trade-off.
 
 Such a system is a **permissive**: a condition that must hold before the machine may run, layered
-on top of the machine's safety functions and never in place of them [17]. It talks to the relay
-module over Modbus TCP [18], with the `pymodbus` library [19]. Modbus is stateless and driven by the
+on top of the machine's safety functions and never in place of them [18]. It talks to the relay
+module over Modbus TCP [19], with the `pymodbus` library [20]. Modbus is stateless and driven by the
 client. A device keeps its outputs as last written until it is told otherwise, unless it has its
 own communication watchdog.
 
@@ -299,7 +302,7 @@ the seven-class model that was deployed first.
 
 All training images were either captured on the shopfloor or taken of working poses recreated in
 an isolated environment, and no public PPE dataset was used. Public
-datasets centre on construction-site equipment [20], [21], [22]. The station's lighting, background, operator
+datasets centre on construction-site equipment [21], [22], [23]. The station's lighting, background, operator
 postures and issued PPE are particular to it, and sleeves are absent from most public sets.
 Starting from COCO-pretrained weights and fine-tuning on site data gave the model general
 features from a large dataset, and everything station-specific from the station. Images were
@@ -349,8 +352,8 @@ the person's box, relaxed to 10 % containment for gloves, and a glove held in th
 The model is YOLO11s, fine-tuned from COCO weights:
 
 - input 640 × 640, batch size 16;
-- cosine learning-rate schedule from 0.01 [23];
-- mosaic [24], colour and ±5° rotation augmentation;
+- cosine learning-rate schedule from 0.01 [24];
+- mosaic [25], colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
 I trained it on a CUDA GPU in about two hours. Table 4 lists the full configuration.
@@ -473,7 +476,7 @@ best-apron's lead is accepted.
 
 Three limits apply. The counts are per image, from one camera and one frame, while the station
 combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
-compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [25] of about 4–22 %, and the 1.4 %
+compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [26] of about 4–22 %, and the 1.4 %
 false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
 the older models are flattered, not best-apron.
@@ -536,7 +539,7 @@ question of accuracy. On that, Table 7 favours `best-apron`, which the station r
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
 It is that RF-DETR's accuracy shows **headroom the deployed model does not reach**. The open
-question is how to capture that headroom inside the latency budget, for example by distillation [26].
+question is how to capture that headroom inside the latency budget, for example by distillation [27].
 
 ## 5. Inference pipeline
 
@@ -602,7 +605,7 @@ and 640 × 360 (side).
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
-stays at FP32. INT8 quantisation [27] remains available, but it needs calibration on site images.
+stays at FP32. INT8 quantisation [28] remains available, but it needs calibration on site images.
 
 ## 6. Compliance logic and interlock
 
@@ -799,9 +802,9 @@ configuration rather than code:
    that watchdog, but nothing records that it was tested.
 4. **The emergency stop depends on the software path.** Whenever that path fails or stalls, the e-stop
    cannot stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
-   [28], IEC 60204-1 [29] and IEC 60947-5-5 [30] require a hard-wired e-stop with normally closed,
+   [29], IEC 60204-1 [30] and IEC 60947-5-5 [31] require a hard-wired e-stop with normally closed,
    direct-opening contacts, and the safety-relay circuit should be designed and validated to a
-   performance level determined under ISO 13849-1 [31]. **Until the safety relay is fitted, the station's e-stop
+   performance level determined under ISO 13849-1 [32]. **Until the safety relay is fitted, the station's e-stop
    should not be relied upon as an emergency stop.**
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
@@ -1144,75 +1147,79 @@ https://www.ge.com/news/press-releases/prime-minister-narendra-modi-inaugurates-
 Capability," press release, 20 Nov. 2025. [Online]. Available:
 https://www.geaerospace.com/news/press-releases/india/ge-aerospace-invest-usd-14-million-expand-pune-manufacturing-capability
 
-[8] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
+[8] GE Aerospace, "GE Aerospace Accelerates India Manufacturing Growth with 100 Crore Pune
+Investment," press release, 18 May 2026. [Online]. Available:
+https://www.geaerospace.com/news/press-releases/india/ge-aerospace-accelerates-india-manufacturing-growth-100-crore-pune-investment
+
+[9] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
 Object Detection," in *Proc. IEEE CVPR*, 2016, pp. 779–788. arXiv:1506.02640.
 
-[9] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
+[10] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
 https://docs.ultralytics.com/models/yolo11/
 
-[10] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
+[11] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
 Object Detection with Transformers," in *Proc. ECCV*, 2020, pp. 213–229. arXiv:2005.12872.
 
-[11] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
+[12] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
 Available: https://github.com/roboflow/rf-detr
 
-[12] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
+[13] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
 Pattern Recognition (ICPR)*, 2006, pp. 850–855.
 
-[13] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
+[14] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
 https://docs.openvino.ai/
 
-[14] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
+[15] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
 pp. 740–755. arXiv:1405.0312.
 
-[15] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
+[16] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
 Object Classes (VOC) Challenge," *Int. J. Computer Vision*, vol. 88, no. 2, pp. 303–338, 2010.
 
-[16] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
+[17] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
 Object-Detection Algorithms," in *Proc. Int. Conf. Systems, Signals and Image Processing
 (IWSSIP)*, 2020, pp. 237–242.
 
-[17] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
+[18] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
 ISO 12100:2010.
 
-[18] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
+[19] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
 
-[19] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
+[20] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
 https://github.com/pymodbus-dev/pymodbus
 
-[20] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
+[21] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
 surveillance videos," *Automation in Construction*, vol. 85, pp. 1–9, 2018.
 
-[21] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
+[22] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
 construction personnel: A deep learning approach and benchmark dataset," *Automation in
 Construction*, vol. 106, art. 102894, 2019.
 
-[22] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
+[23] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
 detection of personal protective equipment," *Automation in Construction*, vol. 112,
 art. 103085, 2020.
 
-[23] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
+[24] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
 *Proc. Int. Conf. Learning Representations (ICLR)*, 2017. arXiv:1608.03983.
 
-[24] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
+[25] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
 Detection," arXiv:2004.10934, 2020.
 
-[25] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
+[26] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
 *J. American Statistical Association*, vol. 22, no. 158, pp. 209–212, 1927.
 
-[26] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
+[27] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
 arXiv:1503.02531, 2015.
 
-[27] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
+[28] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
 Integer-Arithmetic-Only Inference," in *Proc. IEEE/CVF CVPR*, 2018, pp. 2704–2713.
 
-[28] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
+[29] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
 
-[29] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
+[30] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
 IEC 60204-1:2016+A1:2021.
 
-[30] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
+[31] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
 mechanical latching function*, IEC 60947-5-5.
 
-[31] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
+[32] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
 for design*, ISO 13849-1:2023.

@@ -119,7 +119,7 @@ file use the old labels (Table 5 is now Table 7; A3–A6 are 8–11; B1, C1, D1 
 **Host organisation (6 November, revised):** Section 1.2 now draws on GE Aerospace's own pages
 (press releases of 14 Oct. and 20 Nov. 2025, the FLIGHT DECK article on Pune, the India
 facilities page, the 2015 inauguration release), with two photographs credited to GE Aerospace
-(Figure 1) and an organisation chart (Figure 2). FCOE reports to the plant leader, as you said.
+(Figure 1) and an organisation chart (Figure 2). FCOE reports to the plant leader, as you said, alongside the Machining COE and the Assembly COE (in the text and the chart). The May 2026 INR 100 crore investment is added from GE's press release [8].
 The HPT-ACC manifold line for LEAP is now confirmed by GE's own article and included. Still to
 fill, highlighted: the title of the FCOE head and FCOE's other sections, in the text and in the
 chart (yellow boxes; edit `docs/report/figures/make_org_chart.py` and rerun it). Also confirm
