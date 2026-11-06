@@ -10,7 +10,7 @@
 | Company | GE Aerospace |
 | Company address | Plot A, Chakan, 78/1, MIDC, Phase II, Wasuli, Maharashtra 410501, India |
 | Internship period | 10 August 2026 to 10 November 2026 |
-| Industrial supervisors (trainers) | Aslam Mulla, Senior Manager, Manufacturing Engineering (Process Automation)<br>Soham Bhat Dubere, Manufacturing Engineering Development Program, Pune 2026 |
+| Industrial supervisors (trainers) | Pankesh Pisal<br>General Manager, Manufacturing Engineering<br>Aslam Mulla<br>Senior Manager, Manufacturing Engineering (Process Automation)<br>Soham Bhat Dubere<br>Manufacturing Engineering Development Program, Pune 2026 |
 | Trainer's stamp and signature | [stamp and signature] |
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
@@ -23,8 +23,9 @@ Photographs credited to GE Aerospace are reproduced from its public website.*
 
 ## Acknowledgements
 
-I am grateful to my industrial supervisors, Mr Aslam Mulla and Mr Soham Bhat Dubere, for
-entrusting me with a
+I am grateful to my industrial supervisors, Mr Pankesh Pisal, General Manager, Manufacturing
+Engineering; Mr Aslam Mulla, Senior Manager, Manufacturing Engineering (Process Automation); and
+Mr Soham Bhat Dubere, Manufacturing Engineering Development Program, for entrusting me with a
 project that began as an observation on the shopfloor rather than a prepared brief, and for
 the freedom to carry it from the first prototype to a plant-wide rollout decision. I thank
 Mr Akshay Baviskar, Deputy Engineer, for the time they gave to explaining the
@@ -137,8 +138,8 @@ centres of excellence report: the Machining COE, the Assembly COE and the Fabric
 Excellence (FCOE), in which the internship took place (Figure 2). FCOE, led by
 [title of the FCOE head], is responsible for the fabricated components described above, with
 [its other sections, e.g. production, quality] alongside Manufacturing Engineering. The
-Manufacturing Engineering (ME) section develops and industrialises the processes by which the
-parts are made, and its Process Automation team programs, optimises and deploys the robotic and
+Manufacturing Engineering (ME) section, led by its general manager, Mr Pankesh Pisal, develops
+and industrialises the processes by which the parts are made, and its Process Automation team programs, optimises and deploys the robotic and
 automated cells on the shopfloor. I worked in this team, under its senior manager, Mr Aslam Mulla,
 who acted as my trainer, and with Mr Soham Bhat Dubere of the Manufacturing Engineering Development
 Program as my second supervisor. The project also depended on site functions outside the

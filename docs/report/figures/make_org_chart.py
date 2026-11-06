@@ -22,7 +22,7 @@ BOXES = {
     "fcoe": (3.0, 7.0, "Fabrication Center of Excellence (FCOE)", "[title of the FCOE head]"),
     "mcoe": (6.95, 7.0, "Machining COE", "Center of Excellence", 2.5),
     "acoe": (9.45, 7.0, "Assembly COE", "Center of Excellence", 2.2),
-    "me": (3.0, 5.0, "Manufacturing Engineering (ME)", "process development and industrialisation"),
+    "me": (3.0, 5.0, "Manufacturing Engineering (ME)", "Pankesh Pisal, General Manager"),
     "other": (7.4, 5.0, "[Other FCOE sections]", "[e.g. production, quality]"),
     "pa": (3.0, 3.0, "Process Automation team", "Aslam Mulla, Senior Manager (trainer)"),
     "medp": (7.4, 3.0, "ME Development Program", "Soham Bhat Dubere (second supervisor)"),

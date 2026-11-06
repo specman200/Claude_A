@@ -63,9 +63,9 @@ def cover_xml(md_cover: str) -> str:
                 f'w:after="{after}" w:line="276" w:lineRule="auto"/><w:jc w:val="{align}"/></w:pPr>'
                 f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{esc(text)}</w:t></w:r></w:p>')
 
-    out = [para("RWTH Aachen University · M.Sc. Robotic Systems", 24, before=600),
-           para("Internship Report", 28, bold=True, before=1200, after=240),
-           para(title, 36, bold=True, after=1200)]
+    out = [para("RWTH Aachen University · M.Sc. Robotic Systems", 24, before=200),
+           para("Internship Report", 28, bold=True, before=700, after=200),
+           para(title, 36, bold=True, after=700)]
     # Two-column table of the cover details, no borders.
     cells = []
     for k, v in rows.items():
@@ -89,14 +89,14 @@ def cover_xml(md_cover: str) -> str:
            '<w:bottom w:val="single" w:sz="6"/><w:right w:val="single" w:sz="6"/>'
            '<w:insideV w:val="single" w:sz="6"/></w:tblBorders></w:tblPr>'
            '<w:tblGrid><w:gridCol w:w="4535"/><w:gridCol w:w="4535"/></w:tblGrid><w:tr>'
-           '<w:trPr><w:trHeight w:val="1700" w:hRule="atLeast"/></w:trPr>'
+           '<w:trPr><w:trHeight w:val="1500" w:hRule="atLeast"/></w:trPr>'
            f'<w:tc><w:tcPr><w:tcW w:w="4535" w:type="dxa"/></w:tcPr>{para("Company stamp", 20, align="left", italic=True)}</w:tc>'
            f'<w:tc><w:tcPr><w:tcW w:w="4535" w:type="dxa"/></w:tcPr>{para("Signature of the trainer, date", 20, align="left", italic=True)}</w:tc>'
            '</w:tr></w:tbl>')
     out.append(para("", 12, after=360))
     out.append(box)
     if note:
-        out.append(para(" ".join(note.group(1).split()), 18, align="both", before=480, italic=True))
+        out.append(para(" ".join(note.group(1).split()), 18, align="both", before=300, italic=True))
     out.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
     return "".join(out)
 
@@ -333,10 +333,11 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     s = re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr><w:r><w:rPr><w:bCs ?/>'
                r'<w:b ?/></w:rPr><w:t[^>]*>Table [A-Z]?\d+\.</w:t>)',
                r'<w:pStyle w:val="\1"/><w:keepNext/>\2', s)
-    # Front-matter headings stay out of the outline, matching the printed contents.
-    s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>'
+    # Front-matter headings take the contents-heading style: Word's contents field lists every
+    # Heading 1 paragraph whatever its outline level, and the printed contents omit these.
+    s = re.sub(r'<w:pStyle w:val="Heading1" ?/>(</w:pPr><w:r><w:t[^>]*>'
                r'(?:Acknowledgements|Abstract)</w:t>)',
-               r'\1<w:outlineLvl w:val="9"/>\2', s)
+               r'<w:pStyle w:val="TOCHeading"/>\1', s)
     # Reference entries are left-aligned: justified, a long URL opens wide gaps in its line.
     k = s.find(">References</w:t>")
     if k > 0:
