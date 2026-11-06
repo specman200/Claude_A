@@ -116,20 +116,14 @@ guideline's ~24 for SPO 2021. Table A2 duplicated the sentence above it and is f
 file use the old labels (Table 5 is now Table 7; A3–A6 are 8–11; B1, C1, D1 are 12, 13, 14).
 `ppe.evaluate --report` keeps whatever table numbers the report uses.
 
-**Host organisation expanded (6 November):** Section 1.2 now covers GE Aerospace, its purpose
-and vision, FLIGHT DECK, the Pune MMF's history and engine programmes, tubes and ducts, and the
-department. Sources [2]–[5] are public. Please check:
-
-- **Three placeholders** in the department paragraph (highlighted): who the departments report
-  to, the title of the FCOE head, and FCOE's other sections. Roles only, no names, per the cover note.
-- **The vision wording** ("defining flight for today, tomorrow and the future") comes from
-  company-written profiles and matches the today/tomorrow/future horizons in the cited transcripts;
-  it is not on GE's own site.
-- **Tubes and ducts:** the description of what they do, the materials (stainless steel, Inconel)
-  and the processes is general; confirm it fits the parts made in Pune. That the flat belt
-  grinding station belongs to this fabrication flow is my inference from your report; confirm.
-- One trade article says the site has an HPT active clearance control line for LEAP parts; it is
-  left out because only one source says so. Add it if you can confirm it.
+**Host organisation (6 November, revised):** Section 1.2 now draws on GE Aerospace's own pages
+(press releases of 14 Oct. and 20 Nov. 2025, the FLIGHT DECK article on Pune, the India
+facilities page, the 2015 inauguration release), with two photographs credited to GE Aerospace
+(Figure 1) and an organisation chart (Figure 2). FCOE reports to the plant leader, as you said.
+The HPT-ACC manifold line for LEAP is now confirmed by GE's own article and included. Still to
+fill, highlighted: the title of the FCOE head and FCOE's other sections, in the text and in the
+chart (yellow boxes; edit `docs/report/figures/make_org_chart.py` and rerun it). Also confirm
+that the flat belt grinding station belongs to the tube and duct fabrication flow (my inference).
 
 **All placeholders are filled** (4 November): supervisors on the cover and in the
 acknowledgements, the subject-matter expert, and the IPC specification.

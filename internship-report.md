@@ -15,9 +15,10 @@
 
 *Confidential: prepared for academic assessment only. Part numbers, part geometry, production
 volumes, cycle times, supplier names, commercial terms, network addresses, hostnames,
-credentials and other employee names are excluded throughout. No image shows a manufactured
-component or an engineering drawing: the station layouts are simplified models, and the only
-person shown is the author, who consented.*
+credentials and other employee names are excluded throughout. No photograph of the author's
+work shows a manufactured component or an engineering drawing: the station layouts are
+simplified models, and the only identifiable person shown is the author, who consented.
+Photographs credited to GE Aerospace are reproduced from its public website.*
 <!-- /cover -->
 
 ## Acknowledgements
@@ -84,50 +85,64 @@ rule that PPE must be worn and the fact of the machine running.
 
 ### 1.2 Host organisation
 
-**GE Aerospace.** GE Aerospace designs, manufactures and services commercial and military aircraft
-engines, components and systems. It has operated as an independent, publicly listed company since
-April 2024, when the separation of the former General Electric conglomerate was completed.
+**GE Aerospace.** GE Aerospace is a global aerospace propulsion, services and systems company with
+an installed base of about 49,000 commercial and 29,000 military aircraft engines and a workforce
+of about 53,000 [2]. It has operated as an independent, publicly listed company since April
+2024, when the separation of the former General Electric conglomerate was completed.
 
-**Vision and purpose.** The company states its purpose as *"We invent the future of flight, lift
-people up and bring them home safely"* [2]. It describes its vision as defining flight
-for today, tomorrow and the future: supporting the engines in service today, building the capacity
-for the new engines of tomorrow, and developing the technologies of future aircraft [2],
-[3]. Both are put into practice through FLIGHT DECK, the company's lean operating model,
-whose priorities are ordered safety, quality, delivery and cost [3]. That order is the
-premise of this project: an interlock that may stop production to protect an operator puts the
-first priority ahead of the last, and the trade-off between false stops and false permits in
-Chapter 6 is that ordering made concrete.
+**Vision and purpose.** The company states its purpose as being *committed to inventing the future
+of flight, lifting people up and bringing them home safely*, and describes its vision as defining
+flight for today, tomorrow and the future [2]: supporting the engines in service today,
+building the capacity for the new engines of tomorrow, and developing the technologies of future
+aircraft [3]. Both are put into practice through FLIGHT DECK, the company's lean
+operating model, whose priorities are safety, quality, delivery and cost, in that order. Safety
+comes first: every employee may stop work, and with it the line, when a problem is detected
+[4]. That order is the premise of this project: an interlock that may stop production to
+protect an operator puts the first priority ahead of the last, and the trade-off between false
+stops and false permits in Chapter 6 is that ordering made concrete.
 
-**The Pune Multi-modal Manufacturing Facility.** The facility in the MIDC industrial area at
-Chakan, near Pune, was inaugurated on 14 February 2015 as GE's first multi-modal factory in India:
-flexible lines manufacturing for several GE businesses (power, oil and gas, transportation and,
-from its second phase, aviation), with much of the output exported to other GE sites [4].
-Since the separation it has been part of GE Aerospace. Its components go into the GE90, GEnx, GE9X
-and LEAP engine families, and it works with more than 300 suppliers. On its tenth anniversary the
-company announced a further US $14 million for capacity and automation at the site, bringing the
-investment announced in under two years to US $44 million [5].
+**The Pune Multi-modal Manufacturing Facility.** GE opened the facility at Chakan II, in the MIDC
+industrial park near Pune, in February 2015 with an initial investment of US $200 million
+[5]. It was built on 68 acres as a multi-modal "Brilliant Factory": flexible lines able to
+serve several GE businesses, starting with power generation, oil and gas and transportation and
+adding aviation engine components in a second phase [6]. It has since become a supplier of
+components to GE Aerospace's engine factories worldwide, for the GE90, GEnx and GE9X engines and
+CFM International's LEAP [5], [2]. The site works with more than 300 suppliers, has
+trained more than 5,000 production associates in precision manufacturing, and is certified to ISO
+14001 and ISO 45001, with 30 % of its power drawn from renewable sources [2], [7]. After
+US $30 million in 2024, a further US $14 million for capacity and automation was announced in
+November 2025 [7]. Figure 1 shows the facility and its shopfloor.
+
+![Figure 1. The GE Aerospace facility in Pune (a), and TIG welding of a tube component on its shopfloor (b). Source: GE Aerospace [5], [4].](docs/report/figures/fig-pune-photos.jpg)
 
 **Tubes and ducts.** The site is a centre of excellence for fabricated engine components, above
 all tubes, ducts and manifolds. These parts form much of an engine's external plumbing: they carry
 fuel, oil and air, such as bleed and cooling air taken from the compressor, between the engine's
 modules and its accessories. They must stay leak-tight and aligned through large swings in
-temperature and continuous vibration, which makes their geometry and their welds critical.
-They are made from stainless steels and nickel-based superalloys such as Inconel, by tube bending,
-hydroforming and five-axis CNC machining, and joined by fusion welding, largely TIG, to aerospace
-welding specifications, with digitally connected inspection along the line. The weld preparation,
-manual welding and robotic TIG welding that I studied in my first two weeks (Section 1.3), and the
-flat belt grinding station at which this project was deployed, belong to this fabrication flow.
+temperature and continuous vibration, which makes their geometry and their welds critical. The
+site's lines include a tube line, cells for fuel manifolds and brackets, and a model line for the
+manifold of the LEAP engine's high-pressure turbine active clearance control (HPT-ACC) system,
+which directs cooling air onto the turbine casing to keep the blade-tip clearance small. On the
+tube line, an automated bending operation has replaced a manual weld between two tubes, raising
+productivity by 30 % [4]. The parts are made from stainless steels and nickel-based
+superalloys such as Inconel, by tube bending, hydroforming and five-axis CNC machining, and joined
+by fusion welding, largely TIG, to aerospace welding specifications. The weld preparation, manual
+welding and robotic TIG welding that I studied in my first two weeks (Section 1.3), and the flat
+belt grinding station at which this project was deployed, belong to this fabrication flow.
 
-**Organisation and department.** The site is organised into departments under
-[site leadership, e.g. the plant leader]. The Fabrication Center of Excellence (FCOE) department,
-led by [title of the FCOE head], is responsible for the fabricated components described above,
-with [its other sections, e.g. production, quality] alongside Manufacturing Engineering. The
+**Organisation and department.** The facility is headed by the plant leader, to whom the
+Fabrication Center of Excellence (FCOE) department reports (Figure 2). FCOE, led by
+[title of the FCOE head], is responsible for the fabricated components described above, with
+[its other sections, e.g. production, quality] alongside Manufacturing Engineering. The
 Manufacturing Engineering (ME) section develops and industrialises the processes by which the
 parts are made, and its Process Automation team programs, optimises and deploys the robotic and
 automated cells on the shopfloor. I worked in this team, under its senior manager, Mr Aslam Mulla,
 who acted as my trainer, and with Mr Soham Bhat Dubere of the Manufacturing Engineering Development
-Program as my second supervisor. The project also depended on functions outside the department:
-Environment, Health and Safety (EHS), maintenance, IT and lean management (Section 10.1).
+Program as my second supervisor. The project also depended on site functions outside the
+department: Environment, Health and Safety (EHS), maintenance, IT and lean management
+(Section 10.1).
+
+![Figure 2. Organisation of the department in which the internship took place. [Yellow boxes: to be confirmed.]](docs/report/figures/fig-org-chart.png){width=85%}
 
 ### 1.3 Origin, scope and objective
 
@@ -177,15 +192,15 @@ Validation metrics measure only the detection question. They are necessary but n
 
 ### 2.2 Detector and runtime
 
-YOLO [6] is a single-stage detector: one network pass predicts boxes and class scores for the
-whole image, so the inference cost is fixed and predictable. YOLO11 [7] is the Ultralytics
+YOLO [8] is a single-stage detector: one network pass predicts boxes and class scores for the
+whole image, so the inference cost is fixed and predictable. YOLO11 [9] is the Ultralytics
 release used here, in its *s* scale (about 9.4 million parameters). Detection transformers such
-as DETR [8] and RF-DETR [9] predict object sets directly and need no non-maximum suppression [10], but
+as DETR [10] and RF-DETR [11] predict object sets directly and need no non-maximum suppression [12], but
 their attention layers are costly on a CPU.
 
-OpenVINO [11] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
+OpenVINO [13] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
 mean average precision (mAP) at an IoU threshold of 0.5, and averaged over thresholds from 0.5
-to 0.95 [12], [13], [14].
+to 0.95 [14], [15], [16].
 
 ### 2.3 Two error directions
 
@@ -205,14 +220,14 @@ people gets worked around. A false permit is the exposure the system exists to p
 parameter in Chapter 6 is a position on this trade-off.
 
 Such a system is a **permissive**: a condition that must hold before the machine may run, layered
-on top of the machine's safety functions and never in place of them [15]. It talks to the relay
-module over Modbus TCP [16], with the `pymodbus` library [17]. Modbus is stateless and driven by the
+on top of the machine's safety functions and never in place of them [17]. It talks to the relay
+module over Modbus TCP [18], with the `pymodbus` library [19]. Modbus is stateless and driven by the
 client. A device keeps its outputs as last written until it is told otherwise, unless it has its
 own communication watchdog.
 
 ## 3. System overview
 
-Figure 1 shows the system as built. Two USB cameras view the operator from the front and the
+Figure 3 shows the system as built. Two USB cameras view the operator from the front and the
 side. The industrial PC, which runs on its CPU only, carries the whole software stack:
 
 - capture;
@@ -240,7 +255,7 @@ dimensions. Table 2 gives the module's Modbus map.
 Lamps: red means an e-stop or a violation; green means compliant and running; amber means
 compliant and idle, or DEGRADED; dark means STANDBY.
 
-![Figure 1. System architecture.](docs/report/figures/fig-architecture.png)
+![Figure 3. System architecture.](docs/report/figures/fig-architecture.png)
 
 The software is a Python application of about 5,800 lines, with a test suite, held in the project
 repository (`ppe/`, `main.py`, `config.yaml`). Its main
@@ -284,7 +299,7 @@ the seven-class model that was deployed first.
 
 All training images were either captured on the shopfloor or taken of working poses recreated in
 an isolated environment, and no public PPE dataset was used. Public
-datasets centre on construction-site equipment [18], [19], [20]. The station's lighting, background, operator
+datasets centre on construction-site equipment [20], [21], [22]. The station's lighting, background, operator
 postures and issued PPE are particular to it, and sleeves are absent from most public sets.
 Starting from COCO-pretrained weights and fine-tuning on site data gave the model general
 features from a large dataset, and everything station-specific from the station. Images were
@@ -334,8 +349,8 @@ the person's box, relaxed to 10 % containment for gloves, and a glove held in th
 The model is YOLO11s, fine-tuned from COCO weights:
 
 - input 640 × 640, batch size 16;
-- cosine learning-rate schedule from 0.01 [21];
-- mosaic [22], colour and ±5° rotation augmentation;
+- cosine learning-rate schedule from 0.01 [23];
+- mosaic [24], colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
 I trained it on a CUDA GPU in about two hours. Table 4 lists the full configuration.
@@ -355,17 +370,17 @@ I trained it on a CUDA GPU in about two hours. Table 4 lists the full configurat
 | Device | CUDA GPU 0 | Duration | 7,180 s (≈ 2 h) |
 | Ultralytics (train / export / run) | 8.4.126 / 8.4.130 / 8.3.253 | Export | OpenVINO IR, FP32, batch 1, static 640 × 640 |
 
-![Figure 2. Validation precision, recall and mAP over 105 epochs.](docs/report/figures/fig-training-metrics.png)
+![Figure 4. Validation precision, recall and mAP over 105 epochs.](docs/report/figures/fig-training-metrics.png)
 
-Figure 2 shows the convergence in three phases:
+Figure 4 shows the convergence in three phases:
 
 1. **Rapid adaptation.** The pretrained network reached an mAP@0.5 of 0.867 after one epoch.
 2. **Steady gains in localisation.** mAP@0.5 reached 0.96 by about epoch 40, and mAP@0.5:0.95
    kept rising until epoch 75.
 3. **Plateau.** The validation losses stopped improving while the training losses kept falling
-   (Figure 3), the characteristic onset of over-fitting.
+   (Figure 5), the characteristic onset of over-fitting.
 
-![Figure 3. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
+![Figure 5. Training and validation losses of v2; dashed line at the best epoch.](docs/report/figures/fig-training-losses.png)
 
 Early stopping ended training at epoch 105 and kept epoch 75. At that epoch the model reached
 precision 0.942, recall 0.955 (F1 0.949), mAP@0.5 0.966 and mAP@0.5:0.95 0.840, averaged over the seven
@@ -387,9 +402,9 @@ Table 5 lists the configurations evaluated.
 | RF-DETR | — | ≈ 1500 ms | rejected on latency; accuracy good |
 
 **Model versions.** I trained six versions in all (Table 6), one of them on the smaller YOLO11n
-scale. Figure 4 shows their training curves.
+scale. Figure 6 shows their training curves.
 
-![Figure 4. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
+![Figure 6. Validation mAP@0.5:0.95 and classification loss of the six model versions. Dashed lines were trained on different data and are not directly comparable.](docs/report/figures/fig-model-versions.png)
 
 **Table 6.** Model versions: validation metrics at each run's best epoch, and CPU inference
 time after conversion to OpenVINO with the same tool (FP32, 640 × 640, median of 60 calls on one
@@ -458,7 +473,7 @@ best-apron's lead is accepted.
 
 Three limits apply. The counts are per image, from one camera and one frame, while the station
 combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
-compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [23] of about 4–22 %, and the 1.4 %
+compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [25] of about 4–22 %, and the 1.4 %
 false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
 the older models are flattered, not best-apron.
@@ -521,7 +536,7 @@ question of accuracy. On that, Table 7 favours `best-apron`, which the station r
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
 It is that RF-DETR's accuracy shows **headroom the deployed model does not reach**. The open
-question is how to capture that headroom inside the latency budget, for example by distillation [24].
+question is how to capture that headroom inside the latency budget, for example by distillation [26].
 
 ## 5. Inference pipeline
 
@@ -535,9 +550,9 @@ permissive. A queue would have been the conventional design, but the wrong one h
 every decision is made on an older frame, and for an interlock the age of the frame *is* the
 response time.
 
-![Figure 5. Threads and data flow as implemented.](docs/report/figures/fig-threads.png){width=80%}
+![Figure 7. Threads and data flow as implemented.](docs/report/figures/fig-threads.png){width=80%}
 
-The Modbus reads and writes run on the pipeline thread (Figure 5). This fixes their order, latch
+The Modbus reads and writes run on the pipeline thread (Figure 7). This fixes their order, latch
 first and lamps second, but puts network round trips inside every cycle. Their cost on the
 station network has not been measured.
 
@@ -587,13 +602,13 @@ and 640 × 360 (side).
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
-stays at FP32. INT8 quantisation [25] remains available, but it needs calibration on site images.
+stays at FP32. INT8 quantisation [27] remains available, but it needs calibration on site images.
 
 ## 6. Compliance logic and interlock
 
 ### 6.1 From detections to a verdict
 
-Figure 6 shows the decision path from detections to the motor permissive.
+Figure 8 shows the decision path from detections to the motor permissive.
 
 The verdict takes one of four values:
 
@@ -615,7 +630,7 @@ def _evaluate(self) -> Status:
     return Status.OK if all(c.satisfied for c in required) else Status.VIOLATION
 ```
 
-![Figure 6. Decision flow from detections to the motor permissive.](docs/report/figures/fig-decision-flow.png)
+![Figure 8. Decision flow from detections to the motor permissive.](docs/report/figures/fig-decision-flow.png)
 
 Two choices recur throughout. First, **counts come from the best single camera, never the sum**:
 two cameras that each see the same two gloves must not report four. Second, **the operator is the
@@ -630,7 +645,7 @@ Bystanders and their equipment are ignored. A missed person gives STANDBY, which
 but still stops the motor. The same mechanism explains the large-workpiece problem in
 Section 8.3.
 
-Figure 7 shows both rules on photographs of a recreated working pose, taken in an isolated
+Figure 9 shows both rules on photographs of a recreated working pose, taken in an isolated
 environment and annotated with best-apron's detections at the station's confidence floors. The
 side view (a) holds every required item and on its own would permit the motor; only one sleeve
 is visible, which the station's count of one accepts. The front view (b) shows the head net,
@@ -638,7 +653,7 @@ glasses and mask clearly but not the hands, so on its own it would be a violatio
 together, as the station judges its two cameras, the pair is compliant: the gloves and sleeve
 come from the side camera.
 
-![Figure 7. Detections by best-apron on a recreated working pose: (a) side view, (b) front view, each a single frame at the station's confidence floors.](docs/report/figures/fig-example-detections.png)
+![Figure 9. Detections by best-apron on a recreated working pose: (a) side view, (b) front view, each a single frame at the station's confidence floors.](docs/report/figures/fig-example-detections.png)
 
 ### 6.2 The debounce and hold-window trade-off
 
@@ -663,10 +678,10 @@ out keeps its credited count for its hold period, from 0.4 s to 1.2 s. **Gloves 
 get a separate 5 s *occlusion window* that applies only while *some but not all* of the pair are
 visible. One visible glove is evidence that the pair is worn, so the tolerance is granted on
 evidence. Safety glasses, rarely occluded the same way, get only their 1.1 s hold. Tests confirmed
-that the revised logic handles occlusion of gloves and sleeves well. Figure 8 shows both windows
+that the revised logic handles occlusion of gloves and sleeves well. Figure 10 shows both windows
 for a pair of gloves.
 
-![Figure 8. The two windows for a pair of gloves.](docs/report/figures/fig-hold-windows.png)
+![Figure 10. The two windows for a pair of gloves.](docs/report/figures/fig-hold-windows.png)
 
 Testing also found a defect, which I measured rather than assumed. Both windows had been timed
 from the last *full* sighting, so a partial view silently consumed the dropout hold. After one
@@ -727,7 +742,7 @@ detected violation.** As implemented, the window has four properties:
   a missing glove;
 - it is set once and never renewed, so flickering PPE cannot hold the machine open.
 
-Figure 9 shows the resulting stop times. I obtained them by running the station's compliance and
+Figure 11 shows the resulting stop times. I obtained them by running the station's compliance and
 latch code on its configuration with simulated detections. The same method reproduces the times
 recorded earlier for the first configuration (1.5 s for gloves, 6.3 s for a mask). A detected
 wrong sleeve still stops a running machine in 0.5 s. But a missing glove or missing safety glasses
@@ -737,7 +752,7 @@ defensible choice for nuisance stops, but it reverses the earlier decision to gi
 to the items whose absence is the immediate hazard. **It needs an explicit, documented EHS
 position before rollout.**
 
-![Figure 9. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
+![Figure 11. Time from an item leaving view to motor stop, station configuration (simulated with the station's own logic).](docs/report/figures/fig-stop-times.png)
 
 The permissive is a **latch**, like the seal-in contact of a motor starter. Pressing the button
 starts the motor only when four conditions hold:
@@ -784,9 +799,9 @@ configuration rather than code:
    that watchdog, but nothing records that it was tested.
 4. **The emergency stop depends on the software path.** Whenever that path fails or stalls, the e-stop
    cannot stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
-   [26], IEC 60204-1 [27] and IEC 60947-5-5 [28] require a hard-wired e-stop with normally closed,
+   [28], IEC 60204-1 [29] and IEC 60947-5-5 [30] require a hard-wired e-stop with normally closed,
    direct-opening contacts, and the safety-relay circuit should be designed and validated to a
-   performance level determined under ISO 13849-1 [29]. **Until the safety relay is fitted, the station's e-stop
+   performance level determined under ISO 13849-1 [31]. **Until the safety relay is fitted, the station's e-stop
    should not be relied upon as an emergency stop.**
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
@@ -875,12 +890,12 @@ The plant then decided to deploy the system on all flat belt grinders, and to pr
 
 **End-to-end latency on the station fell from 300–400 ms to about 40 ms**, measured from camera
 grab to relay write. A controlled benchmark on a 4-core development host reproduced the effect
-(Figure 10):
+(Figure 12):
 
 - the median fell from 488 ms to 48 ms;
 - the cycles completed in 25 s rose from 56 to 793.
 
-![Figure 10. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
+![Figure 12. Median end-to-end and inference latency before and after optimisation (development host).](docs/report/figures/fig-latency-before-after.png)
 
 Per-stage instrumentation decided the fix. In the untuned pipeline, inference took **98.6 %** of
 each cycle, and all the code I had written myself took under 2 %. Only the forward pass was worth
@@ -906,7 +921,7 @@ longer the main source of risk. The false stops that mattered came from viewpoin
 designed for, and the false permits come from decisions the schema cannot express (Section 4.2)
 and from the software–machine boundary (Section 6.4).
 
-**Validation of best-apron.** Figures 11 to 13 show the final validation of the eight-class
+**Validation of best-apron.** Figures 13 to 15 show the final validation of the eight-class
 model the station runs. Per-class AP@0.5 ranges from 0.972 for safety glasses to 0.995 for the
 head net and mask, with a mean of 0.986 (Table 6 records 0.987 at the best epoch during
 training). The F1 score over all classes peaks at 0.97 at a confidence of 0.46 and stays within a
@@ -923,14 +938,14 @@ and a quarter each are gloves and sleeves. A false detection of a required item 
 can credit missing PPE; the containment test of Section 6.1 discards those outside the operator.
 The only confusion between two classes is that 1 % of wrong sleeves are detected as sleeves. It is
 small but safety-relevant, because a wrong sleeve read as a sleeve is a path to a false permit.
-The training curves (Figure 13) show the validation losses levelling off after about 60 epochs,
+The training curves (Figure 15) show the validation losses levelling off after about 60 epochs,
 consistent with the best epoch of 63.
 
-![Figure 11. Precision–recall and F1–confidence curves of best-apron. Validation split.](docs/report/figures/fig-apron-pr-f1.png)
+![Figure 13. Precision–recall and F1–confidence curves of best-apron. Validation split.](docs/report/figures/fig-apron-pr-f1.png)
 
-![Figure 12. Normalised confusion matrix of best-apron. Validation split; each column is a true class.](docs/report/figures/fig-apron-confusion.png){width=70%}
+![Figure 14. Normalised confusion matrix of best-apron. Validation split; each column is a true class.](docs/report/figures/fig-apron-confusion.png){width=70%}
 
-![Figure 13. Training curves of best-apron over 93 epochs: losses and validation metrics.](docs/report/figures/fig-apron-training.png)
+![Figure 15. Training curves of best-apron over 93 epochs: losses and validation metrics.](docs/report/figures/fig-apron-training.png)
 
 ### 8.3 The operator feedback finding
 
@@ -998,7 +1013,7 @@ several rounds of review:
 - **A Bill of Quantities and Scope of Work** for each station.
 - **Acceptance test protocols**, with a pulled-wire test on each switch input.
 
-![Figure 14. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=75%}
+![Figure 16. Layout models of the station. (a) Prototype, with separate stands for the control panel and monitor and for a camera. (b, c) Integrated version: monitor and tower light above the grinder, control panel on its pedestal.](docs/report/figures/fig-station-versions.png){width=75%}
 
 I also evaluated industrial cameras to replace the consumer webcams, which are not defensible in a
 dusty environment. The specification asked for USB 3 direct to the PC on a 2 m cable, and working
@@ -1011,7 +1026,7 @@ setting saves an operating-system change at every station, and local annotation 
 contribute failure cases without an exception to the data rules.
 
 The station was also redesigned as an integrated tower that fits within the grinder's own envelope
-(Figure 14): 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in
+(Figure 16): 0.76 m³ against 1.63 m³ for the prototype's separate units, a 53 % reduction in
 volume. The monitor and tower light move onto the grinder, and the control panel onto its
 pedestal, so nothing stands on the floor beside the machine. This answers management's comment
 on the size of the panel.
@@ -1106,90 +1121,98 @@ operations, starting each time from how the operation is actually performed.
 [1] *Occupational health and safety management systems — Requirements with guidance for
 use*, ISO 45001:2018.
 
-[2] GE Aerospace, "Bernstein 41st Annual Strategic Decisions Conference," transcript,
+[2] GE Aerospace, "GE Aerospace's Pune Manufacturing Facility Celebrates 10 Years of
+Operations," press release, 14 Oct. 2025. [Online]. Available:
+https://www.geaerospace.com/news/press-releases/india/ge-aerospaces-pune-manufacturing-facility-celebrates-10-years-operations
+
+[3] GE Aerospace, "Bernstein 41st Annual Strategic Decisions Conference," transcript,
 28 May 2025. [Online]. Available:
 https://www.geaerospace.com/sites/default/files/geaerospace_bernstein_41st_annual_strategic_decisions_conference_transcript-052825.pdf
 
-[3] GE Aerospace, "Barclays Industrial Select Conference," transcript, Feb. 2025. [Online]. Available:
-https://geaerospace.com/sites/default/files/2025-barclays-conference-transcript-022025.pdf
+[4] GE Aerospace, "Flow State: Using FLIGHT DECK to Overhaul a Production Line at Pune,"
+article, 24 Nov. 2025. [Online]. Available:
+https://www.geaerospace.com/news/articles/flow-state-using-flight-deck-overhaul-production-line-pune
 
-[4] GE, "Prime Minister Narendra Modi inaugurates GE's new Brilliant Factory in Pune," press
+[5] GE Aerospace, "Facilities: Manufacturing and Services in India," web page, accessed
+6 Nov. 2026. [Online]. Available: https://www.geaerospace.com/facilities-india
+
+[6] GE, "Prime Minister Narendra Modi inaugurates GE's new Brilliant Factory in Pune," press
 release, 14 Feb. 2015. [Online]. Available:
 https://www.ge.com/news/press-releases/prime-minister-narendra-modi-inaugurates-ges-new-brilliant-factory-pune
 
-[5] "GE Aerospace to invest USD 14 million in Pune plant as facility marks 10 years," *The
-Tribune*, Nov. 2025. [Online]. Available:
-https://www.tribuneindia.com/news/business/ge-aerospace-to-invest-usd-14-million-in-pune-plant-as-facility-marks-10-years
+[7] GE Aerospace, "GE Aerospace to Invest USD 14 Million to Expand Pune Manufacturing
+Capability," press release, 20 Nov. 2025. [Online]. Available:
+https://www.geaerospace.com/news/press-releases/india/ge-aerospace-invest-usd-14-million-expand-pune-manufacturing-capability
 
-[6] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
+[8] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
 Object Detection," in *Proc. IEEE CVPR*, 2016, pp. 779–788. arXiv:1506.02640.
 
-[7] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
+[9] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
 https://docs.ultralytics.com/models/yolo11/
 
-[8] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
+[10] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
 Object Detection with Transformers," in *Proc. ECCV*, 2020, pp. 213–229. arXiv:2005.12872.
 
-[9] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
+[11] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
 Available: https://github.com/roboflow/rf-detr
 
-[10] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
+[12] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
 Pattern Recognition (ICPR)*, 2006, pp. 850–855.
 
-[11] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
+[13] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
 https://docs.openvino.ai/
 
-[12] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
+[14] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
 pp. 740–755. arXiv:1405.0312.
 
-[13] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
+[15] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
 Object Classes (VOC) Challenge," *Int. J. Computer Vision*, vol. 88, no. 2, pp. 303–338, 2010.
 
-[14] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
+[16] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
 Object-Detection Algorithms," in *Proc. Int. Conf. Systems, Signals and Image Processing
 (IWSSIP)*, 2020, pp. 237–242.
 
-[15] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
+[17] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
 ISO 12100:2010.
 
-[16] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
+[18] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
 
-[17] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
+[19] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
 https://github.com/pymodbus-dev/pymodbus
 
-[18] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
+[20] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
 surveillance videos," *Automation in Construction*, vol. 85, pp. 1–9, 2018.
 
-[19] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
+[21] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
 construction personnel: A deep learning approach and benchmark dataset," *Automation in
 Construction*, vol. 106, art. 102894, 2019.
 
-[20] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
+[22] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
 detection of personal protective equipment," *Automation in Construction*, vol. 112,
 art. 103085, 2020.
 
-[21] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
+[23] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
 *Proc. Int. Conf. Learning Representations (ICLR)*, 2017. arXiv:1608.03983.
 
-[22] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
+[24] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
 Detection," arXiv:2004.10934, 2020.
 
-[23] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
+[25] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
 *J. American Statistical Association*, vol. 22, no. 158, pp. 209–212, 1927.
 
-[24] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
+[26] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
 arXiv:1503.02531, 2015.
 
-[25] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
+[27] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
 Integer-Arithmetic-Only Inference," in *Proc. IEEE/CVF CVPR*, 2018, pp. 2704–2713.
 
-[26] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
+[28] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
 
-[27] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
+[29] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
 IEC 60204-1:2016+A1:2021.
 
-[28] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
+[30] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
 mechanical latching function*, IEC 60947-5-5.
 
-[29] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
+[31] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
 for design*, ISO 13849-1:2023.
