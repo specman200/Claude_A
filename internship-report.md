@@ -84,16 +84,50 @@ rule that PPE must be worn and the fact of the machine running.
 
 ### 1.2 Host organisation
 
-GE Aerospace designs and manufactures commercial and military aircraft engines, components and
-systems. It has operated as an independent, publicly listed company since April 2024.
+**GE Aerospace.** GE Aerospace designs, manufactures and services commercial and military aircraft
+engines, components and systems. It has operated as an independent, publicly listed company since
+April 2024, when the separation of the former General Electric conglomerate was completed.
 
-The GE Aerospace Multi-modal Manufacturing Facility (MMF) in Pune is a global centre of
-excellence for high-precision, mission-critical structural components, such as ducts and
-manifolds, for commercial jet engines including the LEAP, GEnx and GE9X. Its processes include
-five-axis CNC machining, specialised welding, hydroforming and a digitally connected production
-infrastructure. I completed the internship in the Manufacturing Engineering section of the
-Fabrication Center of Excellence (FCOE) department, which programs, optimises and deploys robotic
-and automated cells on the shopfloor.
+**Vision and purpose.** The company states its purpose as *"We invent the future of flight, lift
+people up and bring them home safely"* [2]. It describes its vision as defining flight
+for today, tomorrow and the future: supporting the engines in service today, building the capacity
+for the new engines of tomorrow, and developing the technologies of future aircraft [2],
+[3]. Both are put into practice through FLIGHT DECK, the company's lean operating model,
+whose priorities are ordered safety, quality, delivery and cost [3]. That order is the
+premise of this project: an interlock that may stop production to protect an operator puts the
+first priority ahead of the last, and the trade-off between false stops and false permits in
+Chapter 6 is that ordering made concrete.
+
+**The Pune Multi-modal Manufacturing Facility.** The facility in the MIDC industrial area at
+Chakan, near Pune, was inaugurated on 14 February 2015 as GE's first multi-modal factory in India:
+flexible lines manufacturing for several GE businesses (power, oil and gas, transportation and,
+from its second phase, aviation), with much of the output exported to other GE sites [4].
+Since the separation it has been part of GE Aerospace. Its components go into the GE90, GEnx, GE9X
+and LEAP engine families, and it works with more than 300 suppliers. On its tenth anniversary the
+company announced a further US $14 million for capacity and automation at the site, bringing the
+investment announced in under two years to US $44 million [5].
+
+**Tubes and ducts.** The site is a centre of excellence for fabricated engine components, above
+all tubes, ducts and manifolds. These parts form much of an engine's external plumbing: they carry
+fuel, oil and air, such as bleed and cooling air taken from the compressor, between the engine's
+modules and its accessories. They must stay leak-tight and aligned through large swings in
+temperature and continuous vibration, which makes their geometry and their welds critical.
+They are made from stainless steels and nickel-based superalloys such as Inconel, by tube bending,
+hydroforming and five-axis CNC machining, and joined by fusion welding, largely TIG, to aerospace
+welding specifications, with digitally connected inspection along the line. The weld preparation,
+manual welding and robotic TIG welding that I studied in my first two weeks (Section 1.3), and the
+flat belt grinding station at which this project was deployed, belong to this fabrication flow.
+
+**Organisation and department.** The site is organised into departments under
+[site leadership, e.g. the plant leader]. The Fabrication Center of Excellence (FCOE) department,
+led by [title of the FCOE head], is responsible for the fabricated components described above,
+with [its other sections, e.g. production, quality] alongside Manufacturing Engineering. The
+Manufacturing Engineering (ME) section develops and industrialises the processes by which the
+parts are made, and its Process Automation team programs, optimises and deploys the robotic and
+automated cells on the shopfloor. I worked in this team, under its senior manager, Mr Aslam Mulla,
+who acted as my trainer, and with Mr Soham Bhat Dubere of the Manufacturing Engineering Development
+Program as my second supervisor. The project also depended on functions outside the department:
+Environment, Health and Safety (EHS), maintenance, IT and lean management (Section 10.1).
 
 ### 1.3 Origin, scope and objective
 
@@ -143,15 +177,15 @@ Validation metrics measure only the detection question. They are necessary but n
 
 ### 2.2 Detector and runtime
 
-YOLO [2] is a single-stage detector: one network pass predicts boxes and class scores for the
-whole image, so the inference cost is fixed and predictable. YOLO11 [3] is the Ultralytics
+YOLO [6] is a single-stage detector: one network pass predicts boxes and class scores for the
+whole image, so the inference cost is fixed and predictable. YOLO11 [7] is the Ultralytics
 release used here, in its *s* scale (about 9.4 million parameters). Detection transformers such
-as DETR [4] and RF-DETR [5] predict object sets directly and need no non-maximum suppression [6], but
+as DETR [8] and RF-DETR [9] predict object sets directly and need no non-maximum suppression [10], but
 their attention layers are costly on a CPU.
 
-OpenVINO [7] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
+OpenVINO [11] compiles a trained network for a specific CPU. Detection quality is reported as precision $P = TP/(TP+FP)$, recall $R = TP/(TP+FN)$ and
 mean average precision (mAP) at an IoU threshold of 0.5, and averaged over thresholds from 0.5
-to 0.95 [8], [9], [10].
+to 0.95 [12], [13], [14].
 
 ### 2.3 Two error directions
 
@@ -171,8 +205,8 @@ people gets worked around. A false permit is the exposure the system exists to p
 parameter in Chapter 6 is a position on this trade-off.
 
 Such a system is a **permissive**: a condition that must hold before the machine may run, layered
-on top of the machine's safety functions and never in place of them [11]. It talks to the relay
-module over Modbus TCP [12], with the `pymodbus` library [13]. Modbus is stateless and driven by the
+on top of the machine's safety functions and never in place of them [15]. It talks to the relay
+module over Modbus TCP [16], with the `pymodbus` library [17]. Modbus is stateless and driven by the
 client. A device keeps its outputs as last written until it is told otherwise, unless it has its
 own communication watchdog.
 
@@ -250,7 +284,7 @@ the seven-class model that was deployed first.
 
 All training images were either captured on the shopfloor or taken of working poses recreated in
 an isolated environment, and no public PPE dataset was used. Public
-datasets centre on construction-site equipment [14], [15], [16]. The station's lighting, background, operator
+datasets centre on construction-site equipment [18], [19], [20]. The station's lighting, background, operator
 postures and issued PPE are particular to it, and sleeves are absent from most public sets.
 Starting from COCO-pretrained weights and fine-tuning on site data gave the model general
 features from a large dataset, and everything station-specific from the station. Images were
@@ -300,8 +334,8 @@ the person's box, relaxed to 10 % containment for gloves, and a glove held in th
 The model is YOLO11s, fine-tuned from COCO weights:
 
 - input 640 × 640, batch size 16;
-- cosine learning-rate schedule from 0.01 [17];
-- mosaic [18], colour and ±5° rotation augmentation;
+- cosine learning-rate schedule from 0.01 [21];
+- mosaic [22], colour and ±5° rotation augmentation;
 - up to 150 epochs, with early stopping after 30 epochs without improvement.
 
 I trained it on a CUDA GPU in about two hours. Table 4 lists the full configuration.
@@ -424,7 +458,7 @@ best-apron's lead is accepted.
 
 Three limits apply. The counts are per image, from one camera and one frame, while the station
 combines two cameras over time, so they are not rates per shift. Only 48 test images are labelled
-compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [19] of about 4–22 %, and the 1.4 %
+compliant, so the 10.4 % false-stop rate has a 95 % Wilson score interval [23] of about 4–22 %, and the 1.4 %
 false-permit rate one of 0.6–3.0 %. The test split is held out from best-apron, but whether it was
 also held out from v2–v6, trained on earlier splits of the same images, is not recorded; if not,
 the older models are flattered, not best-apron.
@@ -487,7 +521,7 @@ question of accuracy. On that, Table 7 favours `best-apron`, which the station r
 RF-DETR's accuracy was good, but closing 1500 ms to 40 ms needs about a fortyfold speed-up, and
 the runtime migration gave about tenfold. The useful conclusion is not that RF-DETR is unsuitable.
 It is that RF-DETR's accuracy shows **headroom the deployed model does not reach**. The open
-question is how to capture that headroom inside the latency budget, for example by distillation [20].
+question is how to capture that headroom inside the latency budget, for example by distillation [24].
 
 ## 5. Inference pipeline
 
@@ -553,7 +587,7 @@ and 640 × 360 (side).
 
 Exporting to OpenVINO cut the time per inference call from 145 ms to 28 ms (5.2×), with
 detections identical to within 1.2 px. All of this gain came from compilation, because the export
-stays at FP32. INT8 quantisation [21] remains available, but it needs calibration on site images.
+stays at FP32. INT8 quantisation [25] remains available, but it needs calibration on site images.
 
 ## 6. Compliance logic and interlock
 
@@ -750,9 +784,9 @@ configuration rather than code:
    that watchdog, but nothing records that it was tested.
 4. **The emergency stop depends on the software path.** Whenever that path fails or stalls, the e-stop
    cannot stop the motor either, and a broken wire to its normally open contact goes unnoticed. ISO 13850
-   [22], IEC 60204-1 [23] and IEC 60947-5-5 [24] require a hard-wired e-stop with normally closed,
+   [26], IEC 60204-1 [27] and IEC 60947-5-5 [28] require a hard-wired e-stop with normally closed,
    direct-opening contacts, and the safety-relay circuit should be designed and validated to a
-   performance level determined under ISO 13849-1 [25]. **Until the safety relay is fitted, the station's e-stop
+   performance level determined under ISO 13849-1 [29]. **Until the safety relay is fitted, the station's e-stop
    should not be relied upon as an emergency stop.**
 
 None of these concerns the model. Each lies at the boundary between software and machine, where
@@ -1072,75 +1106,90 @@ operations, starting each time from how the operation is actually performed.
 [1] *Occupational health and safety management systems — Requirements with guidance for
 use*, ISO 45001:2018.
 
-[2] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
+[2] GE Aerospace, "Bernstein 41st Annual Strategic Decisions Conference," transcript,
+28 May 2025. [Online]. Available:
+https://www.geaerospace.com/sites/default/files/geaerospace_bernstein_41st_annual_strategic_decisions_conference_transcript-052825.pdf
+
+[3] GE Aerospace, "Barclays Industrial Select Conference," transcript, Feb. 2025. [Online]. Available:
+https://geaerospace.com/sites/default/files/2025-barclays-conference-transcript-022025.pdf
+
+[4] GE, "Prime Minister Narendra Modi inaugurates GE's new Brilliant Factory in Pune," press
+release, 14 Feb. 2015. [Online]. Available:
+https://www.ge.com/news/press-releases/prime-minister-narendra-modi-inaugurates-ges-new-brilliant-factory-pune
+
+[5] "GE Aerospace to invest USD 14 million in Pune plant as facility marks 10 years," *The
+Tribune*, Nov. 2025. [Online]. Available:
+https://www.tribuneindia.com/news/business/ge-aerospace-to-invest-usd-14-million-in-pune-plant-as-facility-marks-10-years
+
+[6] J. Redmon, S. Divvala, R. Girshick and A. Farhadi, "You Only Look Once: Unified, Real-Time
 Object Detection," in *Proc. IEEE CVPR*, 2016, pp. 779–788. arXiv:1506.02640.
 
-[3] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
+[7] G. Jocher and J. Qiu, "Ultralytics YOLO11," Ultralytics, 2024. [Online]. Available:
 https://docs.ultralytics.com/models/yolo11/
 
-[4] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
+[8] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov and S. Zagoruyko, "End-to-End
 Object Detection with Transformers," in *Proc. ECCV*, 2020, pp. 213–229. arXiv:2005.12872.
 
-[5] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
+[9] "RF-DETR: a real-time object detection transformer," software repository, 2025. [Online].
 Available: https://github.com/roboflow/rf-detr
 
-[6] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
+[10] A. Neubeck and L. Van Gool, "Efficient Non-Maximum Suppression," in *Proc. 18th Int. Conf.
 Pattern Recognition (ICPR)*, 2006, pp. 850–855.
 
-[7] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
+[11] Intel Corporation, "OpenVINO Toolkit documentation," 2026. [Online]. Available:
 https://docs.openvino.ai/
 
-[8] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
+[12] T.-Y. Lin *et al.*, "Microsoft COCO: Common Objects in Context," in *Proc. ECCV*, 2014,
 pp. 740–755. arXiv:1405.0312.
 
-[9] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
+[13] M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn and A. Zisserman, "The PASCAL Visual
 Object Classes (VOC) Challenge," *Int. J. Computer Vision*, vol. 88, no. 2, pp. 303–338, 2010.
 
-[10] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
+[14] R. Padilla, S. L. Netto and E. A. B. da Silva, "A Survey on Performance Metrics for
 Object-Detection Algorithms," in *Proc. Int. Conf. Systems, Signals and Image Processing
 (IWSSIP)*, 2020, pp. 237–242.
 
-[11] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
+[15] *Safety of machinery — General principles for design — Risk assessment and risk reduction*,
 ISO 12100:2010.
 
-[12] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
+[16] Modbus Organization, "MODBUS Application Protocol Specification V1.1b3," 2012.
 
-[13] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
+[17] PyModbus contributors, "PyModbus," version 3.16. [Online]. Available:
 https://github.com/pymodbus-dev/pymodbus
 
-[14] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
+[18] Q. Fang *et al.*, "Detecting non-hardhat-use by a deep learning method from far-field
 surveillance videos," *Automation in Construction*, vol. 85, pp. 1–9, 2018.
 
-[15] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
+[19] J. Wu, N. Cai, W. Chen, H. Wang and G. Wang, "Automatic detection of hardhats worn by
 construction personnel: A deep learning approach and benchmark dataset," *Automation in
 Construction*, vol. 106, art. 102894, 2019.
 
-[16] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
+[20] N. D. Nath, A. H. Behzadan and S. G. Paal, "Deep learning for site safety: Real-time
 detection of personal protective equipment," *Automation in Construction*, vol. 112,
 art. 103085, 2020.
 
-[17] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
+[21] I. Loshchilov and F. Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," in
 *Proc. Int. Conf. Learning Representations (ICLR)*, 2017. arXiv:1608.03983.
 
-[18] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
+[22] A. Bochkovskiy, C.-Y. Wang and H.-Y. M. Liao, "YOLOv4: Optimal Speed and Accuracy of Object
 Detection," arXiv:2004.10934, 2020.
 
-[19] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
+[23] E. B. Wilson, "Probable inference, the law of succession, and statistical inference,"
 *J. American Statistical Association*, vol. 22, no. 158, pp. 209–212, 1927.
 
-[20] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
+[24] G. Hinton, O. Vinyals and J. Dean, "Distilling the Knowledge in a Neural Network,"
 arXiv:1503.02531, 2015.
 
-[21] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
+[25] B. Jacob *et al.*, "Quantization and Training of Neural Networks for Efficient
 Integer-Arithmetic-Only Inference," in *Proc. IEEE/CVF CVPR*, 2018, pp. 2704–2713.
 
-[22] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
+[26] *Safety of machinery — Emergency stop function — Principles for design*, ISO 13850:2015.
 
-[23] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
+[27] *Safety of machinery — Electrical equipment of machines — Part 1: General requirements*,
 IEC 60204-1:2016+A1:2021.
 
-[24] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
+[28] *Low-voltage switchgear and controlgear — Part 5-5: Electrical emergency stop device with
 mechanical latching function*, IEC 60947-5-5.
 
-[25] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
+[29] *Safety of machinery — Safety-related parts of control systems — Part 1: General principles
 for design*, ISO 13849-1:2023.

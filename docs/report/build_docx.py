@@ -337,6 +337,11 @@ def postprocess(docx: Path, cover: str, toc: str) -> None:
     s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>'
                r'(?:Acknowledgements|Abstract)</w:t>)',
                r'\1<w:outlineLvl w:val="9"/>\2', s)
+    # Reference entries are left-aligned: justified, a long URL opens wide gaps in its line.
+    k = s.find(">References</w:t>")
+    if k > 0:
+        s = s[:k] + re.sub(r'<w:pStyle w:val="(BodyText|FirstParagraph)" ?/>(</w:pPr>)',
+                           r'<w:pStyle w:val="\1"/><w:jc w:val="left"/>\2', s[k:])
     # References start a new page. A break on the heading itself, not a separate break
     # paragraph, which would leave a blank page whenever the body ends at a page foot.
     s = re.sub(r'(<w:pStyle w:val="Heading1" ?/>)(</w:pPr><w:r><w:t[^>]*>References</w:t>)',
